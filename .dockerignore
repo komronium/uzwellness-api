@@ -16,6 +16,5 @@ tests/
 .github/
 docker-compose.yml
 docker-compose.prod.yml
-Caddyfile
 Dockerfile
 .dockerignore

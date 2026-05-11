@@ -31,6 +31,8 @@ services:
     build: .
     container_name: sanotour-app
     env_file: .env
+    ports:
+      - "127.0.0.1:8001:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,24 +44,6 @@ services:
              python -m scripts.seed &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: sanotour-caddy
-    environment:
-      DOMAIN: ${DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - app
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   redis_data:
-  caddy_data:
-  caddy_config:
