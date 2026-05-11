@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    PROJECT_NAME: str = "SanoTour API"
+    PROJECT_NAME: str = "UzWellness API"
     API_V1_PREFIX: str = "/api/v1"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
     DEBUG: bool = True
@@ -27,7 +27,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "https://uzwellness.com",
+        "https://www.uzwellness.com",
+    ]
 
     INITIAL_SUPER_ADMIN_EMAIL: str | None = None
     INITIAL_SUPER_ADMIN_PASSWORD: str | None = None

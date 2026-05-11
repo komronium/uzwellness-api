@@ -1,4 +1,4 @@
-"""Seed initial data. Idempotent: safe to re-run.
+"""Seed production super_admin from env vars. Idempotent: safe to re-run.
 
 Usage:
     uv run python -m scripts.seed
