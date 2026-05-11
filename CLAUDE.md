@@ -170,3 +170,37 @@ customer:    ali@gmail.com / User123!
 ```
 
 API docs: `http://localhost:8080/docs`
+
+## Deploy (VPS — shared postgres/redis)
+
+VPS da postgres va redis allaqachon ishlaydi, faqat app konteyner kerak.
+
+```bash
+# 1. Serverga kirish va reponi olish
+git clone https://github.com/komronium/uzwellness-api /srv/uzwellness-api
+cd /srv/uzwellness-api
+cp .env.example .env   # kerakli qiymatlarni to'ldir
+
+# 2. App konteyner ishga tushirish
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 3. Nginx config joylashtirish
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/uzwellness-api
+sudo ln -s /etc/nginx/sites-available/uzwellness-api /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4. SSL (certbot)
+sudo certbot --nginx -d api.uzwellness.com
+
+# Yangilash
+git pull && docker compose -f docker-compose.prod.yml up -d --build
+
+# Loglar
+docker logs uzwellness-api -f
+```
+
+**network_mode: host** ishlatiladi — konteyner host'dagi `localhost:5432` (postgres) va
+`localhost:6379` (redis) ga to'g'ridan ulanadi. `.env` dagi `DATABASE_URL` da
+`localhost` bo'lishi kerak (Docker service nomi emas).
+
+App `127.0.0.1:8001` da tinglaydi → nginx `api.uzwellness.com` dan proxy qiladi.
