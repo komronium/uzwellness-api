@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UzWellness API — Frontend Feature Guide</title>
+<style>
+  :root {
+    --bg: #fefcf8;
+    --ink: #1e2a23;
+    --muted: #5a6b62;
+    --sanatorium: #2f6f4a;
+    --sanatorium-bg: #e8f3eb;
+    --wellness: #6b4f9f;
+    --wellness-bg: #efeaf7;
+    --code-bg: #1e2a23;
+    --code-ink: #d4e2da;
+    --border: #d8dcd9;
+    --accent: #b8722a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  nav.toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 24px 16px;
+    border-right: 1px solid var(--border);
+    font-size: 13px;
+  }
+  nav.toc h3 {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  nav.toc a {
+    display: block;
+    padding: 4px 0;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--sanatorium); }
+  main { padding: 40px 48px; }
+  h1 {
+    font-size: 32px;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 22px;
+    margin: 48px 0 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  .subtitle {
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .badge.sanatorium { background: var(--sanatorium-bg); color: var(--sanatorium); }
+  .badge.wellness   { background: var(--wellness-bg);   color: var(--wellness); }
+  .badge.method     {
+    background: #233;
+    color: #fff;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+  .method.get    { background: #2f6f4a; }
+  .method.post   { background: #b8722a; }
+  .method.patch  { background: #6b4f9f; }
+  .method.delete { background: #b03333; }
+  code, pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  code {
+    background: #eee2cf;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 16px 20px;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: #f1ede4; font-weight: 600; }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: #fff;
+  }
+  .card.sanatorium { border-left: 4px solid var(--sanatorium); }
+  .card.wellness   { border-left: 4px solid var(--wellness); }
+  .card h4 { margin: 0 0 8px; font-size: 14px; }
+  .ascii {
+    background: #fbf6ec;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  .ascii pre { background: none; color: var(--ink); padding: 0; }
+  .note {
+    border-left: 3px solid var(--accent);
+    background: #fdf3e3;
+    padding: 8px 16px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 24px; }
+    .two-col, .filter-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<nav class="toc">
+  <h3>Sections</h3>
+  <a href="#overview">1. Overview</a>
+  <a href="#property-types">2. Property types</a>
+  <a href="#room-vs-program">3. Room ↔ Program</a>
+  <a href="#listing">4. Listing pages</a>
+  <a href="#detail-sanatorium">5. Sanatorium detail</a>
+  <a href="#detail-wellness">6. Wellness detail</a>
+  <a href="#booking">7. Booking flow</a>
+  <a href="#pricing">8. Pricing math</a>
+  <a href="#auth">9. Auth</a>
+  <a href="#errors">10. Errors</a>
+</nav>
+
+<main>
+
+<h1>UzWellness API — Frontend Guide</h1>
+<p class="subtitle">
+  How the backend is organized and how to consume it from
+  <code>uzwellness.com</code>. Base URL: <code>https://api.uzwellness.com/api/v1</code>.
+</p>
+
+<!-- ============ 1. OVERVIEW ============ -->
+<h2 id="overview">1. Overview</h2>
+
+<p>
+  Two product surfaces share one backend:
+</p>
+
+<div class="two-col">
+  <div class="card sanatorium">
+    <h4><span class="badge sanatorium">SANATORIUM</span></h4>
+    <p>Medical resorts (Humson Buloq, Charvak Health…). The unit of sale is a
+    <strong>room-night</strong>. Optional treatment programs come bundled with
+    the stay based on its length.</p>
+  </div>
+  <div class="card wellness">
+    <h4><span class="badge wellness">WELLNESS</span></h4>
+    <p>Yoga studios, spa resorts, meditation centers, detox retreats. The unit
+    of sale is a <strong>program/session</strong> (drop-in class, weekend
+    retreat) with its own price.</p>
+  </div>
+</div>
+
+<p>Same DB table, different <code>property_type</code> + a small set of
+discriminator columns. Both share images, reviews, amenities, location, and
+RBAC.</p>
+
+<h3>Core entities</h3>
+<div class="ascii"><pre>
+                    ┌──────────────────────┐
+   users ───────────│  sanatoriums          │ ── sanatorium_images
+   (admin)          │  property_type        │ ── reviews
+                    │  (sanatorium|wellness)│ ── amenities  (M2M, shared catalog)
+                    └─┬───────────┬─────────┘
+                      │           │
+              ┌───────┴───┐   ┌───┴────────────┐
+              │ rooms     │   │ programs        │
+              │ (per-night│   │ (sessions or    │
+              │  pricing) │   │  bundled medical│
+              └─────┬─────┘   │  packages)       │
+                    │         └────┬─────────────┘
+                    │              │
+                    └──────┬───────┘
+                           │
+                    ┌──────┴──────┐
+                    │  bookings   │
+                    │  booking_type:│
+                    │  room | session│
+                    └─────────────┘
+</pre></div>
+
+<!-- ============ 2. PROPERTY TYPES ============ -->
+<h2 id="property-types">2. Property types</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th><span class="badge sanatorium">SANATORIUM</span></th>
+      <th><span class="badge wellness">WELLNESS</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>property_type</code></td>
+      <td><code>"sanatorium"</code></td>
+      <td><code>"wellness"</code></td>
+    </tr>
+    <tr>
+      <td><code>wellness_category</code></td>
+      <td><code>null</code></td>
+      <td>one of: <code>spa_resort</code>, <code>yoga_retreat</code>, <code>meditation_center</code>, <code>fitness_resort</code>, <code>beauty_spa</code>, <code>digital_detox</code></td>
+    </tr>
+    <tr>
+      <td>Primary inventory</td>
+      <td><code>RoomCategory</code> rows</td>
+      <td><code>TreatmentProgram</code> rows (with <code>price</code>)</td>
+    </tr>
+    <tr>
+      <td>Listing filters</td>
+      <td><code>region</code>, <code>treatment_focus</code>, <code>min_rating</code>, <code>stars</code></td>
+      <td><code>wellness_category</code>, <code>city</code>, <code>min_rating</code></td>
+    </tr>
+    <tr>
+      <td>Price unit shown</td>
+      <td><code>$X / night</code></td>
+      <td><code>$X / session</code> or <code>$X / day</code></td>
+    </tr>
+    <tr>
+      <td>Booking type</td>
+      <td><code>"room"</code></td>
+      <td><code>"session"</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ 3. ROOM VS PROGRAM ============ -->
+<h2 id="room-vs-program">3. Room ↔ Program relationship</h2>
+
+<p>
+  <strong>No foreign key</strong> directly connects rooms and programs.
+  Both are siblings under a sanatorium:
+</p>
+
+<div class="ascii"><pre>
+    sanatoriums
+        │
+        ├── room_categories   ← xona-tun sotiladi  (sanatorium uchun)
+        └── treatment_programs ← xizmatlar paketi   (har 2 turi uchun)
+</pre></div>
+
+<p>They relate <strong>implicitly through stay length</strong>:</p>
+
+<div class="filter-grid">
+  <div class="card sanatorium">
+    <h4>Sanatorium booking</h4>
+    <ol>
+      <li>User picks a <em>room</em> + check-in/out (e.g. 7 nights)</li>
+      <li>Frontend queries <code>GET /programs?sanatorium_id=…</code></li>
+      <li>Filters programs where <code>min_nights ≤ 7 ≤ max_nights</code></li>
+      <li>Shows: "Your 7-night stay includes: <em>Davolash (7 kun)</em> — 19 services"</li>
+      <li>Bookings only charge the <strong>room price</strong>; programs are bundled (free)</li>
+    </ol>
+  </div>
+  <div class="card wellness">
+    <h4>Wellness booking</h4>
+    <ol>
+      <li>User picks a <em>program</em> directly (e.g. "Drop-in Yoga Class")</li>
+      <li>Picks a date + participants</li>
+      <li>Bookings charge <code>program.price × guests</code></li>
+      <li>No room involved at all</li>
+    </ol>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Frontend tip:</strong> on a sanatorium detail page, after the user
+  picks dates you can call
+  <code>GET /programs?sanatorium_id=&lt;id&gt;</code> and display only those
+  with <code>min_nights ≤ nights ≤ max_nights</code> as "included treatment
+  programs" — that's the only link between the two.
+</div>
+
+<!-- ============ 4. LISTING ============ -->
+<h2 id="listing">4. Listing pages</h2>
+
+<p>Both <code>/en/sanatoriums</code> and <code>/en/wellness</code> hit the same endpoint:</p>
+
+<p><span class="badge method get">GET</span> <code>/api/v1/sanatoriums</code></p>
+
+<h3>Common params</h3>
+<table>
+  <tr><th>Param</th><th>Type</th><th>Notes</th></tr>
+  <tr><td><code>property_type</code></td><td><code>sanatorium</code> | <code>wellness</code></td><td>Required to pick a surface (sanatoriums vs wellness page)</td></tr>
+  <tr><td><code>q</code></td><td>string</td><td>Name search (case-insensitive)</td></tr>
+  <tr><td><code>city</code></td><td>string</td><td></td></tr>
+  <tr><td><code>min_rating</code></td><td>number (0–5)</td><td>Filter on <code>avg_rating</code></td></tr>
+  <tr><td><code>amenity_ids</code></td><td>repeat UUID</td><td>Sanatorium must have <em>all</em> requested amenities</td></tr>
+  <tr><td><code>sort</code></td><td><code>name</code> | <code>-name</code> | <code>stars</code> | <code>-stars</code> | <code>rating</code> | <code>-rating</code> | <code>created_at</code> | <code>-created_at</code></td><td></td></tr>
+  <tr><td><code>limit</code>, <code>offset</code></td><td>int</td><td>Pagination</td></tr>
+</table>
+
+<h3>Sanatoriums-only params</h3>
+<table>
+  <tr><th>Param</th><th>Notes</th></tr>
+  <tr><td><code>region</code></td><td>e.g. <code>"Toshkent viloyati"</code></td></tr>
+  <tr><td><code>stars</code></td><td>1–5</td></tr>
+  <tr><td><code>treatment_focus</code></td><td>One of <code>cardiovascular</code>, <code>digestive</code>, <code>musculoskeletal</code>, <code>respiratory</code>, <code>neurological</code>, <code>dermatology</code>, <code>endocrine</code>, <code>wellness</code></td></tr>
+</table>
+
+<h3>Wellness-only params</h3>
+<table>
+  <tr><th>Param</th><th>Notes</th></tr>
+  <tr><td><code>wellness_category</code></td><td>One of <code>spa_resort</code>, <code>yoga_retreat</code>, <code>meditation_center</code>, <code>fitness_resort</code>, <code>beauty_spa</code>, <code>digital_detox</code></td></tr>
+</table>
+
+<h3>Sample request — Sanatoriums page</h3>
+<pre><code>GET /api/v1/sanatoriums
+  ?property_type=sanatorium
+  &amp;region=Toshkent+viloyati
+  &amp;min_rating=4
+  &amp;amenity_ids=&lt;wifi-uuid&gt;
+  &amp;amenity_ids=&lt;pool-uuid&gt;
+  &amp;sort=-rating
+  &amp;limit=20</code></pre>
+
+<h3>Sample request — Wellness page</h3>
+<pre><code>GET /api/v1/sanatoriums
+  ?property_type=wellness
+  &amp;wellness_category=yoga_retreat
+  &amp;city=Tashkent
+  &amp;sort=-rating</code></pre>
+
+<h3>Response shape</h3>
+<pre><code>{
+  "items": [
+    {
+      "id": "4b901fd6-…",
+      "name": "Humson Buloq",
+      "slug": "humson-buloq",
+      "property_type": "sanatorium",
+      "wellness_category": null,
+      "stars": 4,
+      "city": "Bostanliq",
+      "region": "Toshkent viloyati",
+      "avg_rating": "4.5",
+      "review_count": 12,
+      "treatment_focuses": ["musculoskeletal", "cardiovascular", "respiratory", "neurological", "wellness"],
+      "description": { "uz": "...", "ru": "...", "en": "..." },
+      "amenities": [
+        { "id": "...", "name": { "en": "Pool", ... }, "category": "facility", "icon": "pool" }
+      ],
+      "images": [
+        { "id": "...", "url": "/uploads/sanatoriums/.../1.jpg", "is_primary": true, "order": 0 }
+      ],
+      ...
+    }
+  ],
+  "total": 30,
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+
+<!-- ============ 5. SANATORIUM DETAIL ============ -->
+<h2 id="detail-sanatorium">5. Sanatorium detail page</h2>
+
+<p><span class="badge method get">GET</span> <code>/api/v1/sanatoriums/{id}</code></p>
+
+<p>Returns one sanatorium with embedded images and amenities. To populate the
+detail page completely you'll typically make 3 parallel calls:</p>
+
+<table>
+  <tr><th>Page section</th><th>Endpoint</th></tr>
+  <tr><td>Header / about / amenities / map</td><td><code>GET /sanatoriums/{id}</code></td></tr>
+  <tr><td>Rooms table</td><td><code>GET /rooms?sanatorium_id={id}</code></td></tr>
+  <tr><td>Treatment programs section</td><td><code>GET /programs?sanatorium_id={id}</code></td></tr>
+  <tr><td>Reviews</td><td><code>GET /sanatoriums/{id}/reviews</code></td></tr>
+  <tr><td>Extra beds (for booking widget)</td><td><code>GET /extra-beds?sanatorium_id={id}</code></td></tr>
+</table>
+
+<h3>Search rooms by availability</h3>
+<p>When the user picks dates, hit:</p>
+<pre><code>GET /api/v1/rooms/search
+  ?sanatorium_id=&lt;id&gt;
+  &amp;check_in=2026-06-01
+  &amp;check_out=2026-06-08
+  &amp;guests=2</code></pre>
+<p>Returns rooms with seats available for every date, plus computed
+<code>final_price</code> for the stay so cards can show "from $X".</p>
+
+<h3>Sample room</h3>
+<pre><code>{
+  "id": "16493749-…",
+  "sanatorium_id": "4b901fd6-…",
+  "name": { "uz": "Standart bir kishilik", "ru": "Стандарт одноместный", "en": "Standard Single" },
+  "capacity": 1,
+  "base_price": "1750000.00",
+  "base_price_weekend": "1900000.00",
+  "discount_percent": "20",
+  "base_currency": "UZS",
+  "min_nights": 1,
+  "room_amenities": ["King bed", "AC", "TV"],
+  "is_active": true,
+  "final_price_uzs": "9800000.00",    // computed by /search
+  "final_price_usd": "780.50"         // via exchange_rates
+}</code></pre>
+
+<!-- ============ 6. WELLNESS DETAIL ============ -->
+<h2 id="detail-wellness">6. Wellness detail page</h2>
+
+<p>Same <code>GET /sanatoriums/{id}</code> base. The difference: the primary
+inventory is <strong>programs</strong> (not rooms), each with its own price.</p>
+
+<table>
+  <tr><th>Page section</th><th>Endpoint</th></tr>
+  <tr><td>Header / about / amenities / map / schedule / cancellation policy</td><td><code>GET /sanatoriums/{id}</code></td></tr>
+  <tr><td>Programs / packages list (with prices)</td><td><code>GET /programs?sanatorium_id={id}</code></td></tr>
+  <tr><td>Reviews</td><td><code>GET /sanatoriums/{id}/reviews</code></td></tr>
+</table>
+
+<h3>Sample wellness program</h3>
+<pre><code>{
+  "id": "abc12345-…",
+  "sanatorium_id": "&lt;wellness center id&gt;",
+  "name": { "en": "Drop-in Yoga Class" },
+  "description": { "en": "Single 90-min Hatha/Vinyasa session." },
+  "price": "25.00",
+  "currency": "USD",
+  "duration_minutes": 90,
+  "min_nights": null,
+  "max_nights": null,
+  "instructor_name": "Aigerim K.",
+  "instructor_bio": { "en": "Certified Hatha + Vinyasa instructor, 8 years experience." },
+  "group_size_min": 1,
+  "group_size_max": 12,
+  "what_to_bring": { "en": "Yoga mat, water bottle, comfortable clothes." },
+  "is_active": true,
+  "amenities": [ { "name": { "en": "Yoga" }, "category": "wellness" } ]
+}</code></pre>
+
+<h3>Wellness center fields worth showing</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>What it is</th></tr>
+  <tr><td><code>weekly_schedule</code></td><td>JSONB</td><td>Opening hours, e.g. <code>{"mon": [{"open": "06:00", "close": "22:00"}], ...}</code>. Sanatoriums leave this <code>{}</code> (24/7).</td></tr>
+  <tr><td><code>cancellation_policy</code></td><td>Translations dict</td><td><code>{"en": "24-hour free cancellation", "ru": "...", "uz": "..."}</code></td></tr>
+  <tr><td><code>house_rules</code></td><td>Translations dict</td><td>Long-form rules</td></tr>
+  <tr><td><code>payment_methods</code></td><td>array</td><td><code>["cash", "uzcard", "visa", ...]</code></td></tr>
+</table>
+
+<!-- ============ 7. BOOKING ============ -->
+<h2 id="booking">7. Booking flow</h2>
+
+<p><span class="badge method post">POST</span> <code>/api/v1/bookings</code></p>
+
+<p>Authenticated. The request body changes shape based on which kind of
+booking you're making — provide <strong>exactly one</strong> of
+<code>room_category_id</code> or <code>program_id</code>.</p>
+
+<div class="two-col">
+<div class="card sanatorium">
+<h4>Room booking</h4>
+<pre><code>POST /api/v1/bookings
+Authorization: Bearer &lt;token&gt;
+
+{
+  "room_category_id": "16493749-…",
+  "check_in":  "2026-06-01",
+  "check_out": "2026-06-08",
+  "guests": 2,
+  "extra_beds": [
+    { "config_id": "7a1f9073-…", "count": 1 }
+  ]
+}</code></pre>
+<ul>
+  <li>Locks per-date inventory (<code>FOR UPDATE</code>)</li>
+  <li>Decrements <code>units_available</code> for each date</li>
+  <li>Computes <code>final_price = Σ(per-night price) + Σ(extra_bed)</code></li>
+  <li><code>booking_type: "room"</code></li>
+</ul>
+</div>
+
+<div class="card wellness">
+<h4>Session booking</h4>
+<pre><code>POST /api/v1/bookings
+Authorization: Bearer &lt;token&gt;
+
+{
+  "program_id": "abc12345-…",
+  "check_in":  "2026-06-01",
+  "check_out": "2026-06-01",
+  "guests": 2
+}</code></pre>
+<ul>
+  <li>Loads program (must be active + have a price)</li>
+  <li>Checks <code>guests ≤ group_size_max</code></li>
+  <li>Computes <code>final_price = program.price × guests</code></li>
+  <li><code>booking_type: "session"</code>; <code>check_out</code> can equal <code>check_in</code></li>
+</ul>
+</div>
+</div>
+
+<h3>Sample response (room)</h3>
+<pre><code>{
+  "id": "xxx",
+  "code": "A3F9PB2K",
+  "user_id": "&lt;customer id&gt;",
+  "room_category_id": "16493749-…",
+  "program_id": null,
+  "booking_type": "room",
+  "check_in":  "2026-06-01",
+  "check_out": "2026-06-08",
+  "guests": 2,
+  "status": "confirmed",
+  "final_price": "20300000.00",
+  "currency": "UZS",
+  "extra_beds": [
+    { "id":"…","config_id":"…","name_snapshot":{ "ru":"Дети 4–10 лет" },
+      "price_per_night_snapshot":"500000.00","currency":"UZS",
+      "count":1,"total_price":"3500000.00" }
+  ],
+  "created_at": "2026-05-13T13:25:00Z"
+}</code></pre>
+
+<h3>List my bookings</h3>
+<p><span class="badge method get">GET</span> <code>/api/v1/bookings</code> —
+customers see their own; sanatorium admins see their venue's; super_admin sees all.</p>
+
+<h3>Cancel</h3>
+<p><span class="badge method patch">PATCH</span>
+<code>/api/v1/bookings/{id}/cancel</code></p>
+<ul>
+  <li>Allowed by owner (own booking), sanatorium admin (their venue), or super_admin</li>
+  <li>Status must be <code>pending</code> or <code>confirmed</code></li>
+  <li>Room: per-date <code>units_available</code> is restored</li>
+  <li>Session: status flip only</li>
+</ul>
+
+<!-- ============ 8. PRICING ============ -->
+<h2 id="pricing">8. Pricing math</h2>
+
+<h3>Room — per night</h3>
+<pre><code>weekday   price = base_price          × (1 + markup/100) × (1 − discount/100)
+weekend   price = base_price_weekend  × (1 + markup/100) × (1 − discount/100)</code></pre>
+<p>Friday + Saturday count as weekend. If the stay date falls inside a
+<code>RoomPricePeriod</code>, its <code>base_price</code> /
+<code>base_price_weekend</code> / <code>discount_percent</code> override the
+room defaults for that date (Humson Buloq has one for 8 Sep – 30 Dec 2025).</p>
+
+<h3>Stay total</h3>
+<pre><code>booking.final_price
+  = Σ(per-night price)
+  + Σ(extra_bed.price_per_night × count × nights)</code></pre>
+
+<h3>Session</h3>
+<pre><code>booking.final_price = program.price × guests</code></pre>
+
+<div class="note">
+  <strong>Snapshots:</strong> once a booking is created,
+  <code>final_price</code>, <code>currency</code>, extra-bed names and prices
+  are <strong>frozen</strong>. Later changes to markup, room price, or extra
+  bed config don't affect existing bookings.
+</div>
+
+<h3>UZS ↔ USD display</h3>
+<p>The backend stores native currency only (most rooms = UZS). For showing
+both, the frontend can call
+<code>GET /api/v1/exchange-rates?pair=USD_UZS</code> and compute the other
+side, or rely on the <code>final_price_uzs</code> /
+<code>final_price_usd</code> fields that
+<code>/rooms/search</code> returns.</p>
+
+<!-- ============ 9. AUTH ============ -->
+<h2 id="auth">9. Authentication</h2>
+
+<table>
+  <tr><th>Endpoint</th><th>Notes</th></tr>
+  <tr><td><span class="badge method post">POST</span> <code>/auth/register</code></td><td>Creates a customer. Returns user + tokens.</td></tr>
+  <tr><td><span class="badge method post">POST</span> <code>/auth/login</code></td><td><code>{"email": "...", "password": "..."}</code> → <code>{ access_token, refresh_token, user }</code></td></tr>
+  <tr><td><span class="badge method post">POST</span> <code>/auth/refresh</code></td><td><code>{"refresh_token": "..."}</code> → new access token</td></tr>
+  <tr><td><span class="badge method get">GET</span> <code>/users/me</code></td><td>Current user (any auth role)</td></tr>
+</table>
+
+<p>Pass the access token as <code>Authorization: Bearer &lt;token&gt;</code>
+on every protected request.</p>
+
+<h3>Roles</h3>
+<table>
+  <tr><th>Role</th><th>Can do</th></tr>
+  <tr><td><code>super_admin</code></td><td>Everything: approve sanatoriums, set markup, manage amenity catalog</td></tr>
+  <tr><td><code>admin</code></td><td>Only their own sanatorium: edit info, rooms, availability, programs, extra beds</td></tr>
+  <tr><td><code>agent</code></td><td>B2B: see their own bookings</td></tr>
+  <tr><td><code>customer</code></td><td>Search, book, cancel own bookings, leave reviews</td></tr>
+</table>
+
+<!-- ============ 10. ERRORS ============ -->
+<h2 id="errors">10. Errors</h2>
+
+<table>
+  <tr><th>Status</th><th>Typical case</th></tr>
+  <tr><td><code>400</code></td><td>Validation failure (e.g. <code>check_out &lt;= check_in</code>, missing both <code>room_category_id</code> and <code>program_id</code>, both provided)</td></tr>
+  <tr><td><code>401</code></td><td>Missing/invalid token on a protected route</td></tr>
+  <tr><td><code>403</code></td><td>Authenticated but not allowed (e.g. admin editing a sanatorium they don't own)</td></tr>
+  <tr><td><code>404</code></td><td>Resource not found or not visible to the caller (pending sanatorium for a customer)</td></tr>
+  <tr><td><code>409</code></td><td>Conflict: no units available for a date; trying to cancel an already-cancelled booking</td></tr>
+  <tr><td><code>413</code></td><td>Image upload exceeds 10 MB</td></tr>
+  <tr><td><code>415</code></td><td>Unsupported image format (only JPEG/PNG/WebP)</td></tr>
+</table>
+
+<p>Errors return:</p>
+<pre><code>{ "detail": "Human-readable message" }</code></pre>
+
+<hr>
+<p style="margin-top: 32px; color: var(--muted); font-size: 13px;">
+  Backend swagger: <code>https://api.uzwellness.com/docs</code> · ReDoc: <code>/redoc</code>
+</p>
+
+</main>
+</div>
+
+</body>
+</html>
