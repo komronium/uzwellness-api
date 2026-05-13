@@ -43,11 +43,11 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sanatorium_reviews_sanatorium_id'), 'sanatorium_reviews', ['sanatorium_id'], unique=False)
-    op.add_column('room_categories', sa.Column('room_amenities', postgresql.JSONB(astext_type=sa.Text()), nullable=False))
+    op.add_column('room_categories', sa.Column('room_amenities', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='[]'))
     op.add_column('sanatoriums', sa.Column('phone', sa.String(length=30), nullable=True))
-    op.add_column('sanatoriums', sa.Column('treatment_focuses', postgresql.JSONB(astext_type=sa.Text()), nullable=False))
+    op.add_column('sanatoriums', sa.Column('treatment_focuses', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='[]'))
     op.add_column('sanatoriums', sa.Column('avg_rating', sa.Numeric(precision=3, scale=2), nullable=True))
-    op.add_column('sanatoriums', sa.Column('review_count', sa.Integer(), nullable=False))
+    op.add_column('sanatoriums', sa.Column('review_count', sa.Integer(), nullable=False, server_default='0'))
     # ### end Alembic commands ###
 
 
