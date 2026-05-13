@@ -2,7 +2,7 @@
 
 ## Loyiha haqida
 
-**uzwellness.com** — O'zbekistondagi sanatoriyalar uchun bron qilish platformasi.  
+**uzwellness.com** — O'zbekistondagi sanatoriyalar uchun bron qilish platformasi (xalqaro mehmonlar uchun).  
 Backend API: `api.uzwellness.com` | FastAPI + SQLAlchemy (async) + PostgreSQL
 
 ## Tez ishga tushirish
@@ -26,6 +26,16 @@ uv run python -m scripts.demo_data
 uv run python -m scripts.seed
 ```
 
+> **Muhim:** Lokal Postgres o'rnatilmagan. Testdan/migratsiyadan oldin Docker orqali ishga tushir:
+> ```bash
+> docker run -d --name uzwellness-pg \
+>   -e POSTGRES_USER=sanotour -e POSTGRES_PASSWORD=sanotour \
+>   -e POSTGRES_DB=sanotour -p 5432:5432 postgres:16-alpine
+> # ~5 soniya kutib test DB yaratish:
+> docker exec uzwellness-pg psql -U sanotour -c "CREATE DATABASE sanotour_test;"
+> # Keyingi safar: docker start uzwellness-pg
+> ```
+
 ## Arxitektura
 
 ```
@@ -42,7 +52,7 @@ HTTP → Router (yupqa) → Service (biznes mantiq) → ORM Model → PostgreSQL
 | Rol | Huquq |
 |---|---|
 | `super_admin` | Hamma narsani boshqaradi, markup belgilaydi, sanatoriyani tasdiqlaydi |
-| `admin` | Faqat o'z sanatoriyasi, xonalari, mavjudligi |
+| `admin` | Faqat o'z sanatoriyasi, xonalari, mavjudligi, dasturlar, qo'shimcha o'rinlar |
 | `agent` | Faqat o'z bronlarini ko'radi |
 | `customer` | Qidiradi, bron qiladi, o'zini bekor qiladi |
 
@@ -97,29 +107,91 @@ class XyzList(BaseModel):
 4. `SELECT availability WHERE date IN (...) FOR UPDATE` — barcha kun qatorlarini lock
 5. Har kunda `units_available >= 1` tekshir
 6. `units_available -= 1` har kunda
-7. `final_price` snapshot (markup keyinchalik o'zgarsa ham bron narxi o'zgarmaydi)
-8. `COMMIT`
+7. `calculate_stay_total()` — har kunning narxini yig'ish (Juma/Shanba = weekend narx)
+8. Extra o'rinlarni tekshir va narxga qo'sh
+9. `final_price` snapshot (markup/chegirma keyinchalik o'zgarsa ham bron narxi o'zgarmaydi)
+10. `COMMIT`
 
 ## Narx hisoblash
 
 ```python
-final_price = base_price * (1 + markup_percent / 100)
-# Admin: base_price belgilaydi
-# Super_admin: markup_percent belgilaydi (0–100%)
-# Kurs: USD_UZS exchange_rates jadvalidan
+# Weekday narxi (Yak-Pay): base_price * (1 + markup/100) * (1 - discount/100)
+# Weekend narxi (Jum-Shan): base_price_weekend * (1 + markup/100) * (1 - discount/100)
+# Booking final_price = har kunning narxi yig'indisi (TOTAL, per-night emas)
+
+# app/core/pricing.py:
+calculate_night_price(base_price, base_price_weekend, markup_percent, discount_percent, is_weekend)
+calculate_stay_total(room, dates)   # dates ro'yxatidan weekday/weekend hisoblab yig'adi
+enrich_room(room, rate)             # → final_price, final_price_weekend, UZS/USD konversiyalar
 ```
+
+| Kim | Nima |
+|---|---|
+| Admin | `base_price` (weekday), `base_price_weekend`, `discount_percent` belgilaydi |
+| Super_admin | `markup_percent` belgilaydi (0–100%) |
+| Kurs | `USD_UZS` — `exchange_rates` jadvalidan |
 
 ## Ma'lumotlar bazasi
 
 ```
-users → sanatoriums → room_categories → room_availability
-                                      ↘ bookings → notifications
+users → sanatoriums ──────────────────────────────── sanatorium_images
+              │
+              ├─→ room_categories ──→ room_availability
+              │         └──────────→ bookings ──→ notifications
+              │                           └──→ booking_extra_beds
+              │
+              ├─→ extra_bed_configs          (qo'shimcha o'rin turlari: bolalar, qo'shimcha karavot)
+              │
+              └─→ treatment_programs ←──→ amenities   (program_amenities M2M)
+
 exchange_rates (alohida)
 ```
 
-- `room_availability`: `UNIQUE(room_category_id, date)` — bir kunda bitta qator
-- `bookings.final_price`: snapshot, `room_categories.base_price` ga bog'liq emas
-- FK strategiya: `SET NULL` (user/room o'chsa, bron tarixi saqlanadi)
+### Jadvallar xususiyatlari
+
+| Jadval | Muhim maydonlar |
+|---|---|
+| `room_categories` | `base_price` (weekday), `base_price_weekend` (null=weekday bilan bir xil), `discount_percent` (null=chegirma yo'q), `markup_percent` |
+| `room_availability` | `UNIQUE(room_category_id, date)` — bir kunda bitta qator |
+| `bookings.final_price` | TOTAL stay narxi snapshot (markup/chegirma freeze) |
+| `booking_extra_beds` | `name_snapshot`, `price_per_night_snapshot` — freeze qilingan |
+| `extra_bed_configs` | Sanatoriya adminsi belgilaydi (masalan "Bolalar 4-10 yosh: 500k/kun") |
+| `amenities` | Global katalog (super_admin boshqaradi), `category` field bor |
+| `treatment_programs` | `min_nights` + `max_nights` — qolish muddatiga qarab xizmatlar paketi |
+| FK strategiya | `SET NULL` — user/room o'chsa, bron tarixi saqlanadi |
+
+## Endpoint'lar xaritasi
+
+```
+# Xonalar
+GET/POST  /rooms                      sanatoriumga xona qo'shish/ko'rish
+GET       /rooms/search               mavjud xonalar qidirish
+GET/PATCH /rooms/{id}                 xona ma'lumotlari
+GET/POST  /rooms/{id}/availability    mavjudlik ko'rish/bulk yaratish
+
+# Bronlash
+POST      /bookings                   bron yaratish (extra_beds qo'shish mumkin)
+GET       /bookings                   bronlar ro'yxati (RBAC)
+PATCH     /bookings/{id}/cancel       bekor qilish
+
+# Amenitlar (global katalog — super_admin)
+GET/POST  /amenities
+GET/PATCH/DELETE  /amenities/{id}
+
+# Davolash dasturlari (admin — o'z sanatoriyasi uchun)
+GET/POST  /programs?sanatorium_id=X
+GET/PATCH/DELETE  /programs/{id}
+
+# Qo'shimcha o'rinlar (admin — o'z sanatoriyasi uchun)
+GET/POST  /extra-beds?sanatorium_id=X
+GET/PATCH/DELETE  /extra-beds/{id}
+
+# Sanatoriyalar
+GET/POST  /sanatoriums
+GET/PATCH /sanatoriums/{slug}
+POST      /sanatoriums/{id}/approve   (super_admin)
+POST      /sanatoriums/{id}/images    rasm yuklash
+```
 
 ## Test infratuzilmasi
 
@@ -128,16 +200,6 @@ exchange_rates (alohida)
 customer_headers, admin_headers, super_admin_headers
 db  # har test uchun yangi session, keyin truncate
 client  # ASGI test client, dependency override qilingan
-```
-
-```bash
-# Test DB yaratish (bir marta)
-python -c "
-import asyncio, asyncpg
-async def f():
-    c = await asyncpg.connect('postgresql://sanotour:sanotour@localhost/sanotour')
-    await c.execute('CREATE DATABASE sanotour_test')
-asyncio.run(f())"
 ```
 
 ## Fayl qo'shish tartibi

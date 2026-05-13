@@ -1,5 +1,5 @@
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -46,7 +46,7 @@ def _ensure_can_edit(sanatorium_owner_id: uuid.UUID | None, user: User) -> None:
 
 
 SortField = Literal[
-    "name", "-name", "stars", "-stars", "created_at", "-created_at"
+    "name", "-name", "stars", "-stars", "rating", "-rating", "created_at", "-created_at"
 ]
 
 
@@ -61,6 +61,8 @@ async def list_sanatoriums(
     stars: int | None = Query(default=None, ge=1, le=5),
     q: str | None = Query(default=None, max_length=200),
     sort: SortField = Query(default="-created_at"),
+    amenity_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    treatment_focus: str | None = Query(default=None, max_length=60),
 ) -> SanatoriumList:
     items, total = await sanatoriums.list_for_user(
         user=current_user,
@@ -71,6 +73,8 @@ async def list_sanatoriums(
         stars=stars,
         q=q,
         sort=sort,
+        amenity_ids=amenity_ids,
+        treatment_focus=treatment_focus,
     )
     return SanatoriumList(
         items=[SanatoriumRead.model_validate(s) for s in items],

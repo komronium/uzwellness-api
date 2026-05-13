@@ -72,8 +72,10 @@ class RoomService:
         room = RoomCategory(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(exclude_none=True),
+            room_amenities=payload.room_amenities,
             capacity=payload.capacity,
             base_price=payload.base_price,
+            base_price_weekend=payload.base_price_weekend,
             base_currency=payload.base_currency,
             min_nights=payload.min_nights,
         )

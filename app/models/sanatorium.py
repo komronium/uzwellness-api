@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -19,6 +22,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.amenity import sanatorium_amenities
+
+if TYPE_CHECKING:
+    from app.models.amenity import Amenity
+    from app.models.review import SanatoriumReview
 
 
 class SanatoriumStatus(StrEnum):
@@ -42,8 +50,16 @@ class Sanatorium(Base):
     address: Mapped[str] = mapped_column(String(500), nullable=False)
     lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    phone: Mapped[str | None] = mapped_column(String(30))
 
     stars: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    # High-level medical/treatment categories (e.g. ["cardiovascular", "digestive"])
+    treatment_focuses: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # Denormalized for fast listing queries — updated by ReviewService
+    avg_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     status: Mapped[SanatoriumStatus] = mapped_column(
         SQLEnum(
@@ -79,6 +95,14 @@ class Sanatorium(Base):
         back_populates="sanatorium",
         cascade="all, delete-orphan",
         order_by="SanatoriumImage.order",
+    )
+    amenities: Mapped[list["Amenity"]] = relationship(
+        secondary=sanatorium_amenities, back_populates="sanatoriums"
+    )
+    reviews: Mapped[list["SanatoriumReview"]] = relationship(
+        back_populates="sanatorium",
+        cascade="all, delete-orphan",
+        order_by="SanatoriumReview.created_at.desc()",
     )
 
 

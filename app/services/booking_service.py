@@ -1,16 +1,19 @@
 import uuid
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.pricing import calculate_final_price
+from app.core.pricing import calculate_stay_total
 from app.core.utils import date_range
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus
+from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
 from app.models.room import RoomCategory
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -18,6 +21,7 @@ from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
 
 _CANCELLABLE = {BookingStatus.PENDING, BookingStatus.CONFIRMED}
+_TWO = Decimal("0.01")
 
 
 class BookingService:
@@ -42,7 +46,6 @@ class BookingService:
         nights = (payload.check_out - payload.check_in).days
         all_dates = date_range(payload.check_in, payload.check_out)
 
-        # Lock the room row first to prevent races on markup/price reads
         room = (
             await self.db.execute(
                 select(RoomCategory)
@@ -78,7 +81,6 @@ class BookingService:
                 detail=f"Room capacity is {room.capacity} guest(s)",
             )
 
-        # Lock availability rows for all dates atomically
         avail_rows = list(
             (
                 await self.db.execute(
@@ -108,7 +110,43 @@ class BookingService:
         for row in avail_rows:
             row.units_available -= 1
 
-        final_price = calculate_final_price(room.base_price, room.markup_percent)
+        # Total room price: sum of per-night prices (weekday/weekend + markup + discount)
+        room_total = calculate_stay_total(room, list(all_dates))
+
+        # Validate and price extra beds
+        extra_bed_records: list[BookingExtraBed] = []
+        for item in payload.extra_beds:
+            config = (await self.db.execute(
+                select(ExtraBedConfig).where(ExtraBedConfig.id == item.config_id)
+            )).scalar_one_or_none()
+
+            if config is None or not config.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Extra bed config {item.config_id} not found",
+                )
+            if config.sanatorium_id != room.sanatorium_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Extra bed config does not belong to this sanatorium",
+                )
+            if item.count > config.max_count:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Maximum {config.max_count} of this bed type allowed",
+                )
+
+            bed_total = (config.price_per_night * item.count * nights).quantize(_TWO, ROUND_HALF_UP)
+            extra_bed_records.append(
+                BookingExtraBed(
+                    config_id=config.id,
+                    name_snapshot=config.name,
+                    price_per_night_snapshot=config.price_per_night,
+                    currency=config.currency,
+                    count=item.count,
+                    total_price=bed_total,
+                )
+            )
 
         booking = Booking(
             user_id=user.id,
@@ -116,18 +154,20 @@ class BookingService:
             check_in=payload.check_in,
             check_out=payload.check_out,
             guests=payload.guests,
-            # Auto-confirm for MVP — real flow requires payment success first
             status=BookingStatus.CONFIRMED,
-            final_price=final_price,
+            final_price=room_total,
             currency=room.base_currency,
         )
         self.db.add(booking)
-        await self.db.flush()  # assigns booking.id before notification insert
+        await self.db.flush()
+
+        for eb in extra_bed_records:
+            eb.booking_id = booking.id
+            self.db.add(eb)
 
         self.db.add(Notification(booking_id=booking.id, type="booking_created", channel="email"))
         await self.db.commit()
-        await self.db.refresh(booking)
-        return booking
+        return await self._load_booking(booking.id)  # type: ignore[return-value]
 
     # ── list / get ─────────────────────────────────────────────────────────
 
@@ -145,18 +185,33 @@ class BookingService:
         ).scalar_one()
 
         stmt = (
-            base.order_by(Booking.created_at.desc()).limit(limit).offset(offset)
+            self._visibility_filter(
+                select(Booking).options(selectinload(Booking.extra_beds)), user
+            )
+            .order_by(Booking.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
         rows = (await self.db.execute(stmt)).scalars().all()
         return rows, total
 
     async def get_by_id(self, booking_id: uuid.UUID) -> Booking | None:
-        stmt = select(Booking).where(Booking.id == booking_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self._load_booking(booking_id)
 
     async def get_visible(self, booking_id: uuid.UUID, user: User) -> Booking | None:
         stmt = self._visibility_filter(
-            select(Booking).where(Booking.id == booking_id), user
+            select(Booking)
+            .options(selectinload(Booking.extra_beds))
+            .where(Booking.id == booking_id),
+            user,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def _load_booking(self, booking_id: uuid.UUID) -> Booking | None:
+        stmt = (
+            select(Booking)
+            .options(selectinload(Booking.extra_beds))
+            .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
@@ -169,7 +224,6 @@ class BookingService:
                 .join(Sanatorium, RoomCategory.sanatorium_id == Sanatorium.id)
                 .where(Sanatorium.admin_user_id == user.id)
             )
-        # customer / agent — own bookings only
         return stmt.where(Booking.user_id == user.id)
 
     # ── cancel ─────────────────────────────────────────────────────────────
@@ -197,8 +251,7 @@ class BookingService:
         booking.status = BookingStatus.CANCELLED
         self.db.add(Notification(booking_id=booking.id, type="booking_cancelled", channel="email"))
         await self.db.commit()
-        await self.db.refresh(booking)
-        return booking
+        return await self._load_booking(booking.id)  # type: ignore[return-value]
 
     def _assert_can_cancel(self, booking: Booking, user: User) -> None:
         if booking.status not in _CANCELLABLE:
@@ -209,7 +262,7 @@ class BookingService:
         if user.role == UserRole.SUPER_ADMIN:
             return
         if user.role == UserRole.ADMIN:
-            return  # RBAC already checked at router level via get_visible
+            return
         if booking.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

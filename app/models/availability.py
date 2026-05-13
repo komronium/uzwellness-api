@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, ForeignKey, Integer, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.room import RoomCategory
+
+if TYPE_CHECKING:
+    from app.models.room import RoomCategory
 
 
 class RoomAvailability(Base):

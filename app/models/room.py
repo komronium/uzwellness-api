@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -17,7 +20,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.availability import RoomAvailability
+
+if TYPE_CHECKING:
+    from app.models.availability import RoomAvailability
 
 
 class RoomCategory(Base):
@@ -33,12 +38,16 @@ class RoomCategory(Base):
     )
 
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Display amenities for this room type: ["King bed", "AC", "TV", "Balcony", "Jacuzzi"]
+    room_amenities: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    base_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     markup_percent: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("0")
     )
+    discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     min_nights: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

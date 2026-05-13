@@ -67,3 +67,6 @@ class Booking(Base):
     notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
         back_populates="booking", cascade="all, delete-orphan"
     )
+    extra_beds: Mapped[list["BookingExtraBed"]] = relationship(  # noqa: F821
+        back_populates="booking", cascade="all, delete-orphan"
+    )

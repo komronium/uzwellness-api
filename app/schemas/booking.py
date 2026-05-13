@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.booking import BookingStatus
+from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
 
 
 class BookingCreate(BaseModel):
@@ -12,6 +13,7 @@ class BookingCreate(BaseModel):
     check_in: date
     check_out: date
     guests: int = Field(default=1, ge=1)
+    extra_beds: list[ExtraBedItem] = Field(default_factory=list)
 
 
 class BookingRead(BaseModel):
@@ -27,6 +29,7 @@ class BookingRead(BaseModel):
     status: BookingStatus
     final_price: Decimal
     currency: str
+    extra_beds: list[BookingExtraBedRead] = []
     created_at: datetime
 
 

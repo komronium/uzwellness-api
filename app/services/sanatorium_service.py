@@ -9,12 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.models.amenity import Amenity
 from app.models.sanatorium import Sanatorium, SanatoriumImage, SanatoriumStatus
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
 from app.services.storage import MIME_EXTENSIONS, StorageBackend
 
-_UZBEK_STRIP = str.maketrans({"ʻ": "", "ʼ": "", "'": "", "‘": ""})
+_UZBEK_STRIP = str.maketrans({"ʻ": "", "ʼ": "", "'": "", "'": ""})
 
 
 def slugify(text: str) -> str:
@@ -29,16 +30,12 @@ class SanatoriumService:
         self.db = db
 
     async def get_by_id(self, sanatorium_id: uuid.UUID) -> Sanatorium | None:
-        stmt = (
-            select(Sanatorium)
-            .where(Sanatorium.id == sanatorium_id)
-            .options(selectinload(Sanatorium.images))
-        )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self._reload(sanatorium_id)
 
     async def get_by_slug(self, slug: str) -> Sanatorium | None:
         stmt = select(Sanatorium).where(Sanatorium.slug == slug)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        obj = (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self._reload(obj.id) if obj else None
 
     async def _resolve_slug(
         self, base: str, exclude_id: uuid.UUID | None = None
@@ -46,7 +43,9 @@ class SanatoriumService:
         candidate = base
         suffix = 2
         while True:
-            existing = await self.get_by_slug(candidate)
+            existing = (await self.db.execute(
+                select(Sanatorium).where(Sanatorium.slug == candidate)
+            )).scalar_one_or_none()
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"
@@ -56,6 +55,8 @@ class SanatoriumService:
         base_slug = slugify(payload.slug or payload.name)
         slug = await self._resolve_slug(base_slug)
 
+        amenities = await self._fetch_amenities(payload.amenity_ids)
+
         sanatorium = Sanatorium(
             name=payload.name,
             slug=slug,
@@ -64,9 +65,12 @@ class SanatoriumService:
             address=payload.address,
             lat=payload.lat,
             lng=payload.lng,
+            phone=payload.phone,
             stars=payload.stars,
+            treatment_focuses=payload.treatment_focuses,
             admin_user_id=payload.admin_user_id,
             status=SanatoriumStatus.PENDING,
+            amenities=amenities,
         )
         self.db.add(sanatorium)
         await self.db.commit()
@@ -76,6 +80,8 @@ class SanatoriumService:
         self, sanatorium: Sanatorium, payload: SanatoriumUpdate
     ) -> Sanatorium:
         data = payload.model_dump(exclude_unset=True)
+
+        amenity_ids = data.pop("amenity_ids", None)
 
         if "description" in data and data["description"] is not None:
             data["description"] = {
@@ -91,6 +97,9 @@ class SanatoriumService:
 
         for field, value in data.items():
             setattr(sanatorium, field, value)
+
+        if amenity_ids is not None:
+            sanatorium.amenities = await self._fetch_amenities(amenity_ids)
 
         await self.db.commit()
         return await self._reload(sanatorium.id)
@@ -124,6 +133,8 @@ class SanatoriumService:
         stars: int | None = None,
         q: str | None = None,
         sort: str = "-created_at",
+        amenity_ids: list[uuid.UUID] | None = None,
+        treatment_focus: str | None = None,
     ) -> tuple[Sequence[Sanatorium], int]:
         base = select(Sanatorium)
         base = _apply_visibility(base, user)
@@ -136,12 +147,27 @@ class SanatoriumService:
             base = base.where(Sanatorium.stars == stars)
         if q is not None and q.strip():
             base = base.where(Sanatorium.name.icontains(q.strip(), autoescape=True))
+        if treatment_focus is not None:
+            base = base.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
+        if amenity_ids:
+            # Sanatorium must have ALL requested amenities
+            for aid in amenity_ids:
+                sub = (
+                    select(Sanatorium.id)
+                    .join(Sanatorium.amenities)
+                    .where(Amenity.id == aid)
+                    .scalar_subquery()
+                )
+                base = base.where(Sanatorium.id.in_(sub))
 
         total_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.db.execute(total_stmt)).scalar_one()
 
         stmt = (
-            base.options(selectinload(Sanatorium.images))
+            base.options(
+                selectinload(Sanatorium.images),
+                selectinload(Sanatorium.amenities),
+            )
             .order_by(_SORT_CLAUSES.get(sort, Sanatorium.created_at.desc()))
             .limit(limit)
             .offset(offset)
@@ -186,10 +212,29 @@ class SanatoriumService:
         await self.db.refresh(image)
         return image
 
-    async def _reload(self, sanatorium_id: uuid.UUID) -> Sanatorium:
-        sanatorium = await self.get_by_id(sanatorium_id)
-        assert sanatorium is not None
-        return sanatorium
+    async def _reload(self, sanatorium_id: uuid.UUID) -> Sanatorium | None:
+        stmt = (
+            select(Sanatorium)
+            .where(Sanatorium.id == sanatorium_id)
+            .options(
+                selectinload(Sanatorium.images),
+                selectinload(Sanatorium.amenities),
+            )
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
+        if not amenity_ids:
+            return []
+        rows = (await self.db.execute(
+            select(Amenity).where(Amenity.id.in_(amenity_ids))
+        )).scalars().all()
+        if len(rows) != len(amenity_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more amenity IDs not found",
+            )
+        return list(rows)
 
 
 _SORT_CLAUSES = {
@@ -197,10 +242,11 @@ _SORT_CLAUSES = {
     "-name": Sanatorium.name.desc(),
     "stars": Sanatorium.stars.asc(),
     "-stars": Sanatorium.stars.desc(),
+    "rating": Sanatorium.avg_rating.asc(),
+    "-rating": Sanatorium.avg_rating.desc(),
     "created_at": Sanatorium.created_at.asc(),
     "-created_at": Sanatorium.created_at.desc(),
 }
-
 
 SORT_FIELDS = tuple(_SORT_CLAUSES.keys())
 
