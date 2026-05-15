@@ -2,23 +2,21 @@ import uuid
 from collections.abc import Sequence
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models.amenity import Amenity, TreatmentProgram
-from app.models.sanatorium import Sanatorium
-from app.models.user import User, UserRole
+from app.core.pagination import paginated
+from app.core.permissions import assert_sanatorium_access
+from app.core.utils import strip_translation_fields
+from app.models.amenity import Amenity
+from app.models.program import TreatmentProgram
+from app.models.user import User
 from app.schemas.amenity import TreatmentProgramCreate, TreatmentProgramUpdate
 
 _TRANSLATION_FIELDS = ("name", "description", "instructor_bio", "what_to_bring")
-
-
-def _strip_empty_translations(data: dict) -> None:
-    for field in _TRANSLATION_FIELDS:
-        if field in data and data[field] is not None:
-            data[field] = {k: v for k, v in data[field].items() if v is not None}
+_ACTION = "manage this sanatorium's programs"
 
 
 class ProgramService:
@@ -36,24 +34,20 @@ class ProgramService:
     async def list_for_sanatorium(
         self, sanatorium_id: uuid.UUID, *, limit: int, offset: int
     ) -> tuple[Sequence[TreatmentProgram], int]:
-        base = (
+        stmt = (
             select(TreatmentProgram)
             .options(selectinload(TreatmentProgram.amenities))
             .where(TreatmentProgram.sanatorium_id == sanatorium_id)
+            .order_by(TreatmentProgram.created_at.asc())
         )
-        total = (
-            await self.db.execute(
-                select(func.count()).select_from(base.subquery())
-            )
-        ).scalar_one()
-        stmt = base.order_by(TreatmentProgram.created_at.asc()).limit(limit).offset(offset)
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def create(
         self, payload: TreatmentProgramCreate, user: User
     ) -> TreatmentProgram:
-        await self._assert_can_manage(payload.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, payload.sanatorium_id, user, action=_ACTION
+        )
         self._validate_nights(payload.min_nights, payload.max_nights)
         if (payload.price is None) != (payload.currency is None):
             raise HTTPException(
@@ -89,11 +83,13 @@ class ProgramService:
         payload: TreatmentProgramUpdate,
         user: User,
     ) -> TreatmentProgram:
-        await self._assert_can_manage(program.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, program.sanatorium_id, user, action=_ACTION
+        )
 
         data = payload.model_dump(exclude_unset=True)
         amenity_ids = data.pop("amenity_ids", None)
-        _strip_empty_translations(data)
+        strip_translation_fields(data, _TRANSLATION_FIELDS)
 
         self._validate_nights(
             data.get("min_nights", program.min_nights),
@@ -109,7 +105,9 @@ class ProgramService:
         return await self.get_by_id(program.id)  # type: ignore[return-value]
 
     async def delete(self, program: TreatmentProgram, user: User) -> None:
-        await self._assert_can_manage(program.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, program.sanatorium_id, user, action=_ACTION
+        )
         await self.db.delete(program)
         await self.db.commit()
 
@@ -129,28 +127,6 @@ class ProgramService:
                 detail="One or more amenity IDs not found",
             )
         return list(rows)
-
-    async def _assert_can_manage(
-        self, sanatorium_id: uuid.UUID, user: User
-    ) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
-        if sanatorium is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sanatorium not found",
-            )
-        if user.role == UserRole.SUPER_ADMIN:
-            return sanatorium
-        if user.role == UserRole.ADMIN and sanatorium.admin_user_id == user.id:
-            return sanatorium
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to manage this sanatorium's programs",
-        )
 
     @staticmethod
     def _validate_nights(min_nights: int | None, max_nights: int | None) -> None:

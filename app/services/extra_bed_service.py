@@ -1,15 +1,19 @@
 import uuid
 from collections.abc import Sequence
 
-from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from fastapi import Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.pagination import paginated
+from app.core.permissions import assert_sanatorium_access
+from app.core.utils import strip_none
 from app.models.extra_bed import ExtraBedConfig
-from app.models.sanatorium import Sanatorium
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.extra_bed import ExtraBedConfigCreate, ExtraBedConfigUpdate
+
+_ACTION = "manage this sanatorium's extra beds"
 
 
 class ExtraBedService:
@@ -24,19 +28,14 @@ class ExtraBedService:
         offset: int,
         active_only: bool = False,
     ) -> tuple[Sequence[ExtraBedConfig], int]:
-        base = select(ExtraBedConfig).where(
-            ExtraBedConfig.sanatorium_id == sanatorium_id
+        stmt = (
+            select(ExtraBedConfig)
+            .where(ExtraBedConfig.sanatorium_id == sanatorium_id)
+            .order_by(ExtraBedConfig.created_at.asc())
         )
         if active_only:
-            base = base.where(ExtraBedConfig.is_active.is_(True))
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
-        stmt = (
-            base.order_by(ExtraBedConfig.created_at.asc()).limit(limit).offset(offset)
-        )
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+            stmt = stmt.where(ExtraBedConfig.is_active.is_(True))
+        return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def get_by_id(self, config_id: uuid.UUID) -> ExtraBedConfig | None:
         stmt = select(ExtraBedConfig).where(ExtraBedConfig.id == config_id)
@@ -45,7 +44,9 @@ class ExtraBedService:
     async def create(
         self, payload: ExtraBedConfigCreate, user: User
     ) -> ExtraBedConfig:
-        await self._assert_can_manage(payload.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, payload.sanatorium_id, user, action=_ACTION
+        )
         config = ExtraBedConfig(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(exclude_none=True),
@@ -64,10 +65,12 @@ class ExtraBedService:
         payload: ExtraBedConfigUpdate,
         user: User,
     ) -> ExtraBedConfig:
-        await self._assert_can_manage(config.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, config.sanatorium_id, user, action=_ACTION
+        )
         data = payload.model_dump(exclude_unset=True)
         if "name" in data and data["name"] is not None:
-            data["name"] = {k: v for k, v in data["name"].items() if v is not None}
+            data["name"] = strip_none(data["name"])
         for field, value in data.items():
             setattr(config, field, value)
         await self.db.commit()
@@ -75,31 +78,11 @@ class ExtraBedService:
         return config
 
     async def delete(self, config: ExtraBedConfig, user: User) -> None:
-        await self._assert_can_manage(config.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, config.sanatorium_id, user, action=_ACTION
+        )
         await self.db.delete(config)
         await self.db.commit()
-
-    async def _assert_can_manage(
-        self, sanatorium_id: uuid.UUID, user: User
-    ) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
-        if sanatorium is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sanatorium not found",
-            )
-        if user.role == UserRole.SUPER_ADMIN:
-            return sanatorium
-        if user.role == UserRole.ADMIN and sanatorium.admin_user_id == user.id:
-            return sanatorium
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to manage this sanatorium's extra beds",
-        )
 
 
 def get_extra_bed_service(db: AsyncSession = Depends(get_db)) -> ExtraBedService:

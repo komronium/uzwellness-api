@@ -29,7 +29,7 @@ from app.services.sanatorium_service import (
     SanatoriumService,
     get_sanatorium_service,
 )
-from app.services.storage import StorageBackend, detect_image_mime, get_storage
+from app.core.storage import StorageBackend, detect_image_mime, get_storage
 
 router = APIRouter(prefix="/sanatoriums", tags=["sanatoriums"])
 

@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import api_router
-from app.api.v1.openapi_tags import OPENAPI_TAGS
+from app.api import api_router
+from app.api.openapi_tags import OPENAPI_TAGS
 from app.core.config import settings
 
 
@@ -30,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+app.include_router(api_router, prefix=settings.API_PREFIX)
 
 uploads_dir = Path(settings.UPLOAD_DIR)
 uploads_dir.mkdir(parents=True, exist_ok=True)

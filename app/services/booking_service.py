@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.pricing import calculate_stay_total
 from app.core.utils import date_range
-from app.models.amenity import TreatmentProgram
+from app.models.program import TreatmentProgram
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig

@@ -2,10 +2,12 @@ import uuid
 from collections.abc import Sequence
 
 from fastapi import Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.pagination import paginated
+from app.core.utils import strip_none
 from app.models.amenity import Amenity
 from app.schemas.amenity import AmenityCreate, AmenityUpdate
 
@@ -17,17 +19,8 @@ class AmenityService:
     async def list_all(
         self, *, limit: int, offset: int
     ) -> tuple[Sequence[Amenity], int]:
-        base = select(Amenity)
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
-        stmt = (
-            base.order_by(Amenity.category.asc(), Amenity.created_at.asc())
-            .limit(limit)
-            .offset(offset)
-        )
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        stmt = select(Amenity).order_by(Amenity.category.asc(), Amenity.created_at.asc())
+        return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def get_by_id(self, amenity_id: uuid.UUID) -> Amenity | None:
         stmt = select(Amenity).where(Amenity.id == amenity_id)
@@ -47,7 +40,7 @@ class AmenityService:
     async def update(self, amenity: Amenity, payload: AmenityUpdate) -> Amenity:
         data = payload.model_dump(exclude_unset=True)
         if "name" in data and data["name"] is not None:
-            data["name"] = {k: v for k, v in data["name"].items() if v is not None}
+            data["name"] = strip_none(data["name"])
         for field, value in data.items():
             setattr(amenity, field, value)
         await self.db.commit()

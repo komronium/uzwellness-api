@@ -17,7 +17,7 @@ from app.core.database import Base, get_db  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
-from app.services.storage import get_storage  # noqa: E402
+from app.core.storage import get_storage  # noqa: E402
 from tests.factories import InMemoryStorage  # noqa: E402
 
 assert settings.TEST_DATABASE_URL is not None, (
@@ -102,7 +102,7 @@ async def _make_user(
 
 async def _login(client: AsyncClient, email: str, password: str) -> dict[str, str]:
     resp = await client.post(
-        "/api/v1/auth/login",
+        "/api/auth/login",
         json={"email": email, "password": password},
     )
     assert resp.status_code == 200, resp.text

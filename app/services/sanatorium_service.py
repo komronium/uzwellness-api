@@ -21,7 +21,7 @@ from app.models.sanatorium import (
 )
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
-from app.services.storage import MIME_EXTENSIONS, StorageBackend
+from app.core.storage import MIME_EXTENSIONS, StorageBackend
 
 _UZBEK_STRIP = str.maketrans({"ʻ": "", "ʼ": "", "’": "", "'": ""})
 

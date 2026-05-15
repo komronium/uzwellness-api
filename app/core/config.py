@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     PROJECT_NAME: str = "UzWellness API"
-    API_V1_PREFIX: str = "/api/v1"
+    API_PREFIX: str = "/api"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
     DEBUG: bool = True
 

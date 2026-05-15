@@ -2,7 +2,8 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.models.room import ExchangeRate, Room, RoomPricePeriod
+from app.models.exchange_rate import ExchangeRate
+from app.models.room import Room, RoomPricePeriod
 
 _TWO = Decimal("0.01")
 _WEEKEND_DAYS = frozenset({4, 5})  # Fri, Sat

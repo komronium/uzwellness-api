@@ -26,7 +26,7 @@ async def _setup_room_with_availability(
     )
     room = await make_room(db, sanatorium=san, capacity=capacity, min_nights=1)
     await client.post(
-        f"/api/v1/rooms/{room.id}/availability",
+        f"/api/rooms/{room.id}/availability",
         json={"date_from": _CHECK_IN, "date_to": _CHECK_OUT, "units_total": units},
         headers=admin_headers,
     )
@@ -49,7 +49,7 @@ class TestEndToEnd:
 
         # 1. Register new customer
         reg = await client.post(
-            "/api/v1/auth/register",
+            "/api/auth/register",
             json={
                 "email": "traveller@test.com",
                 "password": "Travel123!",
@@ -58,21 +58,21 @@ class TestEndToEnd:
         )
         assert reg.status_code == 201
         login = await client.post(
-            "/api/v1/auth/login",
+            "/api/auth/login",
             json={"email": "traveller@test.com", "password": "Travel123!"},
         )
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
         # 2. Search — should find the room
         search = await client.get(
-            f"/api/v1/rooms/search?check_in={_CHECK_IN}&check_out={_CHECK_OUT}&guests=2"
+            f"/api/rooms/search?check_in={_CHECK_IN}&check_out={_CHECK_OUT}&guests=2"
         )
         assert search.status_code == 200
         assert any(r["id"] == str(room.id) for r in search.json())
 
         # 3. Book
         booking_resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -88,19 +88,19 @@ class TestEndToEnd:
         assert len(booking["code"]) == 8
 
         # 4. Customer sees it in their list
-        lst = await client.get("/api/v1/bookings", headers=headers)
+        lst = await client.get("/api/bookings", headers=headers)
         assert any(b["id"] == booking["id"] for b in lst.json()["items"])
 
         # 5. Cancel
         cancel = await client.patch(
-            f"/api/v1/bookings/{booking['id']}/cancel", headers=headers
+            f"/api/bookings/{booking['id']}/cancel", headers=headers
         )
         assert cancel.status_code == 200
         assert cancel.json()["status"] == "cancelled"
 
         # 6. Availability restored → can book again
         rebook = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -123,7 +123,7 @@ class TestBookingValidation:
             db, client, admin_user, admin_headers
         )
         resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": "2020-01-01",
@@ -142,13 +142,13 @@ class TestBookingValidation:
         )
         room = await make_room(db, sanatorium=san, min_nights=3)
         await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={"date_from": _CHECK_IN, "date_to": _CHECK_OUT, "units_total": 5},
             headers=admin_headers,
         )
         # Only 1 night — below min_nights=3
         resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -166,7 +166,7 @@ class TestBookingValidation:
             db, client, admin_user, admin_headers, capacity=2
         )
         resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -186,7 +186,7 @@ class TestBookingValidation:
         room = await make_room(db, sanatorium=san)
         # No availability rows created
         resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -202,7 +202,7 @@ class TestBookingValidation:
             db, client, admin_user, admin_headers
         )
         resp = await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -224,7 +224,7 @@ class TestBookingRBAC:
         )
         other = await make_user(db, email="other2@test.com", role=UserRole.CUSTOMER)
         login = await client.post(
-            "/api/v1/auth/login",
+            "/api/auth/login",
             json={"email": other.email, "password": "passw0rd"},
         )
         other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -235,10 +235,10 @@ class TestBookingRBAC:
             "check_out": _CHECK_OUT,
             "guests": 1,
         }
-        await client.post("/api/v1/bookings", json=payload, headers=customer_headers)
-        await client.post("/api/v1/bookings", json=payload, headers=other_headers)
+        await client.post("/api/bookings", json=payload, headers=customer_headers)
+        await client.post("/api/bookings", json=payload, headers=other_headers)
 
-        resp = await client.get("/api/v1/bookings", headers=customer_headers)
+        resp = await client.get("/api/bookings", headers=customer_headers)
         assert resp.json()["total"] == 1
 
     async def test_admin_sees_own_sanatorium_bookings(
@@ -249,10 +249,10 @@ class TestBookingRBAC:
         )
         other_admin = await make_user(db, email="admin2@test.com", role=UserRole.ADMIN)
         other_san = await make_sanatorium(db, name="Other Sanatorium", admin_user_id=other_admin.id)
-        other_room = await make_room(db, sanatorium=other_san)
+        await make_room(db, sanatorium=other_san)
 
         await client.post(
-            "/api/v1/bookings",
+            "/api/bookings",
             json={
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
@@ -261,7 +261,7 @@ class TestBookingRBAC:
             },
             headers=customer_headers,
         )
-        resp = await client.get("/api/v1/bookings", headers=admin_headers)
+        resp = await client.get("/api/bookings", headers=admin_headers)
         assert resp.json()["total"] == 1
         assert resp.json()["items"][0]["room_id"] == str(room.id)
 
@@ -277,10 +277,10 @@ class TestBookingRBAC:
             "check_out": _CHECK_OUT,
             "guests": 1,
         }
-        await client.post("/api/v1/bookings", json=payload, headers=customer_headers)
-        await client.post("/api/v1/bookings", json=payload, headers=customer_headers)
+        await client.post("/api/bookings", json=payload, headers=customer_headers)
+        await client.post("/api/bookings", json=payload, headers=customer_headers)
 
-        resp = await client.get("/api/v1/bookings", headers=super_admin_headers)
+        resp = await client.get("/api/bookings", headers=super_admin_headers)
         assert resp.json()["total"] >= 2
 
 
@@ -295,7 +295,7 @@ class TestCancellation:
         )
         b = (
             await client.post(
-                "/api/v1/bookings",
+                "/api/bookings",
                 json={
                     "room_id": str(room.id),
                     "check_in": _CHECK_IN,
@@ -306,7 +306,7 @@ class TestCancellation:
             )
         ).json()
         cancel = await client.patch(
-            f"/api/v1/bookings/{b['id']}/cancel", headers=customer_headers
+            f"/api/bookings/{b['id']}/cancel", headers=customer_headers
         )
         assert cancel.status_code == 200
         assert cancel.json()["status"] == "cancelled"
@@ -319,7 +319,7 @@ class TestCancellation:
         )
         b = (
             await client.post(
-                "/api/v1/bookings",
+                "/api/bookings",
                 json={
                     "room_id": str(room.id),
                     "check_in": _CHECK_IN,
@@ -329,9 +329,9 @@ class TestCancellation:
                 headers=customer_headers,
             )
         ).json()
-        await client.patch(f"/api/v1/bookings/{b['id']}/cancel", headers=customer_headers)
+        await client.patch(f"/api/bookings/{b['id']}/cancel", headers=customer_headers)
         second = await client.patch(
-            f"/api/v1/bookings/{b['id']}/cancel", headers=customer_headers
+            f"/api/bookings/{b['id']}/cancel", headers=customer_headers
         )
         assert second.status_code == 409
 
@@ -343,13 +343,13 @@ class TestCancellation:
         )
         other = await make_user(db, email="other3@test.com", role=UserRole.CUSTOMER)
         login = await client.post(
-            "/api/v1/auth/login", json={"email": other.email, "password": "passw0rd"}
+            "/api/auth/login", json={"email": other.email, "password": "passw0rd"}
         )
         other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
         b = (
             await client.post(
-                "/api/v1/bookings",
+                "/api/bookings",
                 json={
                     "room_id": str(room.id),
                     "check_in": _CHECK_IN,
@@ -360,7 +360,7 @@ class TestCancellation:
             )
         ).json()
         resp = await client.patch(
-            f"/api/v1/bookings/{b['id']}/cancel", headers=other_headers
+            f"/api/bookings/{b['id']}/cancel", headers=other_headers
         )
         assert resp.status_code == 404  # not visible to other customer
 
@@ -372,7 +372,7 @@ class TestCancellation:
         )
         b = (
             await client.post(
-                "/api/v1/bookings",
+                "/api/bookings",
                 json={
                     "room_id": str(room.id),
                     "check_in": _CHECK_IN,
@@ -383,7 +383,7 @@ class TestCancellation:
             )
         ).json()
         cancel = await client.patch(
-            f"/api/v1/bookings/{b['id']}/cancel", headers=super_admin_headers
+            f"/api/bookings/{b['id']}/cancel", headers=super_admin_headers
         )
         assert cancel.status_code == 200
         assert cancel.json()["status"] == "cancelled"
@@ -396,7 +396,7 @@ class TestCancellation:
         )
         b = (
             await client.post(
-                "/api/v1/bookings",
+                "/api/bookings",
                 json={
                     "room_id": str(room.id),
                     "check_in": _CHECK_IN,
@@ -408,15 +408,15 @@ class TestCancellation:
         ).json()
         # After booking, availability should be 0
         avail = await client.get(
-            f"/api/v1/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
+            f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
         )
         assert all(r["units_available"] == 0 for r in avail.json())
 
-        await client.patch(f"/api/v1/bookings/{b['id']}/cancel", headers=customer_headers)
+        await client.patch(f"/api/bookings/{b['id']}/cancel", headers=customer_headers)
 
         # After cancel, availability restored to 1
         avail2 = await client.get(
-            f"/api/v1/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
+            f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
         )
         assert all(r["units_available"] == 1 for r in avail2.json())
 
@@ -438,8 +438,8 @@ class TestConcurrency:
         }
 
         r1, r2 = await asyncio.gather(
-            client.post("/api/v1/bookings", json=payload, headers=customer_headers),
-            client.post("/api/v1/bookings", json=payload, headers=customer_headers),
+            client.post("/api/bookings", json=payload, headers=customer_headers),
+            client.post("/api/bookings", json=payload, headers=customer_headers),
         )
 
         codes = sorted([r1.status_code, r2.status_code])

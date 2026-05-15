@@ -4,14 +4,14 @@ from httpx import AsyncClient
 
 
 async def test_me_without_token_returns_401(client: AsyncClient) -> None:
-    resp = await client.get("/api/v1/users/me")
+    resp = await client.get("/api/users/me")
     assert resp.status_code == 401
 
 
 async def test_me_returns_current_user(
     client: AsyncClient, customer_user, customer_headers
 ) -> None:
-    resp = await client.get("/api/v1/users/me", headers=customer_headers)
+    resp = await client.get("/api/users/me", headers=customer_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["email"] == customer_user.email
@@ -21,7 +21,7 @@ async def test_me_returns_current_user(
 
 async def test_me_with_garbage_token_returns_401(client: AsyncClient) -> None:
     resp = await client.get(
-        "/api/v1/users/me", headers={"Authorization": "Bearer not-a-token"}
+        "/api/users/me", headers={"Authorization": "Bearer not-a-token"}
     )
     assert resp.status_code == 401
 
@@ -29,14 +29,14 @@ async def test_me_with_garbage_token_returns_401(client: AsyncClient) -> None:
 async def test_list_users_as_customer_returns_403(
     client: AsyncClient, customer_headers
 ) -> None:
-    resp = await client.get("/api/v1/users", headers=customer_headers)
+    resp = await client.get("/api/users", headers=customer_headers)
     assert resp.status_code == 403
 
 
 async def test_list_users_as_admin_returns_403(
     client: AsyncClient, admin_headers
 ) -> None:
-    resp = await client.get("/api/v1/users", headers=admin_headers)
+    resp = await client.get("/api/users", headers=admin_headers)
     assert resp.status_code == 403
 
 
@@ -47,7 +47,7 @@ async def test_list_users_as_super_admin_returns_all(
     admin_user,
     super_admin_user,
 ) -> None:
-    resp = await client.get("/api/v1/users", headers=super_admin_headers)
+    resp = await client.get("/api/users", headers=super_admin_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 3
@@ -64,7 +64,7 @@ async def test_list_users_filter_by_role(
     super_admin_user,
 ) -> None:
     resp = await client.get(
-        "/api/v1/users?role=customer", headers=super_admin_headers
+        "/api/users?role=customer", headers=super_admin_headers
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -80,7 +80,7 @@ async def test_list_users_pagination(
     super_admin_user,
 ) -> None:
     resp = await client.get(
-        "/api/v1/users?limit=2&offset=0", headers=super_admin_headers
+        "/api/users?limit=2&offset=0", headers=super_admin_headers
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -94,7 +94,7 @@ async def test_get_user_by_id_as_super_admin(
     client: AsyncClient, super_admin_headers, customer_user
 ) -> None:
     resp = await client.get(
-        f"/api/v1/users/{customer_user.id}", headers=super_admin_headers
+        f"/api/users/{customer_user.id}", headers=super_admin_headers
     )
     assert resp.status_code == 200
     assert resp.json()["email"] == customer_user.email
@@ -104,7 +104,7 @@ async def test_get_user_by_id_not_found(
     client: AsyncClient, super_admin_headers
 ) -> None:
     fake_id = uuid.uuid4()
-    resp = await client.get(f"/api/v1/users/{fake_id}", headers=super_admin_headers)
+    resp = await client.get(f"/api/users/{fake_id}", headers=super_admin_headers)
     assert resp.status_code == 404
 
 
@@ -112,7 +112,7 @@ async def test_get_user_by_id_as_customer_returns_403(
     client: AsyncClient, customer_headers, admin_user
 ) -> None:
     resp = await client.get(
-        f"/api/v1/users/{admin_user.id}", headers=customer_headers
+        f"/api/users/{admin_user.id}", headers=customer_headers
     )
     assert resp.status_code == 403
 
@@ -121,7 +121,7 @@ async def test_patch_user_role_as_super_admin(
     client: AsyncClient, super_admin_headers, customer_user
 ) -> None:
     resp = await client.patch(
-        f"/api/v1/users/{customer_user.id}",
+        f"/api/users/{customer_user.id}",
         headers=super_admin_headers,
         json={"role": "agent"},
     )
@@ -133,7 +133,7 @@ async def test_patch_user_deactivate(
     client: AsyncClient, super_admin_headers, customer_user
 ) -> None:
     resp = await client.patch(
-        f"/api/v1/users/{customer_user.id}",
+        f"/api/users/{customer_user.id}",
         headers=super_admin_headers,
         json={"is_active": False},
     )
@@ -145,12 +145,12 @@ async def test_deactivated_user_cannot_authenticate(
     client: AsyncClient, super_admin_headers, customer_user
 ) -> None:
     await client.patch(
-        f"/api/v1/users/{customer_user.id}",
+        f"/api/users/{customer_user.id}",
         headers=super_admin_headers,
         json={"is_active": False},
     )
     resp = await client.post(
-        "/api/v1/auth/login",
+        "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
     assert resp.status_code == 401
@@ -160,7 +160,7 @@ async def test_patch_user_as_customer_returns_403(
     client: AsyncClient, customer_headers, admin_user
 ) -> None:
     resp = await client.patch(
-        f"/api/v1/users/{admin_user.id}",
+        f"/api/users/{admin_user.id}",
         headers=customer_headers,
         json={"role": "super_admin"},
     )
@@ -172,7 +172,7 @@ async def test_patch_unknown_user_returns_404(
 ) -> None:
     fake_id = uuid.uuid4()
     resp = await client.patch(
-        f"/api/v1/users/{fake_id}",
+        f"/api/users/{fake_id}",
         headers=super_admin_headers,
         json={"is_active": False},
     )

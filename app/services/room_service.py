@@ -7,8 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.pagination import paginated
+from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
-from app.core.utils import date_range
+from app.core.utils import date_range, strip_none
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -38,29 +40,24 @@ class RoomService:
         offset: int,
         active_only: bool = True,
     ) -> tuple[Sequence[Room], int]:
-        base = (
+        stmt = (
             select(Room)
             .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
             .where(Room.sanatorium_id == sanatorium_id)
+            .order_by(Room.created_at.asc())
         )
         if active_only:
-            base = base.where(Room.is_active.is_(True))
-
+            stmt = stmt.where(Room.is_active.is_(True))
         if user is None or user.role in (UserRole.CUSTOMER, UserRole.AGENT):
-            base = base.where(Sanatorium.status == SanatoriumStatus.APPROVED)
+            stmt = stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
         elif user.role == UserRole.ADMIN:
-            base = base.where(Sanatorium.admin_user_id == user.id)
-
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
-
-        stmt = base.order_by(Room.created_at.asc()).limit(limit).offset(offset)
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+            stmt = stmt.where(Sanatorium.admin_user_id == user.id)
+        return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def create(self, payload: RoomCreate, user: User) -> Room:
-        await self._assert_can_manage(payload.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, payload.sanatorium_id, user, action="manage this sanatorium's rooms"
+        )
         room = Room(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(exclude_none=True),
@@ -77,7 +74,9 @@ class RoomService:
         return room
 
     async def update(self, room: Room, payload: RoomUpdate, user: User) -> Room:
-        await self._assert_can_manage(room.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, room.sanatorium_id, user, action="manage this sanatorium's rooms"
+        )
         data = payload.model_dump(exclude_unset=True)
 
         if "markup_percent" in data and user.role != UserRole.SUPER_ADMIN:
@@ -86,7 +85,7 @@ class RoomService:
                 detail="Only super_admin can change markup_percent",
             )
         if "name" in data and data["name"] is not None:
-            data["name"] = {k: v for k, v in data["name"].items() if v is not None}
+            data["name"] = strip_none(data["name"])
 
         for field, value in data.items():
             setattr(room, field, value)
@@ -95,7 +94,9 @@ class RoomService:
         return room
 
     async def delete(self, room: Room, user: User) -> None:
-        await self._assert_can_manage(room.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, room.sanatorium_id, user, action="manage this sanatorium's rooms"
+        )
         await self.db.delete(room)
         await self.db.commit()
 
@@ -107,7 +108,9 @@ class RoomService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="date_from must be before date_to",
             )
-        await self._assert_can_manage(room.sanatorium_id, user)
+        await assert_sanatorium_access(
+            self.db, room.sanatorium_id, user, action="manage this room's availability"
+        )
 
         all_dates = date_range(payload.date_from, payload.date_to)
         existing = {
@@ -218,28 +221,6 @@ class RoomService:
         ).scalars().all()
         rate = await self.rates.get_usd_uzs()
         return [(room, enrich_room(room, rate, is_b2b=is_b2b)) for room in rows]
-
-    async def _assert_can_manage(
-        self, sanatorium_id: uuid.UUID, user: User
-    ) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
-        if sanatorium is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sanatorium not found",
-            )
-        if user.role == UserRole.SUPER_ADMIN:
-            return sanatorium
-        if user.role == UserRole.ADMIN and sanatorium.admin_user_id == user.id:
-            return sanatorium
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to manage this sanatorium's rooms",
-        )
 
 
 def get_room_service(

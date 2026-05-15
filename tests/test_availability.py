@@ -66,7 +66,7 @@ class TestRoomCRUD:
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
         resp = await client.post(
-            "/api/v1/rooms",
+            "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"en": "Deluxe"},
@@ -91,7 +91,7 @@ class TestRoomCRUD:
             db, status=SanatoriumStatus.APPROVED, admin_user_id=other_admin.id
         )
         resp = await client.post(
-            "/api/v1/rooms",
+            "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"en": "Deluxe"},
@@ -108,7 +108,7 @@ class TestRoomCRUD:
     ):
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
         resp = await client.post(
-            "/api/v1/rooms",
+            "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"en": "Deluxe"},
@@ -125,7 +125,7 @@ class TestRoomCRUD:
     ):
         san = await make_sanatorium(db, status=SanatoriumStatus.APPROVED)
         await make_room(db, sanatorium=san)
-        resp = await client.get(f"/api/v1/rooms?sanatorium_id={san.id}")
+        resp = await client.get(f"/api/rooms?sanatorium_id={san.id}")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 1
@@ -140,7 +140,7 @@ class TestRoomCRUD:
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
         room = await make_room(db, sanatorium=san, base_price="100.00")
         resp = await client.patch(
-            f"/api/v1/rooms/{room.id}",
+            f"/api/rooms/{room.id}",
             json={"markup_percent": "20.00"},
             headers=super_admin_headers,
         )
@@ -158,7 +158,7 @@ class TestRoomCRUD:
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
         room = await make_room(db, sanatorium=san)
         resp = await client.patch(
-            f"/api/v1/rooms/{room.id}",
+            f"/api/rooms/{room.id}",
             json={"markup_percent": "15.00"},
             headers=admin_headers,
         )
@@ -180,7 +180,7 @@ class TestAvailability:
         )
         room = await make_room(db, sanatorium=san)
         resp = await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={
                 "date_from": "2026-06-01",
                 "date_to": "2026-06-08",
@@ -203,12 +203,12 @@ class TestAvailability:
         )
         room = await make_room(db, sanatorium=san)
         await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={"date_from": "2026-07-01", "date_to": "2026-07-04", "units_total": 3},
             headers=admin_headers,
         )
         resp = await client.get(
-            f"/api/v1/rooms/{room.id}/availability?from=2026-07-01&to=2026-07-04"
+            f"/api/rooms/{room.id}/availability?from=2026-07-01&to=2026-07-04"
         )
         assert resp.status_code == 200
         dates = [r["date"] for r in resp.json()]
@@ -224,18 +224,18 @@ class TestAvailability:
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
         room = await make_room(db, sanatorium=san)
         await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={"date_from": "2026-08-01", "date_to": "2026-08-03", "units_total": 10},
             headers=admin_headers,
         )
         await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={"date_from": "2026-08-01", "date_to": "2026-08-03", "units_total": 1},
             headers=admin_headers,
         )
         # units should still be 10, not overwritten
         resp = await client.get(
-            f"/api/v1/rooms/{room.id}/availability?from=2026-08-01&to=2026-08-03"
+            f"/api/rooms/{room.id}/availability?from=2026-08-01&to=2026-08-03"
         )
         for row in resp.json():
             assert row["units_total"] == 10
@@ -251,7 +251,7 @@ class TestAvailability:
         room = await make_room(db, sanatorium=san)
         for units in (10, 2):
             await client.post(
-                f"/api/v1/rooms/{room.id}/availability",
+                f"/api/rooms/{room.id}/availability",
                 json={
                     "date_from": "2026-09-01",
                     "date_to": "2026-09-03",
@@ -261,7 +261,7 @@ class TestAvailability:
                 headers=admin_headers,
             )
         resp = await client.get(
-            f"/api/v1/rooms/{room.id}/availability?from=2026-09-01&to=2026-09-03"
+            f"/api/rooms/{room.id}/availability?from=2026-09-01&to=2026-09-03"
         )
         for row in resp.json():
             assert row["units_total"] == 2
@@ -276,7 +276,7 @@ class TestRoomSearch:
         )
         room = await make_room(db, sanatorium=san, capacity=2, min_nights=1)
         await client.post(
-            f"/api/v1/rooms/{room.id}/availability",
+            f"/api/rooms/{room.id}/availability",
             json={"date_from": "2026-10-01", "date_to": "2026-10-08", "units_total": 3},
             headers=admin_headers,
         )
@@ -287,7 +287,7 @@ class TestRoomSearch:
     ):
         san, room = await self._setup(db, admin_user, client, admin_headers)
         resp = await client.get(
-            "/api/v1/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
+            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
         )
         assert resp.status_code == 200
         ids = [r["id"] for r in resp.json()]
@@ -299,7 +299,7 @@ class TestRoomSearch:
         san, room = await self._setup(db, admin_user, client, admin_headers)
         # availability ends Oct 7; request through Oct 10 — not fully covered
         resp = await client.get(
-            "/api/v1/rooms/search?check_in=2026-10-06&check_out=2026-10-10&guests=2"
+            "/api/rooms/search?check_in=2026-10-06&check_out=2026-10-10&guests=2"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
@@ -309,14 +309,14 @@ class TestRoomSearch:
     ):
         san, room = await self._setup(db, admin_user, client, admin_headers)
         resp = await client.get(
-            "/api/v1/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=3"
+            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=3"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
 
     async def test_check_out_must_be_after_check_in(self, client, db):
         resp = await client.get(
-            "/api/v1/rooms/search?check_in=2026-10-05&check_out=2026-10-02&guests=1"
+            "/api/rooms/search?check_in=2026-10-05&check_out=2026-10-02&guests=1"
         )
         assert resp.status_code == 400
 
@@ -328,7 +328,7 @@ class TestExchangeRates:
         self, client, super_admin_headers
     ):
         resp = await client.patch(
-            "/api/v1/exchange-rates",
+            "/api/exchange-rates",
             json={
                 "pair": "USD_UZS",
                 "rate": "12700.000000",
@@ -342,24 +342,24 @@ class TestExchangeRates:
     async def test_upsert_updates_existing(self, client, super_admin_headers):
         for rate in ("12000.000000", "12700.000000"):
             resp = await client.patch(
-                "/api/v1/exchange-rates",
+                "/api/exchange-rates",
                 json={"pair": "USD_UZS", "rate": rate, "valid_from": "2026-05-01T00:00:00Z"},
                 headers=super_admin_headers,
             )
             assert resp.status_code == 200
-        rates = await client.get("/api/v1/exchange-rates")
+        rates = await client.get("/api/exchange-rates")
         uzs_entries = [r for r in rates.json() if r["pair"] == "USD_UZS"]
         assert len(uzs_entries) == 1
         assert uzs_entries[0]["rate"] == "12700.000000"
 
     async def test_public_can_list(self, client):
-        resp = await client.get("/api/v1/exchange-rates")
+        resp = await client.get("/api/exchange-rates")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
     async def test_customer_cannot_upsert(self, client, customer_headers):
         resp = await client.patch(
-            "/api/v1/exchange-rates",
+            "/api/exchange-rates",
             json={"pair": "USD_UZS", "rate": "12000.000000", "valid_from": "2026-05-01T00:00:00Z"},
             headers=customer_headers,
         )
@@ -369,13 +369,13 @@ class TestExchangeRates:
         self, client, db, admin_user, admin_headers, super_admin_headers
     ):
         await client.patch(
-            "/api/v1/exchange-rates",
+            "/api/exchange-rates",
             json={"pair": "USD_UZS", "rate": "12500.000000", "valid_from": "2026-05-01T00:00:00Z"},
             headers=super_admin_headers,
         )
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
         room = await make_room(db, sanatorium=san, base_price="1.00", base_currency="USD")
-        resp = await client.get(f"/api/v1/rooms/{room.id}")
+        resp = await client.get(f"/api/rooms/{room.id}")
         assert resp.status_code == 200
         body = resp.json()
         assert body["final_price_uzs"] == "12500.00"

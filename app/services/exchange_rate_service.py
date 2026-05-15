@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.room import ExchangeRate
+from app.models.exchange_rate import ExchangeRate
 from app.schemas.exchange_rate import ExchangeRateUpsert
 
 USD_UZS = "USD_UZS"

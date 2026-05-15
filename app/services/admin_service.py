@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.booking import Booking, BookingStatus
-from app.models.room import ExchangeRate, Room
+from app.models.exchange_rate import ExchangeRate
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 
