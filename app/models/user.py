@@ -39,7 +39,12 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sanatorium_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
-        ForeignKey("sanatoriums.id", ondelete="SET NULL"),
+        ForeignKey(
+            "sanatoriums.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_users_sanatorium_id",
+        ),
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
