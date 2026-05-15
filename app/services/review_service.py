@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.review import SanatoriumReview
-from app.models.sanatorium import Sanatorium
+from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 from app.schemas.review import ReviewCreate, ReviewUpdate
 
-_TWO = Decimal("0.01")
+_CENTS = Decimal("0.01")
 
 
 class ReviewService:
@@ -36,35 +36,33 @@ class ReviewService:
         elif visible_only:
             base = base.where(SanatoriumReview.is_visible.is_(True))
 
-        total = (await self.db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
-        rows = (await self.db.execute(
-            base.order_by(SanatoriumReview.created_at.desc()).limit(limit).offset(offset)
-        )).scalars().all()
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        stmt = (
+            base.order_by(SanatoriumReview.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self.db.execute(stmt)).scalars().all()
         return rows, total
 
-    async def list_for_sanatorium(
-        self,
-        sanatorium_id: uuid.UUID,
-        *,
-        limit: int,
-        offset: int,
-        visible_only: bool = True,
-    ) -> tuple[Sequence[SanatoriumReview], int]:
-        return await self.list_reviews(
-            limit=limit,
-            offset=offset,
-            sanatorium_id=sanatorium_id,
-            visible_only=visible_only,
-        )
+    async def get_by_id(self, review_id: uuid.UUID) -> SanatoriumReview | None:
+        stmt = select(SanatoriumReview).where(SanatoriumReview.id == review_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def create(
         self, sanatorium_id: uuid.UUID, payload: ReviewCreate, user: User
     ) -> SanatoriumReview:
-        sanatorium = (await self.db.execute(
-            select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-        )).scalar_one_or_none()
-        if sanatorium is None or sanatorium.status.value != "approved":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found")
+        sanatorium = (
+            await self.db.execute(
+                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
+            )
+        ).scalar_one_or_none()
+        if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
+            )
 
         review = SanatoriumReview(
             sanatorium_id=sanatorium_id,
@@ -76,71 +74,82 @@ class ReviewService:
         )
         self.db.add(review)
         await self.db.flush()
-
-        await self._update_sanatorium_rating(sanatorium)
+        await self._recompute_rating(sanatorium)
         await self.db.commit()
         await self.db.refresh(review)
         return review
 
-    async def get_by_id(self, review_id: uuid.UUID) -> SanatoriumReview | None:
-        return (await self.db.execute(
-            select(SanatoriumReview).where(SanatoriumReview.id == review_id)
-        )).scalar_one_or_none()
-
     async def update_visibility(
-        self, review: SanatoriumReview, payload: ReviewUpdate, user: User
+        self,
+        review: SanatoriumReview,
+        payload: ReviewUpdate,
+        user: User,
     ) -> SanatoriumReview:
-        if user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-        if user.role == UserRole.ADMIN:
-            sanatorium = (await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == review.sanatorium_id)
-            )).scalar_one_or_none()
-            if sanatorium is None or sanatorium.admin_user_id != user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your sanatorium")
-
+        await self._assert_can_moderate(review, user)
         review.is_visible = payload.is_visible
         await self.db.commit()
         await self.db.refresh(review)
         return review
 
     async def delete(self, review: SanatoriumReview, user: User) -> None:
-        if user.role == UserRole.SUPER_ADMIN:
-            pass
-        elif user.role == UserRole.ADMIN:
-            sanatorium = (await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == review.sanatorium_id)
-            )).scalar_one_or_none()
-            if sanatorium is None or sanatorium.admin_user_id != user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your sanatorium")
-        elif review.user_id != user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your review")
-
+        await self._assert_can_delete(review, user)
         sanatorium_id = review.sanatorium_id
         await self.db.delete(review)
         await self.db.flush()
-
-        sanatorium = (await self.db.execute(
-            select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-        )).scalar_one_or_none()
-        if sanatorium:
-            await self._update_sanatorium_rating(sanatorium)
+        sanatorium = (
+            await self.db.execute(
+                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
+            )
+        ).scalar_one_or_none()
+        if sanatorium is not None:
+            await self._recompute_rating(sanatorium)
         await self.db.commit()
 
-    async def _update_sanatorium_rating(self, sanatorium: Sanatorium) -> None:
-        row = (await self.db.execute(
-            select(
-                func.count(SanatoriumReview.id),
-                func.avg(SanatoriumReview.rating),
-            ).where(
-                SanatoriumReview.sanatorium_id == sanatorium.id,
-                SanatoriumReview.is_visible.is_(True),
+    async def _assert_can_moderate(
+        self, review: SanatoriumReview, user: User
+    ) -> None:
+        if user.role == UserRole.SUPER_ADMIN:
+            return
+        if user.role == UserRole.ADMIN:
+            sanatorium = (
+                await self.db.execute(
+                    select(Sanatorium).where(Sanatorium.id == review.sanatorium_id)
+                )
+            ).scalar_one_or_none()
+            if sanatorium is not None and sanatorium.admin_user_id == user.id:
+                return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to moderate this review",
+        )
+
+    async def _assert_can_delete(
+        self, review: SanatoriumReview, user: User
+    ) -> None:
+        if user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
+            await self._assert_can_moderate(review, user)
+            return
+        if review.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not allowed to delete this review",
             )
-        )).one()
-        count, avg = row
+
+    async def _recompute_rating(self, sanatorium: Sanatorium) -> None:
+        count, avg = (
+            await self.db.execute(
+                select(
+                    func.count(SanatoriumReview.id),
+                    func.avg(SanatoriumReview.rating),
+                ).where(
+                    SanatoriumReview.sanatorium_id == sanatorium.id,
+                    SanatoriumReview.is_visible.is_(True),
+                )
+            )
+        ).one()
         sanatorium.review_count = count or 0
         sanatorium.avg_rating = (
-            Decimal(str(avg)).quantize(_TWO, ROUND_HALF_UP) if avg else None
+            Decimal(str(avg)).quantize(_CENTS, ROUND_HALF_UP) if avg else None
         )
 
 

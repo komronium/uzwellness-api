@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import Translations
 
 
-class RoomCategoryCreate(BaseModel):
+class RoomCreate(BaseModel):
     sanatorium_id: uuid.UUID
     name: Translations = Field(default_factory=Translations)
     room_amenities: list[str] = Field(default_factory=list)
@@ -18,7 +18,7 @@ class RoomCategoryCreate(BaseModel):
     min_nights: int = Field(default=1, ge=1)
 
 
-class RoomCategoryUpdate(BaseModel):
+class RoomUpdate(BaseModel):
     name: Translations | None = None
     room_amenities: list[str] | None = None
     capacity: int | None = Field(default=None, ge=1)
@@ -27,11 +27,14 @@ class RoomCategoryUpdate(BaseModel):
     base_currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
     markup_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    b2b_discount_percent: Decimal | None = Field(
+        default=None, ge=0, le=100, decimal_places=2
+    )
     min_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
 
-class RoomCategoryRead(BaseModel):
+class RoomRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -44,22 +47,27 @@ class RoomCategoryRead(BaseModel):
     base_currency: str
     markup_percent: Decimal
     discount_percent: Decimal | None = None
+    b2b_discount_percent: Decimal | None = None
     min_nights: int
     is_active: bool
-    # Weekday final price (always set)
     final_price: Decimal = Decimal("0")
     final_price_uzs: Decimal | None = None
     final_price_usd: Decimal | None = None
-    # Weekend final price (set only if base_price_weekend is configured)
     final_price_weekend: Decimal | None = None
     final_price_weekend_uzs: Decimal | None = None
     final_price_weekend_usd: Decimal | None = None
+    b2b_final_price: Decimal | None = None
+    b2b_final_price_uzs: Decimal | None = None
+    b2b_final_price_usd: Decimal | None = None
+    b2b_final_price_weekend: Decimal | None = None
+    b2b_final_price_weekend_uzs: Decimal | None = None
+    b2b_final_price_weekend_usd: Decimal | None = None
     created_at: datetime
     updated_at: datetime
 
 
-class RoomCategoryList(BaseModel):
-    items: list[RoomCategoryRead]
+class RoomList(BaseModel):
+    items: list[RoomRead]
     total: int
     limit: int
     offset: int
@@ -102,7 +110,7 @@ class RoomPricePeriodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    room_category_id: uuid.UUID
+    room_id: uuid.UUID
     label: str | None
     date_from: date
     date_to: date

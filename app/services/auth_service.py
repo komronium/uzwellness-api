@@ -2,7 +2,6 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -57,7 +56,6 @@ class AuthService:
                 detail="User not found or inactive",
             )
 
-        # Rotate: revoke the presented token, issue a fresh pair.
         record.revoked = True
         return await self._issue_token_pair(user.id, commit=True)
 
@@ -70,7 +68,6 @@ class AuthService:
         refresh_token, expires_at = create_token(
             subject, "refresh", jti=str(refresh_jti)
         )
-        # Persist the refresh token so it can be revoked on the next rotation.
         self.db.add(
             RefreshToken(id=refresh_jti, user_id=user_id, expires_at=expires_at)
         )

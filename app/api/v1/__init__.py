@@ -5,6 +5,7 @@ from app.api.v1.routers import (
     amenities,
     auth,
     availability,
+    b2b,
     bookings,
     exchange_rates,
     extra_beds,
@@ -32,3 +33,4 @@ api_router.include_router(reviews.router)
 api_router.include_router(availability.router)
 api_router.include_router(payments.router)
 api_router.include_router(admin.router)
+api_router.include_router(b2b.router)

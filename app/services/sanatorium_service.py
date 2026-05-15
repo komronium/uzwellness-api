@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.amenity import Amenity
 from app.models.sanatorium import (
@@ -22,7 +23,7 @@ from app.models.user import User, UserRole
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
 from app.services.storage import MIME_EXTENSIONS, StorageBackend
 
-_UZBEK_STRIP = str.maketrans({"ʻ": "", "ʼ": "", "'": "", "'": ""})
+_UZBEK_STRIP = str.maketrans({"ʻ": "", "ʼ": "", "’": "", "'": ""})
 
 
 def slugify(text: str) -> str:
@@ -145,8 +146,6 @@ class SanatoriumService:
     async def delete_image(
         self, image: SanatoriumImage, storage: StorageBackend
     ) -> None:
-        # Strip the URL prefix to reconstruct the storage key
-        from app.core.config import settings
         prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
         key = image.url[len(prefix):] if image.url.startswith(prefix) else image.url
         await storage.delete(key=key)
@@ -233,7 +232,6 @@ class SanatoriumService:
         if treatment_focus is not None:
             base = base.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
         if amenity_ids:
-            # Sanatorium must have ALL requested amenities
             for aid in amenity_ids:
                 sub = (
                     select(Sanatorium.id)

@@ -1,7 +1,6 @@
 """Unit tests for the pricing service (no DB needed)."""
 from decimal import Decimal
 
-import pytest
 
 from app.core.pricing import calculate_final_price, convert_to_uzs, convert_to_usd
 

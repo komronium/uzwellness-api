@@ -10,7 +10,7 @@ from app.schemas.amenity import (
     TreatmentProgramRead,
     TreatmentProgramUpdate,
 )
-from app.services.amenity_service import AmenityService, get_amenity_service
+from app.services.program_service import ProgramService, get_program_service
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 
@@ -22,10 +22,27 @@ async def list_programs(
     sanatorium_id: uuid.UUID = Query(...),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    svc: AmenityService = Depends(get_amenity_service),
+    programs: ProgramService = Depends(get_program_service),
 ) -> TreatmentProgramList:
-    items, total = await svc.list_programs(sanatorium_id, limit=limit, offset=offset)
-    return TreatmentProgramList(items=list(items), total=total, limit=limit, offset=offset)
+    items, total = await programs.list_for_sanatorium(
+        sanatorium_id, limit=limit, offset=offset
+    )
+    return TreatmentProgramList(
+        items=list(items), total=total, limit=limit, offset=offset
+    )
+
+
+@router.get("/{program_id}", response_model=TreatmentProgramRead)
+async def get_program(
+    program_id: uuid.UUID,
+    programs: ProgramService = Depends(get_program_service),
+) -> TreatmentProgramRead:
+    program = await programs.get_by_id(program_id)
+    if program is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Program not found"
+        )
+    return TreatmentProgramRead.model_validate(program)
 
 
 @router.post(
@@ -37,20 +54,9 @@ async def list_programs(
 async def create_program(
     payload: TreatmentProgramCreate,
     current_user: CurrentUser,
-    svc: AmenityService = Depends(get_amenity_service),
+    programs: ProgramService = Depends(get_program_service),
 ) -> TreatmentProgramRead:
-    program = await svc.create_program(payload, current_user)
-    return TreatmentProgramRead.model_validate(program)
-
-
-@router.get("/{program_id}", response_model=TreatmentProgramRead)
-async def get_program(
-    program_id: uuid.UUID,
-    svc: AmenityService = Depends(get_amenity_service),
-) -> TreatmentProgramRead:
-    program = await svc._load_program(program_id)
-    if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
+    program = await programs.create(payload, current_user)
     return TreatmentProgramRead.model_validate(program)
 
 
@@ -63,12 +69,14 @@ async def update_program(
     program_id: uuid.UUID,
     payload: TreatmentProgramUpdate,
     current_user: CurrentUser,
-    svc: AmenityService = Depends(get_amenity_service),
+    programs: ProgramService = Depends(get_program_service),
 ) -> TreatmentProgramRead:
-    program = await svc._load_program(program_id)
+    program = await programs.get_by_id(program_id)
     if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
-    updated = await svc.update_program(program, payload, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Program not found"
+        )
+    updated = await programs.update(program, payload, current_user)
     return TreatmentProgramRead.model_validate(updated)
 
 
@@ -80,10 +88,11 @@ async def update_program(
 async def delete_program(
     program_id: uuid.UUID,
     current_user: CurrentUser,
-    svc: AmenityService = Depends(get_amenity_service),
+    programs: ProgramService = Depends(get_program_service),
 ) -> None:
-    program = await svc._load_program(program_id)
+    program = await programs.get_by_id(program_id)
     if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
-    await svc._check_sanatorium_access(program.sanatorium_id, current_user)
-    await svc.delete_program(program)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Program not found"
+        )
+    await programs.delete(program, current_user)

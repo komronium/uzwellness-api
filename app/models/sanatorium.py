@@ -62,35 +62,28 @@ class Sanatorium(Base):
     description: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     city: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    # Broader area (e.g. "Tashkent Province", "Fergana Valley") — used by Sanatoriums filter
     region: Mapped[str | None] = mapped_column(String(120), index=True)
     address: Mapped[str] = mapped_column(String(500), nullable=False)
     lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
 
-    # One or more contact numbers (printed on price lists, brochures)
     phones: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     website: Mapped[str | None] = mapped_column(String(255))
 
-    # Local times (e.g. 12:30 check-in, 10:30 checkout)
     check_in_time: Mapped[time | None] = mapped_column(Time)
     check_out_time: Mapped[time | None] = mapped_column(Time)
 
-    # Accepted payment methods, e.g. ["cash", "uzcard", "visa", "mastercard", "jcb", "unionpay", "mir"]
     payment_methods: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
-    # Translations dict, e.g. {"ru": "Распитие спиртных напитков запрещено", "en": "..."}
     house_rules: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
-    # Translations dict, e.g. {"en": "24-hour free cancellation"}
     cancellation_policy: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
-    # Weekly opening hours, e.g. {"mon": [{"open": "06:00", "close": "22:00"}], ...}
     weekly_schedule: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
@@ -108,7 +101,6 @@ class Sanatorium(Base):
         nullable=False,
         index=True,
     )
-    # Only set when property_type == WELLNESS
     wellness_category: Mapped[WellnessCategory | None] = mapped_column(
         SQLEnum(
             WellnessCategory,
@@ -119,10 +111,8 @@ class Sanatorium(Base):
         index=True,
     )
 
-    # High-level medical/treatment categories (e.g. ["cardiovascular", "digestive"])
     treatment_focuses: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
-    # Denormalized for fast listing queries — updated by ReviewService
     avg_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
     review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -145,9 +135,7 @@ class Sanatorium(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -175,7 +163,6 @@ class SanatoriumImage(Base):
     __tablename__ = "sanatorium_images"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),
@@ -189,9 +176,7 @@ class SanatoriumImage(Base):
     caption: Mapped[str | None] = mapped_column(String(255))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     sanatorium: Mapped[Sanatorium] = relationship(back_populates="images")

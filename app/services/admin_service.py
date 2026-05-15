@@ -1,4 +1,3 @@
-import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -8,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.booking import Booking, BookingStatus
-from app.models.room import ExchangeRate, RoomCategory
+from app.models.room import ExchangeRate, Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 
@@ -75,12 +74,10 @@ class AdminService:
         rate = (await self.db.execute(
             select(ExchangeRate.rate).where(ExchangeRate.pair == _USD_UZS)
         )).scalar_one_or_none()
-        # If no rate is configured, fall back to 1 so UZS rows aren't dropped.
         return rate if rate and rate > 0 else Decimal("1")
 
     @staticmethod
     def _usd_expr(rate: Decimal):
-        # Convert each booking's final_price to USD using its stored currency.
         return case(
             (Booking.currency == "USD", Booking.final_price),
             else_=Booking.final_price / rate,
@@ -99,13 +96,13 @@ class AdminService:
         usd_expr = self._usd_expr(rate)
         room_subq = (
             select(
-                RoomCategory.sanatorium_id.label("sid"),
+                Room.sanatorium_id.label("sid"),
                 func.count(Booking.id).label("cnt"),
                 func.coalesce(func.sum(usd_expr), 0).label("rev"),
             )
-            .join(Booking, Booking.room_category_id == RoomCategory.id)
+            .join(Booking, Booking.room_id == Room.id)
             .where(Booking.status != BookingStatus.CANCELLED)
-            .group_by(RoomCategory.sanatorium_id)
+            .group_by(Room.sanatorium_id)
             .subquery()
         )
         stmt = (

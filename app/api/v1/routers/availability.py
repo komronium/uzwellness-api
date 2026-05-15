@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.availability import RoomAvailability
-from app.models.room import RoomCategory
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 
 router = APIRouter(prefix="/availability", tags=["availability"])
@@ -25,10 +25,8 @@ def _parse_month(value: str) -> tuple[date, date]:
             detail="month must be in YYYY-MM format",
         )
     year, month = int(match.group(1)), int(match.group(2))
-    first = date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
-    last = date(year, month, last_day)
-    return first, last
+    return date(year, month, 1), date(year, month, last_day)
 
 
 @router.get("")
@@ -39,28 +37,29 @@ async def get_availability(
 ) -> dict:
     first, last = _parse_month(month)
 
-    sanatorium = (await db.execute(
-        select(Sanatorium).where(
-            Sanatorium.id == sanatorium_id,
-            Sanatorium.status == SanatoriumStatus.APPROVED,
+    sanatorium = (
+        await db.execute(
+            select(Sanatorium).where(
+                Sanatorium.id == sanatorium_id,
+                Sanatorium.status == SanatoriumStatus.APPROVED,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if sanatorium is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sanatorium not found",
         )
 
-    # Sum available units per date across all active rooms of this sanatorium.
     stmt = (
         select(
             RoomAvailability.date,
             func.sum(RoomAvailability.units_available).label("rooms_left"),
         )
-        .join(RoomCategory, RoomAvailability.room_category_id == RoomCategory.id)
+        .join(Room, RoomAvailability.room_id == Room.id)
         .where(
-            RoomCategory.sanatorium_id == sanatorium_id,
-            RoomCategory.is_active.is_(True),
+            Room.sanatorium_id == sanatorium_id,
+            Room.is_active.is_(True),
             RoomAvailability.date >= first,
             RoomAvailability.date <= last,
         )
@@ -73,7 +72,6 @@ async def get_availability(
     while current <= last:
         rooms_left = rows.get(current)
         if rooms_left is None:
-            # No availability entry → not bookable that day
             dates[current.isoformat()] = {"available": False}
         elif rooms_left <= 0:
             dates[current.isoformat()] = {"available": False, "rooms_left": 0}

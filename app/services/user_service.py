@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, verify_password
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserAdminCreate, UserCreate, UserUpdate
 
 
 class UserService:
@@ -36,6 +36,36 @@ class UserService:
             role=role,
             full_name=user_in.full_name,
             phone=user_in.phone,
+        )
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def create_by_admin(self, payload: UserAdminCreate) -> User:
+        if await self.get_by_email(payload.email) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+        if payload.sanatorium_id is not None:
+            exists = (
+                await self.db.execute(
+                    select(Sanatorium.id).where(Sanatorium.id == payload.sanatorium_id)
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Sanatorium not found",
+                )
+        user = User(
+            email=payload.email.lower(),
+            password_hash=hash_password(payload.password),
+            role=payload.role,
+            full_name=payload.full_name,
+            phone=payload.phone,
+            sanatorium_id=payload.sanatorium_id,
         )
         self.db.add(user)
         await self.db.commit()

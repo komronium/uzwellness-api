@@ -1,12 +1,10 @@
 """Integration tests for rooms, availability, exchange rates, and room search."""
-import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.room import ExchangeRate, RoomCategory
+from app.models.room import ExchangeRate, Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 from tests.factories import make_sanatorium, make_user
@@ -23,10 +21,10 @@ async def make_room(
     min_nights: int = 1,
     markup_percent: str = "0",
     is_active: bool = True,
-) -> RoomCategory:
+) -> Room:
     from decimal import Decimal
 
-    room = RoomCategory(
+    room = Room(
         sanatorium_id=sanatorium.id,
         name={"en": name},
         capacity=capacity,

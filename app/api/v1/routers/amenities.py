@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, require_roles
+from app.api.deps import require_roles
 from app.models.user import UserRole
 from app.schemas.amenity import AmenityCreate, AmenityList, AmenityRead, AmenityUpdate
 from app.services.amenity_service import AmenityService, get_amenity_service
@@ -16,10 +16,23 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 async def list_amenities(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    svc: AmenityService = Depends(get_amenity_service),
+    amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityList:
-    items, total = await svc.list_amenities(limit=limit, offset=offset)
+    items, total = await amenities.list_all(limit=limit, offset=offset)
     return AmenityList(items=list(items), total=total, limit=limit, offset=offset)
+
+
+@router.get("/{amenity_id}", response_model=AmenityRead)
+async def get_amenity(
+    amenity_id: uuid.UUID,
+    amenities: AmenityService = Depends(get_amenity_service),
+) -> AmenityRead:
+    amenity = await amenities.get_by_id(amenity_id)
+    if amenity is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
+        )
+    return AmenityRead.model_validate(amenity)
 
 
 @router.post(
@@ -30,20 +43,9 @@ async def list_amenities(
 )
 async def create_amenity(
     payload: AmenityCreate,
-    svc: AmenityService = Depends(get_amenity_service),
+    amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityRead:
-    return AmenityRead.model_validate(await svc.create_amenity(payload))
-
-
-@router.get("/{amenity_id}", response_model=AmenityRead)
-async def get_amenity(
-    amenity_id: uuid.UUID,
-    svc: AmenityService = Depends(get_amenity_service),
-) -> AmenityRead:
-    amenity = await svc.get_amenity(amenity_id)
-    if amenity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found")
-    return AmenityRead.model_validate(amenity)
+    return AmenityRead.model_validate(await amenities.create(payload))
 
 
 @router.patch(
@@ -54,12 +56,14 @@ async def get_amenity(
 async def update_amenity(
     amenity_id: uuid.UUID,
     payload: AmenityUpdate,
-    svc: AmenityService = Depends(get_amenity_service),
+    amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityRead:
-    amenity = await svc.get_amenity(amenity_id)
+    amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found")
-    return AmenityRead.model_validate(await svc.update_amenity(amenity, payload))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
+        )
+    return AmenityRead.model_validate(await amenities.update(amenity, payload))
 
 
 @router.delete(
@@ -69,9 +73,11 @@ async def update_amenity(
 )
 async def delete_amenity(
     amenity_id: uuid.UUID,
-    svc: AmenityService = Depends(get_amenity_service),
+    amenities: AmenityService = Depends(get_amenity_service),
 ) -> None:
-    amenity = await svc.get_amenity(amenity_id)
+    amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found")
-    await svc.delete_amenity(amenity)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
+        )
+    await amenities.delete(amenity)

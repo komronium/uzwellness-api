@@ -11,9 +11,9 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 async def initiate_payment(
     payload: PaymentInitiateRequest,
     current_user: CurrentUser,
-    svc: PaymentService = Depends(get_payment_service),
+    payments: PaymentService = Depends(get_payment_service),
 ) -> PaymentInitiateResponse:
-    payment, redirect_url = await svc.initiate(
+    payment, redirect_url = await payments.initiate(
         booking_id=payload.booking_id, method=payload.method, user=current_user
     )
     return PaymentInitiateResponse(
@@ -27,23 +27,21 @@ async def initiate_payment(
 async def payme_webhook(
     request: Request,
     authorization: str | None = Header(default=None),
-    svc: PaymentService = Depends(get_payment_service),
+    payments: PaymentService = Depends(get_payment_service),
 ) -> dict:
     body = await request.body()
     payload = await request.json()
-    return await svc.handle_payme_webhook(payload, body, authorization)
+    return await payments.handle_payme_webhook(payload, body, authorization)
 
 
 @router.post("/click/webhook")
 async def click_webhook(
     request: Request,
-    svc: PaymentService = Depends(get_payment_service),
+    payments: PaymentService = Depends(get_payment_service),
 ) -> dict:
-    # Click sends `application/x-www-form-urlencoded` payloads; fall back to
-    # JSON for ease of local testing.
     if request.headers.get("content-type", "").startswith("application/json"):
         payload = await request.json()
     else:
         form = await request.form()
         payload = {k: v for k, v in form.items()}
-    return await svc.handle_click_webhook(payload)
+    return await payments.handle_click_webhook(payload)

@@ -16,6 +16,11 @@ class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=128)
 
 
+class UserAdminCreate(UserCreate):
+    role: UserRole = UserRole.CUSTOMER
+    sanatorium_id: uuid.UUID | None = None
+
+
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=32)

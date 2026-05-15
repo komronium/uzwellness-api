@@ -2,7 +2,6 @@
 import asyncio
 from datetime import date, timedelta
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,7 +74,7 @@ class TestEndToEnd:
         booking_resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 2,
@@ -103,7 +102,7 @@ class TestEndToEnd:
         rebook = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 2,
@@ -126,7 +125,7 @@ class TestBookingValidation:
         resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": "2020-01-01",
                 "check_out": "2020-01-05",
                 "guests": 1,
@@ -151,7 +150,7 @@ class TestBookingValidation:
         resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": str(_DATES_START + timedelta(days=1)),
                 "guests": 1,
@@ -169,7 +168,7 @@ class TestBookingValidation:
         resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 3,
@@ -189,7 +188,7 @@ class TestBookingValidation:
         resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 1,
@@ -205,7 +204,7 @@ class TestBookingValidation:
         resp = await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 1,
@@ -231,7 +230,7 @@ class TestBookingRBAC:
         other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
         payload = {
-            "room_category_id": str(room.id),
+            "room_id": str(room.id),
             "check_in": _CHECK_IN,
             "check_out": _CHECK_OUT,
             "guests": 1,
@@ -255,7 +254,7 @@ class TestBookingRBAC:
         await client.post(
             "/api/v1/bookings",
             json={
-                "room_category_id": str(room.id),
+                "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
                 "guests": 1,
@@ -264,7 +263,7 @@ class TestBookingRBAC:
         )
         resp = await client.get("/api/v1/bookings", headers=admin_headers)
         assert resp.json()["total"] == 1
-        assert resp.json()["items"][0]["room_category_id"] == str(room.id)
+        assert resp.json()["items"][0]["room_id"] == str(room.id)
 
     async def test_super_admin_sees_all(
         self, client, db, admin_user, admin_headers, customer_headers, super_admin_headers
@@ -273,7 +272,7 @@ class TestBookingRBAC:
             db, client, admin_user, admin_headers, units=10
         )
         payload = {
-            "room_category_id": str(room.id),
+            "room_id": str(room.id),
             "check_in": _CHECK_IN,
             "check_out": _CHECK_OUT,
             "guests": 1,
@@ -298,7 +297,7 @@ class TestCancellation:
             await client.post(
                 "/api/v1/bookings",
                 json={
-                    "room_category_id": str(room.id),
+                    "room_id": str(room.id),
                     "check_in": _CHECK_IN,
                     "check_out": _CHECK_OUT,
                     "guests": 1,
@@ -322,7 +321,7 @@ class TestCancellation:
             await client.post(
                 "/api/v1/bookings",
                 json={
-                    "room_category_id": str(room.id),
+                    "room_id": str(room.id),
                     "check_in": _CHECK_IN,
                     "check_out": _CHECK_OUT,
                     "guests": 1,
@@ -352,7 +351,7 @@ class TestCancellation:
             await client.post(
                 "/api/v1/bookings",
                 json={
-                    "room_category_id": str(room.id),
+                    "room_id": str(room.id),
                     "check_in": _CHECK_IN,
                     "check_out": _CHECK_OUT,
                     "guests": 1,
@@ -375,7 +374,7 @@ class TestCancellation:
             await client.post(
                 "/api/v1/bookings",
                 json={
-                    "room_category_id": str(room.id),
+                    "room_id": str(room.id),
                     "check_in": _CHECK_IN,
                     "check_out": _CHECK_OUT,
                     "guests": 1,
@@ -399,7 +398,7 @@ class TestCancellation:
             await client.post(
                 "/api/v1/bookings",
                 json={
-                    "room_category_id": str(room.id),
+                    "room_id": str(room.id),
                     "check_in": _CHECK_IN,
                     "check_out": _CHECK_OUT,
                     "guests": 1,
@@ -432,7 +431,7 @@ class TestConcurrency:
             db, client, admin_user, admin_headers, units=1, capacity=4
         )
         payload = {
-            "room_category_id": str(room.id),
+            "room_id": str(room.id),
             "check_in": _CHECK_IN,
             "check_out": _CHECK_OUT,
             "guests": 1,

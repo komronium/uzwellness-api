@@ -18,7 +18,7 @@ from app.core.security import hash_password
 from app.models.amenity import Amenity, TreatmentProgram
 from app.models.availability import RoomAvailability
 from app.models.extra_bed import ExtraBedConfig
-from app.models.room import RoomCategory, RoomPricePeriod
+from app.models.room import Room, RoomPricePeriod
 from app.models.sanatorium import (
     PropertyType,
     Sanatorium,
@@ -473,9 +473,9 @@ async def main() -> None:
         # 5. Room categories + availability (120 days × 10 units)
         print("\nRoom categories:")
         today = date.today()
-        rooms_by_key: dict[str, RoomCategory] = {}
+        rooms_by_key: dict[str, Room] = {}
         for tmpl in ROOMS:
-            room = RoomCategory(
+            room = Room(
                 sanatorium_id=san.id,
                 name=tmpl["name"],
                 capacity=tmpl["capacity"],
@@ -492,7 +492,7 @@ async def main() -> None:
 
             for offset in range(120):
                 db.add(RoomAvailability(
-                    room_category_id=room.id,
+                    room_id=room.id,
                     date=today + timedelta(days=offset),
                     units_total=10,
                     units_available=10,
@@ -512,7 +512,7 @@ async def main() -> None:
         for tmpl in ROOMS:
             room = rooms_by_key[tmpl["key"]]
             db.add(RoomPricePeriod(
-                room_category_id=room.id,
+                room_id=room.id,
                 label=season_label,
                 date_from=season_from,
                 date_to=season_to,

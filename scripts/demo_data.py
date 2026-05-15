@@ -16,7 +16,7 @@ from app.core.security import hash_password
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus
 from app.models.notification import Notification
-from app.models.room import ExchangeRate, RoomCategory
+from app.models.room import ExchangeRate, Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 from sqlalchemy import select
@@ -234,7 +234,7 @@ async def main() -> None:
 
         # 5. Sanatoriums + rooms + availability
         today = date.today()
-        all_rooms: list[RoomCategory] = []
+        all_rooms: list[Room] = []
 
         for i, san_data in enumerate(SANATORIUMS):
             san, san_created = await get_or_create_sanatorium(db, san_data, admin_users[i].id)
@@ -243,9 +243,9 @@ async def main() -> None:
             for tmpl in ROOM_TEMPLATES[i]:
                 existing_room = (
                     await db.execute(
-                        select(RoomCategory).where(
-                            RoomCategory.sanatorium_id == san.id,
-                            RoomCategory.base_price == tmpl["base_price"],
+                        select(Room).where(
+                            Room.sanatorium_id == san.id,
+                            Room.base_price == tmpl["base_price"],
                         )
                     )
                 ).scalar_one_or_none()
@@ -255,7 +255,7 @@ async def main() -> None:
                     continue
 
                 markup = Decimal(str(random.choice([0, 5, 10, 15])))
-                room = RoomCategory(
+                room = Room(
                     sanatorium_id=san.id,
                     name=tmpl["name"],
                     capacity=tmpl["capacity"],
@@ -274,7 +274,7 @@ async def main() -> None:
                 existing_avail = (
                     await db.execute(
                         select(RoomAvailability).where(
-                            RoomAvailability.room_category_id == room.id
+                            RoomAvailability.room_id == room.id
                         ).limit(1)
                     )
                 ).scalar_one_or_none()
@@ -283,7 +283,7 @@ async def main() -> None:
                     units = random.randint(3, 8)
                     for offset in range(90):
                         db.add(RoomAvailability(
-                            room_category_id=room.id,
+                            room_id=room.id,
                             date=today + timedelta(days=offset),
                             units_total=units,
                             units_available=units,
@@ -311,7 +311,7 @@ async def main() -> None:
                 avail_rows = (
                     await db.execute(
                         select(RoomAvailability).where(
-                            RoomAvailability.room_category_id == room.id,
+                            RoomAvailability.room_id == room.id,
                             RoomAvailability.date >= check_in,
                             RoomAvailability.date < check_out,
                             RoomAvailability.units_available >= 1,
@@ -327,7 +327,7 @@ async def main() -> None:
 
                 booking = Booking(
                     user_id=customer.id,
-                    room_category_id=room.id,
+                    room_id=room.id,
                     check_in=check_in,
                     check_out=check_out,
                     guests=random.randint(1, room.capacity),
@@ -355,7 +355,7 @@ async def main() -> None:
 
         await db.commit()
         print("\nDone.")
-        print(f"\nAPI:        https://api.uzwellness.com/docs")
+        print("\nAPI:        https://api.uzwellness.com/docs")
         print(f"super_admin: {SUPER_ADMIN_EMAIL} / {SUPER_ADMIN_PASSWORD}")
         print( "customer:    ali@gmail.com / User123!")
 

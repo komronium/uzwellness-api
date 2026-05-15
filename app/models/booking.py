@@ -5,8 +5,19 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Uuid, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Uuid,
+    func,
+)
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -41,8 +52,8 @@ class Booking(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
-    room_category_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("room_categories.id", ondelete="SET NULL"), index=True
+    room_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("rooms.id", ondelete="SET NULL"), index=True
     )
     program_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("treatment_programs.id", ondelete="SET NULL"), index=True
@@ -76,9 +87,16 @@ class Booking(Base):
         index=True,
     )
 
-    # Price snapshot at booking time — frozen so markup changes don't affect it
     final_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+
+    is_b2b: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    b2b_client_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    guest_details: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -90,3 +108,9 @@ class Booking(Base):
     extra_beds: Mapped[list["BookingExtraBed"]] = relationship(  # noqa: F821
         back_populates="booking", cascade="all, delete-orphan"
     )
+
+    @property
+    def b2b_commission(self) -> Decimal | None:
+        if not self.is_b2b or self.b2b_client_price is None:
+            return None
+        return self.b2b_client_price - self.final_price

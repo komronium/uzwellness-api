@@ -2,10 +2,10 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.models.room import ExchangeRate, RoomCategory, RoomPricePeriod
+from app.models.room import ExchangeRate, Room, RoomPricePeriod
 
 _TWO = Decimal("0.01")
-_WEEKEND_DAYS = frozenset({4, 5})  # Friday=4, Saturday=5 (peak days in Uzbek resorts)
+_WEEKEND_DAYS = frozenset({4, 5})  # Fri, Sat
 
 
 def calculate_final_price(base_price: Decimal, markup_percent: Decimal) -> Decimal:
@@ -13,15 +13,10 @@ def calculate_final_price(base_price: Decimal, markup_percent: Decimal) -> Decim
 
 
 def effective_prices_for_date(
-    room: RoomCategory,
+    room: Room,
     target: date,
     periods: Sequence[RoomPricePeriod] | None = None,
 ) -> tuple[Decimal, Decimal | None, Decimal | None]:
-    """Return (base, weekend, discount_percent) for `target`.
-
-    If any `RoomPricePeriod` covers `target`, its values override the room's
-    defaults. The period's `discount_percent` only overrides when not None.
-    """
     if periods:
         for p in periods:
             if p.date_from <= target <= p.date_to:
@@ -48,13 +43,17 @@ def calculate_night_price(
 
 
 def calculate_stay_total(
-    room: RoomCategory,
+    room: Room,
     dates: list[date],
     periods: Sequence[RoomPricePeriod] | None = None,
+    *,
+    is_b2b: bool = False,
 ) -> Decimal:
     total = Decimal("0")
     for d in dates:
         base, weekend, discount = effective_prices_for_date(room, d, periods)
+        if is_b2b and room.b2b_discount_percent is not None:
+            discount = room.b2b_discount_percent
         total += calculate_night_price(
             base, weekend, room.markup_percent, discount, d.weekday() in _WEEKEND_DAYS,
         )
@@ -77,20 +76,63 @@ def convert_to_usd(amount: Decimal, currency: str, rate: ExchangeRate | None) ->
     return (amount / rate.rate).quantize(_TWO, ROUND_HALF_UP)
 
 
-def enrich_room(room: RoomCategory, usd_uzs_rate: ExchangeRate | None) -> dict:
-    weekday_price = calculate_night_price(
-        room.base_price, room.base_price_weekend, room.markup_percent, room.discount_percent, False
+def _price_block(
+    room: Room,
+    rate: ExchangeRate | None,
+    *,
+    discount: Decimal | None,
+    weekend: bool,
+) -> tuple[Decimal, Decimal | None, Decimal | None]:
+    price = calculate_night_price(
+        room.base_price, room.base_price_weekend, room.markup_percent, discount, weekend
+    )
+    return (
+        price,
+        convert_to_uzs(price, room.base_currency, rate),
+        convert_to_usd(price, room.base_currency, rate),
+    )
+
+
+def enrich_room(
+    room: Room,
+    usd_uzs_rate: ExchangeRate | None,
+    *,
+    is_b2b: bool = False,
+    include_b2b_price: bool = False,
+) -> dict:
+    discount = (
+        room.b2b_discount_percent
+        if is_b2b and room.b2b_discount_percent is not None
+        else room.discount_percent
+    )
+    weekday, weekday_uzs, weekday_usd = _price_block(
+        room, usd_uzs_rate, discount=discount, weekend=False
     )
     result: dict = {
-        "final_price": weekday_price,
-        "final_price_uzs": convert_to_uzs(weekday_price, room.base_currency, usd_uzs_rate),
-        "final_price_usd": convert_to_usd(weekday_price, room.base_currency, usd_uzs_rate),
+        "final_price": weekday,
+        "final_price_uzs": weekday_uzs,
+        "final_price_usd": weekday_usd,
     }
     if room.base_price_weekend is not None:
-        weekend_price = calculate_night_price(
-            room.base_price, room.base_price_weekend, room.markup_percent, room.discount_percent, True
+        weekend, weekend_uzs, weekend_usd = _price_block(
+            room, usd_uzs_rate, discount=discount, weekend=True
         )
-        result["final_price_weekend"] = weekend_price
-        result["final_price_weekend_uzs"] = convert_to_uzs(weekend_price, room.base_currency, usd_uzs_rate)
-        result["final_price_weekend_usd"] = convert_to_usd(weekend_price, room.base_currency, usd_uzs_rate)
+        result["final_price_weekend"] = weekend
+        result["final_price_weekend_uzs"] = weekend_uzs
+        result["final_price_weekend_usd"] = weekend_usd
+
+    if include_b2b_price and room.b2b_discount_percent is not None:
+        b2b_weekday, b2b_weekday_uzs, b2b_weekday_usd = _price_block(
+            room, usd_uzs_rate, discount=room.b2b_discount_percent, weekend=False
+        )
+        result["b2b_final_price"] = b2b_weekday
+        result["b2b_final_price_uzs"] = b2b_weekday_uzs
+        result["b2b_final_price_usd"] = b2b_weekday_usd
+        if room.base_price_weekend is not None:
+            b2b_weekend, b2b_weekend_uzs, b2b_weekend_usd = _price_block(
+                room, usd_uzs_rate, discount=room.b2b_discount_percent, weekend=True
+            )
+            result["b2b_final_price_weekend"] = b2b_weekend
+            result["b2b_final_price_weekend_uzs"] = b2b_weekend_uzs
+            result["b2b_final_price_weekend_usd"] = b2b_weekend_usd
     return result

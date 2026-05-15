@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends
 from app.api.deps import require_roles
 from app.models.user import UserRole
 from app.schemas.exchange_rate import ExchangeRateRead, ExchangeRateUpsert
-from app.services.room_service import RoomService, get_room_service
+from app.services.exchange_rate_service import (
+    ExchangeRateService,
+    get_exchange_rate_service,
+)
 
 router = APIRouter(prefix="/exchange-rates", tags=["exchange-rates"])
 
@@ -12,10 +15,10 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
 @router.get("", response_model=list[ExchangeRateRead])
 async def list_exchange_rates(
-    rooms: RoomService = Depends(get_room_service),
+    rates: ExchangeRateService = Depends(get_exchange_rate_service),
 ) -> list[ExchangeRateRead]:
-    rates = await rooms.list_exchange_rates()
-    return [ExchangeRateRead.model_validate(r) for r in rates]
+    items = await rates.list_all()
+    return [ExchangeRateRead.model_validate(r) for r in items]
 
 
 @router.patch(
@@ -25,7 +28,6 @@ async def list_exchange_rates(
 )
 async def upsert_exchange_rate(
     payload: ExchangeRateUpsert,
-    rooms: RoomService = Depends(get_room_service),
+    rates: ExchangeRateService = Depends(get_exchange_rate_service),
 ) -> ExchangeRateRead:
-    rate = await rooms.upsert_exchange_rate(payload)
-    return ExchangeRateRead.model_validate(rate)
+    return ExchangeRateRead.model_validate(await rates.upsert(payload))

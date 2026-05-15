@@ -56,10 +56,8 @@ class Payment(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    # Provider-specific identifiers (merchant_trans_id for Payme, transaction id, etc.)
     merchant_trans_id: Mapped[str | None] = mapped_column(String(64), index=True)
     provider_payment_id: Mapped[str | None] = mapped_column(String(120))
-    # Raw webhook payload(s) kept for audit / debugging.
     raw_payload: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )

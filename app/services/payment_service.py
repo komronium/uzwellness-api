@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.models.amenity import TreatmentProgram
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
-from app.models.room import RoomCategory
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
 from app.services.email_service import (
@@ -26,7 +26,6 @@ from app.services.email_service import (
 
 logger = logging.getLogger(__name__)
 
-# Payme amounts are quoted in tiyin (1 UZS = 100 tiyin).
 _PAYME_AMOUNT_FACTOR = Decimal("100")
 
 
@@ -70,7 +69,6 @@ class PaymentService:
         elif method == PaymentMethod.CLICK:
             redirect_url = _build_click_url(booking, merchant_trans_id)
         elif method == PaymentMethod.CASH:
-            # Cash is reserved on creation, confirmed on-site by sanatorium staff.
             booking.status = BookingStatus.PENDING
             payment.status = PaymentStatus.PENDING
 
@@ -80,10 +78,6 @@ class PaymentService:
         return payment, redirect_url
 
     async def handle_payme_webhook(self, payload: dict, raw_body: bytes, auth_header: str | None) -> dict:
-        # Payme sends a `Basic` Authorization header containing
-        # `Paycom:<merchant_key>` (or similar). For real prod we validate it
-        # against the merchant key. In dev mode (no key configured) we accept
-        # any request to make the flow testable.
         if settings.PAYME_MERCHANT_KEY:
             if not _check_payme_auth(auth_header, settings.PAYME_MERCHANT_KEY):
                 raise HTTPException(
@@ -116,9 +110,6 @@ class PaymentService:
         return {"result": {"state": 2}}
 
     async def handle_click_webhook(self, payload: dict) -> dict:
-        # Click signs requests with MD5(click_trans_id + service_id + secret_key
-        # + merchant_trans_id + amount + action + sign_time). We only enforce
-        # signature checks when the secret key is configured.
         sign_string = payload.get("sign_string")
         if settings.CLICK_SECRET_KEY and sign_string:
             expected = _click_sign(payload, settings.CLICK_SECRET_KEY)
@@ -204,11 +195,11 @@ class PaymentService:
         send_booking_confirmed(to=user.email, ctx=ctx)
 
     async def _lookup_sanatorium_name(self, booking: Booking) -> str | None:
-        if booking.room_category_id is not None:
+        if booking.room_id is not None:
             return (await self.db.execute(
                 select(Sanatorium.name)
-                .join(RoomCategory, RoomCategory.sanatorium_id == Sanatorium.id)
-                .where(RoomCategory.id == booking.room_category_id)
+                .join(Room, Room.sanatorium_id == Sanatorium.id)
+                .where(Room.id == booking.room_id)
             )).scalar_one_or_none()
         if booking.program_id is not None:
             return (await self.db.execute(
@@ -221,8 +212,6 @@ class PaymentService:
 
 def _build_payme_url(booking: Booking, merchant_trans_id: str) -> str:
     if not settings.PAYME_MERCHANT_ID:
-        # Without merchant credentials we still return a deterministic URL so
-        # the frontend can render a meaningful redirect during development.
         return f"{settings.PAYME_CHECKOUT_URL}?order_id={merchant_trans_id}"
     amount_tiyin = int((Decimal(booking.final_price) * _PAYME_AMOUNT_FACTOR).to_integral_value())
     params = f"m={settings.PAYME_MERCHANT_ID};ac.order_id={merchant_trans_id};a={amount_tiyin}"

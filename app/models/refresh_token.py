@@ -10,7 +10,6 @@ from app.core.database import Base
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
-    # `id` doubles as the JWT `jti` claim so we can revoke individual tokens.
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,

@@ -19,22 +19,21 @@ async def list_reviews(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     current_user: OptionalUser = None,
-    svc: ReviewService = Depends(get_review_service),
+    reviews: ReviewService = Depends(get_review_service),
 ) -> ReviewList:
     is_admin = current_user is not None and current_user.role in (
-        UserRole.ADMIN, UserRole.SUPER_ADMIN
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
     )
     if sanatorium_id is None and not is_admin:
-        # Customers/anonymous must scope to a sanatorium
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="sanatorium_id is required",
         )
-    visible_only = not is_admin
-    items, total = await svc.list_reviews(
+    items, total = await reviews.list_reviews(
         sanatorium_id=sanatorium_id,
         is_visible=is_visible if is_admin else None,
-        visible_only=visible_only,
+        visible_only=not is_admin,
         limit=limit,
         offset=offset,
     )
@@ -50,9 +49,9 @@ async def create_review(
     sanatorium_id: uuid.UUID,
     payload: ReviewCreate,
     current_user: CurrentUser,
-    svc: ReviewService = Depends(get_review_service),
+    reviews: ReviewService = Depends(get_review_service),
 ) -> ReviewRead:
-    review = await svc.create(sanatorium_id, payload, current_user)
+    review = await reviews.create(sanatorium_id, payload, current_user)
     return ReviewRead.model_validate(review)
 
 
@@ -65,12 +64,14 @@ async def update_review_visibility(
     review_id: uuid.UUID,
     payload: ReviewUpdate,
     current_user: CurrentUser,
-    svc: ReviewService = Depends(get_review_service),
+    reviews: ReviewService = Depends(get_review_service),
 ) -> ReviewRead:
-    review = await svc.get_by_id(review_id)
+    review = await reviews.get_by_id(review_id)
     if review is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found")
-    updated = await svc.update_visibility(review, payload, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
+        )
+    updated = await reviews.update_visibility(review, payload, current_user)
     return ReviewRead.model_validate(updated)
 
 
@@ -78,9 +79,11 @@ async def update_review_visibility(
 async def delete_review(
     review_id: uuid.UUID,
     current_user: CurrentUser,
-    svc: ReviewService = Depends(get_review_service),
+    reviews: ReviewService = Depends(get_review_service),
 ) -> None:
-    review = await svc.get_by_id(review_id)
+    review = await reviews.get_by_id(review_id)
     if review is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found")
-    await svc.delete(review, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
+        )
+    await reviews.delete(review, current_user)

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, require_roles
 from app.models.user import User, UserRole
-from app.schemas.user import UserList, UserRead, UserUpdate
+from app.schemas.user import UserAdminCreate, UserList, UserRead, UserUpdate
 from app.services.user_service import UserService, get_user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -15,6 +15,20 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 @router.get("/me", response_model=UserRead)
 async def get_me(current_user: CurrentUser) -> UserRead:
     return UserRead.model_validate(current_user)
+
+
+@router.post(
+    "",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user(
+    payload: UserAdminCreate,
+    _: User = Depends(require_super_admin),
+    users: UserService = Depends(get_user_service),
+) -> UserRead:
+    user = await users.create_by_admin(payload)
+    return UserRead.model_validate(user)
 
 
 @router.get("", response_model=UserList)

@@ -16,7 +16,7 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
     dependencies=[Depends(require_admin_or_above)],
 )
 async def get_stats(
-    svc: AdminService = Depends(get_admin_service),
+    admin: AdminService = Depends(get_admin_service),
 ) -> AdminStats:
-    data = await svc.get_stats()
+    data = await admin.get_stats()
     return AdminStats(**data)

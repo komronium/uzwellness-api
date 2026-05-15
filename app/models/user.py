@@ -37,7 +37,6 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(32))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Set for agent accounts — points to the sanatorium they represent on the B2B portal.
     sanatorium_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="SET NULL"),

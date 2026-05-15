@@ -26,11 +26,10 @@ if TYPE_CHECKING:
     from app.models.availability import RoomAvailability
 
 
-class RoomCategory(Base):
-    __tablename__ = "room_categories"
+class Room(Base):
+    __tablename__ = "rooms"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),
@@ -39,7 +38,6 @@ class RoomCategory(Base):
     )
 
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    # Display amenities for this room type: ["King bed", "AC", "TV", "Balcony", "Jacuzzi"]
     room_amenities: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -49,6 +47,7 @@ class RoomCategory(Base):
         Numeric(5, 2), nullable=False, default=Decimal("0")
     )
     discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    b2b_discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     min_nights: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -63,32 +62,29 @@ class RoomCategory(Base):
     )
 
     availability: Mapped[list["RoomAvailability"]] = relationship(
-        back_populates="room_category",
+        back_populates="room",
         cascade="all, delete-orphan",
     )
     price_periods: Mapped[list["RoomPricePeriod"]] = relationship(
-        back_populates="room_category",
+        back_populates="room",
         cascade="all, delete-orphan",
         order_by="RoomPricePeriod.date_from",
     )
 
 
 class RoomPricePeriod(Base):
-    """Seasonal price override for a room over a date range (inclusive).
-
-    If a stay date falls inside [date_from, date_to], its prices replace the
-    room's defaults. Outside any period the room's base prices apply.
-    """
-
     __tablename__ = "room_price_periods"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    room_category_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("room_categories.id", ondelete="CASCADE"), nullable=False, index=True
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     label: Mapped[str | None] = mapped_column(String(120))
     date_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    date_to: Mapped[date] = mapped_column(Date, nullable=False, index=True)  # inclusive
+    date_to: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     base_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
@@ -98,14 +94,16 @@ class RoomPricePeriod(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    room_category: Mapped["RoomCategory"] = relationship(back_populates="price_periods")
+    room: Mapped["Room"] = relationship(back_populates="price_periods")
 
 
 class ExchangeRate(Base):
     __tablename__ = "exchange_rates"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    pair: Mapped[str] = mapped_column(String(10), nullable=False, unique=True, index=True)
+    pair: Mapped[str] = mapped_column(
+        String(10), unique=True, nullable=False, index=True
+    )
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     valid_from: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
