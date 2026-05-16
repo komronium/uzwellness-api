@@ -28,7 +28,10 @@ async def list_programs(
         sanatorium_id, limit=limit, offset=offset
     )
     return TreatmentProgramList(
-        items=list(items), total=total, limit=limit, offset=offset
+        items=[TreatmentProgramRead.model_validate(p) for p in items],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

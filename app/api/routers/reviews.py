@@ -37,7 +37,12 @@ async def list_reviews(
         limit=limit,
         offset=offset,
     )
-    return ReviewList(items=list(items), total=total, limit=limit, offset=offset)
+    return ReviewList(
+        items=[ReviewRead.model_validate(r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

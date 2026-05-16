@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import secrets
 import string
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -21,6 +24,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.extra_bed import BookingExtraBed
+    from app.models.notification import Notification
 
 _ALPHABET = string.ascii_uppercase + string.digits
 
@@ -102,10 +109,10 @@ class Booking(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
+    notifications: Mapped[list["Notification"]] = relationship(
         back_populates="booking", cascade="all, delete-orphan"
     )
-    extra_beds: Mapped[list["BookingExtraBed"]] = relationship(  # noqa: F821
+    extra_beds: Mapped[list["BookingExtraBed"]] = relationship(
         back_populates="booking", cascade="all, delete-orphan"
     )
 

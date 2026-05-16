@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.booking import Booking
 
 
 class Notification(Base):
@@ -22,4 +28,4 @@ class Notification(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    booking: Mapped["Booking"] = relationship(back_populates="notifications")  # noqa: F821
+    booking: Mapped["Booking"] = relationship(back_populates="notifications")

@@ -28,7 +28,10 @@ async def list_extra_beds(
         sanatorium_id, limit=limit, offset=offset
     )
     return ExtraBedConfigList(
-        items=list(items), total=total, limit=limit, offset=offset
+        items=[ExtraBedConfigRead.model_validate(c) for c in items],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

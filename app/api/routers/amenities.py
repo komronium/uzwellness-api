@@ -19,7 +19,12 @@ async def list_amenities(
     amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityList:
     items, total = await amenities.list_all(limit=limit, offset=offset)
-    return AmenityList(items=list(items), total=total, limit=limit, offset=offset)
+    return AmenityList(
+        items=[AmenityRead.model_validate(a) for a in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{amenity_id}", response_model=AmenityRead)

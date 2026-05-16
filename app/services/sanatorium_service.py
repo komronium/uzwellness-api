@@ -92,7 +92,7 @@ class SanatoriumService:
         )
         self.db.add(sanatorium)
         await self.db.commit()
-        return await self._reload(sanatorium.id)
+        return await self._reload_required(sanatorium.id)
 
     async def update(
         self, sanatorium: Sanatorium, payload: SanatoriumUpdate
@@ -121,7 +121,7 @@ class SanatoriumService:
             sanatorium.amenities = await self._fetch_amenities(amenity_ids)
 
         await self.db.commit()
-        return await self._reload(sanatorium.id)
+        return await self._reload_required(sanatorium.id)
 
     async def approve(self, sanatorium: Sanatorium) -> Sanatorium:
         if sanatorium.status == SanatoriumStatus.APPROVED:
@@ -131,7 +131,7 @@ class SanatoriumService:
             )
         sanatorium.status = SanatoriumStatus.APPROVED
         await self.db.commit()
-        return await self._reload(sanatorium.id)
+        return await self._reload_required(sanatorium.id)
 
     async def reject(self, sanatorium: Sanatorium) -> Sanatorium:
         if sanatorium.status == SanatoriumStatus.REJECTED:
@@ -141,7 +141,7 @@ class SanatoriumService:
             )
         sanatorium.status = SanatoriumStatus.REJECTED
         await self.db.commit()
-        return await self._reload(sanatorium.id)
+        return await self._reload_required(sanatorium.id)
 
     async def delete_image(
         self, image: SanatoriumImage, storage: StorageBackend
@@ -292,6 +292,12 @@ class SanatoriumService:
         await self.db.commit()
         await self.db.refresh(image)
         return image
+
+    async def _reload_required(self, sanatorium_id: uuid.UUID) -> Sanatorium:
+        result = await self._reload(sanatorium_id)
+        if result is None:
+            raise RuntimeError(f"Sanatorium {sanatorium_id} not found after write")
+        return result
 
     async def _reload(self, sanatorium_id: uuid.UUID) -> Sanatorium | None:
         stmt = (

@@ -40,6 +40,10 @@ def send_email(*, to: str, subject: str, body: str) -> None:
 
 
 def _send_smtp(*, to: str, subject: str, body: str) -> None:
+    if not settings.SMTP_HOST:
+        logger.warning("SMTP_HOST not configured; skipping email to %s", to)
+        return
+
     message = EmailMessage()
     message["From"] = settings.EMAIL_FROM
     message["To"] = to

@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.booking import Booking
 
 
 class ExtraBedConfig(Base):
@@ -44,5 +50,5 @@ class BookingExtraBed(Base):
     count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
-    booking: Mapped["Booking"] = relationship(back_populates="extra_beds")  # noqa: F821
+    booking: Mapped["Booking"] = relationship(back_populates="extra_beds")
     config: Mapped[ExtraBedConfig | None] = relationship(back_populates="bed_bookings")
