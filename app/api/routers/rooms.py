@@ -10,6 +10,7 @@ from app.models.user import UserRole
 from app.schemas.room import (
     AvailabilityBulkCreate,
     AvailabilityRead,
+    AvailabilityUpsert,
     RoomCreate,
     RoomList,
     RoomRead,
@@ -22,22 +23,28 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-def _with_pricing(room: Room, pricing: dict) -> RoomRead:
-    return RoomRead.model_validate(room).model_copy(update=pricing)
-
-
-def _pricing_flags(user) -> tuple[bool, bool]:
-    if user is None:
-        return False, False
-    is_b2b = user.role == UserRole.AGENT
-    include_b2b = user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
-    return is_b2b, include_b2b
+def _with_pricing(
+    room: Room,
+    pricing: dict,
+    availability_until: date | None = None,
+) -> RoomRead:
+    return RoomRead.model_validate(room).model_copy(
+        update={
+            **pricing,
+            "availability_until": availability_until,
+            "has_availability": availability_until is not None,
+        }
+    )
 
 
 @router.get("", response_model=RoomList)
 async def list_rooms(
     current_user: OptionalUser,
     sanatorium_id: uuid.UUID = Query(...),
+    is_active: bool | None = Query(
+        default=None,
+        description="Filter rooms by active status (staff only; ignored for guests).",
+    ),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     rooms: RoomService = Depends(get_room_service),
@@ -47,14 +54,13 @@ async def list_rooms(
         user=current_user,
         limit=limit,
         offset=offset,
+        is_active=is_active,
     )
-    is_b2b, include_b2b = _pricing_flags(current_user)
     rate = await rooms.rates.get_usd_uzs()
+    summary = await rooms.availability_summary([r.id for r in items])
     return RoomList(
         items=[
-            _with_pricing(
-                r, enrich_room(r, rate, is_b2b=is_b2b, include_b2b_price=include_b2b)
-            )
+            _with_pricing(r, enrich_room(r, rate), summary.get(r.id))
             for r in items
         ],
         total=total,
@@ -65,7 +71,6 @@ async def list_rooms(
 
 @router.get("/search", response_model=list[RoomRead])
 async def search_rooms(
-    current_user: OptionalUser,
     check_in: date = Query(...),
     check_out: date = Query(...),
     guests: int = Query(default=1, ge=1),
@@ -77,13 +82,11 @@ async def search_rooms(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="check_out must be after check_in",
         )
-    is_b2b, _ = _pricing_flags(current_user)
     results = await rooms.search(
         check_in=check_in,
         check_out=check_out,
         guests=guests,
         sanatorium_id=sanatorium_id,
-        is_b2b=is_b2b,
     )
     return [_with_pricing(room, pricing) for room, pricing in results]
 
@@ -91,15 +94,14 @@ async def search_rooms(
 @router.get("/{room_id}", response_model=RoomRead)
 async def get_room(
     room_id: uuid.UUID,
-    current_user: OptionalUser,
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    is_b2b, include_b2b = _pricing_flags(current_user)
-    pricing = await rooms.enrich(room, is_b2b=is_b2b, include_b2b_price=include_b2b)
-    return _with_pricing(room, pricing)
+    pricing = await rooms.enrich(room)
+    summary = await rooms.availability_summary([room.id])
+    return _with_pricing(room, pricing, summary.get(room.id))
 
 
 @router.post(
@@ -182,3 +184,24 @@ async def bulk_create_availability(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     rows = await rooms.bulk_create_availability(room, payload, current_user)
     return [AvailabilityRead.model_validate(r) for r in rows]
+
+
+@router.patch(
+    "/{room_id}/availability/{target_date}",
+    response_model=AvailabilityRead,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def upsert_room_availability(
+    room_id: uuid.UUID,
+    target_date: date,
+    payload: AvailabilityUpsert,
+    current_user: CurrentUser,
+    rooms: RoomService = Depends(get_room_service),
+) -> AvailabilityRead:
+    room = await rooms.get_by_id(room_id)
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    row = await rooms.set_availability_for_date(
+        room, target_date, payload.units_total, current_user
+    )
+    return AvailabilityRead.model_validate(row)

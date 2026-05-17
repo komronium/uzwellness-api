@@ -130,9 +130,7 @@ class BookingService:
             row.units_available -= 1
 
         is_b2b = user.role == UserRole.AGENT
-        room_total = calculate_stay_total(
-            room, list(all_dates), room.price_periods, is_b2b=is_b2b
-        )
+        room_total = calculate_stay_total(room, list(all_dates), room.price_periods)
         extra_bed_records = await self._build_extra_beds(
             payload, room.sanatorium_id, nights
         )

@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
-from app.core.utils import date_range, strip_none
+from app.core.utils import date_range, strip_none, today_tashkent
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -38,7 +38,7 @@ class RoomService:
         user: User | None,
         limit: int,
         offset: int,
-        active_only: bool = True,
+        is_active: bool | None = None,
     ) -> tuple[Sequence[Room], int]:
         stmt = (
             select(Room)
@@ -46,12 +46,27 @@ class RoomService:
             .where(Room.sanatorium_id == sanatorium_id)
             .order_by(Room.created_at.asc())
         )
-        if active_only:
-            stmt = stmt.where(Room.is_active.is_(True))
-        if user is None or user.role in (UserRole.CUSTOMER, UserRole.AGENT):
-            stmt = stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
-        elif user.role == UserRole.ADMIN:
-            stmt = stmt.where(Sanatorium.admin_user_id == user.id)
+        owns_target = False
+        if user is not None and user.role == UserRole.ADMIN:
+            owns_target = (
+                await self.db.execute(
+                    select(Sanatorium.id).where(
+                        Sanatorium.id == sanatorium_id,
+                        Sanatorium.admin_user_id == user.id,
+                    )
+                )
+            ).scalar_one_or_none() is not None
+        is_privileged = user is not None and (
+            user.role == UserRole.SUPER_ADMIN or owns_target
+        )
+        if is_privileged:
+            if is_active is not None:
+                stmt = stmt.where(Room.is_active.is_(is_active))
+        else:
+            stmt = stmt.where(
+                Room.is_active.is_(True),
+                Sanatorium.status == SanatoriumStatus.APPROVED,
+            )
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def create(self, payload: RoomCreate, user: User) -> Room:
@@ -148,6 +163,78 @@ class RoomService:
             await self.db.refresh(row)
         return result
 
+    async def set_availability_for_date(
+        self,
+        room: Room,
+        target: date,
+        units_total: int,
+        user: User,
+    ) -> RoomAvailability:
+        await assert_sanatorium_access(
+            self.db, room.sanatorium_id, user, action="manage this room's availability"
+        )
+        if units_total < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="units_total must be >= 0",
+            )
+        row = (
+            await self.db.execute(
+                select(RoomAvailability)
+                .where(
+                    RoomAvailability.room_id == room.id,
+                    RoomAvailability.date == target,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = RoomAvailability(
+                room_id=room.id,
+                date=target,
+                units_total=units_total,
+                units_available=units_total,
+            )
+            self.db.add(row)
+        else:
+            booked = row.units_total - row.units_available
+            if units_total < booked:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cannot set units_total below current bookings ({booked})"
+                    ),
+                )
+            row.units_total = units_total
+            row.units_available = units_total - booked
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    async def availability_summary(
+        self, room_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, date | None]:
+        if not room_ids:
+            return {}
+        today = today_tashkent()
+        stmt = (
+            select(
+                RoomAvailability.room_id,
+                func.max(RoomAvailability.date).label("max_date"),
+            )
+            .where(
+                RoomAvailability.room_id.in_(room_ids),
+                RoomAvailability.date >= today,
+                RoomAvailability.units_total > 0,
+            )
+            .group_by(RoomAvailability.room_id)
+        )
+        rows = (await self.db.execute(stmt)).all()
+        result: dict[uuid.UUID, date | None] = {rid: None for rid in room_ids}
+        for row in rows:
+            result[row.room_id] = row.max_date
+        return result
+
     async def get_availability(
         self, room: Room, date_from: date, date_to: date
     ) -> list[RoomAvailability]:
@@ -162,17 +249,9 @@ class RoomService:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def enrich(
-        self,
-        room: Room,
-        *,
-        is_b2b: bool = False,
-        include_b2b_price: bool = False,
-    ) -> dict:
+    async def enrich(self, room: Room) -> dict:
         rate = await self.rates.get_usd_uzs()
-        return enrich_room(
-            room, rate, is_b2b=is_b2b, include_b2b_price=include_b2b_price
-        )
+        return enrich_room(room, rate)
 
     async def search(
         self,
@@ -181,7 +260,6 @@ class RoomService:
         check_out: date,
         guests: int,
         sanatorium_id: uuid.UUID | None = None,
-        is_b2b: bool = False,
     ) -> list[tuple[Room, dict]]:
         nights = (check_out - check_in).days
         if nights <= 0:
@@ -220,7 +298,7 @@ class RoomService:
             await self.db.execute(stmt.order_by(Room.base_price.asc()))
         ).scalars().all()
         rate = await self.rates.get_usd_uzs()
-        return [(room, enrich_room(room, rate, is_b2b=is_b2b)) for room in rows]
+        return [(room, enrich_room(room, rate)) for room in rows]
 
 
 def get_room_service(

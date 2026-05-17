@@ -27,9 +27,6 @@ class RoomUpdate(BaseModel):
     base_currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
     markup_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
-    b2b_discount_percent: Decimal | None = Field(
-        default=None, ge=0, le=100, decimal_places=2
-    )
     min_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
@@ -47,21 +44,16 @@ class RoomRead(BaseModel):
     base_currency: str
     markup_percent: Decimal
     discount_percent: Decimal | None = None
-    b2b_discount_percent: Decimal | None = None
     min_nights: int
     is_active: bool
+    has_availability: bool = False
+    availability_until: date | None = None
     final_price: Decimal = Decimal("0")
     final_price_uzs: Decimal | None = None
     final_price_usd: Decimal | None = None
     final_price_weekend: Decimal | None = None
     final_price_weekend_uzs: Decimal | None = None
     final_price_weekend_usd: Decimal | None = None
-    b2b_final_price: Decimal | None = None
-    b2b_final_price_uzs: Decimal | None = None
-    b2b_final_price_usd: Decimal | None = None
-    b2b_final_price_weekend: Decimal | None = None
-    b2b_final_price_weekend_uzs: Decimal | None = None
-    b2b_final_price_weekend_usd: Decimal | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -78,6 +70,10 @@ class AvailabilityBulkCreate(BaseModel):
     date_to: date
     units_total: int = Field(ge=1)
     overwrite: bool = False
+
+
+class AvailabilityUpsert(BaseModel):
+    units_total: int = Field(ge=0)
 
 
 class AvailabilityRead(BaseModel):

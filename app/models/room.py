@@ -47,7 +47,6 @@ class Room(Base):
         Numeric(5, 2), nullable=False, default=Decimal("0")
     )
     discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
-    b2b_discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     min_nights: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

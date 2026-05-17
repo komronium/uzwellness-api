@@ -371,18 +371,22 @@ SORT_FIELDS = tuple(_SORT_CLAUSES.keys())
 
 
 def _apply_visibility(stmt, user: User | None):
-    if user is None or user.role in (UserRole.CUSTOMER, UserRole.AGENT):
-        return stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
-    if user.role == UserRole.ADMIN:
-        return stmt.where(Sanatorium.admin_user_id == user.id)
-    return stmt
+    if user is not None and user.role == UserRole.SUPER_ADMIN:
+        return stmt
+    if user is not None and user.role == UserRole.ADMIN:
+        return stmt.where(
+            (Sanatorium.status == SanatoriumStatus.APPROVED)
+            | (Sanatorium.admin_user_id == user.id)
+        )
+    return stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
 
 
 def _can_view(sanatorium: Sanatorium, user: User | None) -> bool:
     if user is not None and user.role == UserRole.SUPER_ADMIN:
         return True
     if user is not None and user.role == UserRole.ADMIN:
-        return sanatorium.admin_user_id == user.id
+        if sanatorium.admin_user_id == user.id:
+            return True
     return sanatorium.status == SanatoriumStatus.APPROVED
 
 

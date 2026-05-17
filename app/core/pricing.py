@@ -47,14 +47,10 @@ def calculate_stay_total(
     room: Room,
     dates: list[date],
     periods: Sequence[RoomPricePeriod] | None = None,
-    *,
-    is_b2b: bool = False,
 ) -> Decimal:
     total = Decimal("0")
     for d in dates:
         base, weekend, discount = effective_prices_for_date(room, d, periods)
-        if is_b2b and room.b2b_discount_percent is not None:
-            discount = room.b2b_discount_percent
         total += calculate_night_price(
             base, weekend, room.markup_percent, discount, d.weekday() in _WEEKEND_DAYS,
         )
@@ -94,18 +90,8 @@ def _price_block(
     )
 
 
-def enrich_room(
-    room: Room,
-    usd_uzs_rate: ExchangeRate | None,
-    *,
-    is_b2b: bool = False,
-    include_b2b_price: bool = False,
-) -> dict:
-    discount = (
-        room.b2b_discount_percent
-        if is_b2b and room.b2b_discount_percent is not None
-        else room.discount_percent
-    )
+def enrich_room(room: Room, usd_uzs_rate: ExchangeRate | None) -> dict:
+    discount = room.discount_percent
     weekday, weekday_uzs, weekday_usd = _price_block(
         room, usd_uzs_rate, discount=discount, weekend=False
     )
@@ -121,19 +107,4 @@ def enrich_room(
         result["final_price_weekend"] = weekend
         result["final_price_weekend_uzs"] = weekend_uzs
         result["final_price_weekend_usd"] = weekend_usd
-
-    if include_b2b_price and room.b2b_discount_percent is not None:
-        b2b_weekday, b2b_weekday_uzs, b2b_weekday_usd = _price_block(
-            room, usd_uzs_rate, discount=room.b2b_discount_percent, weekend=False
-        )
-        result["b2b_final_price"] = b2b_weekday
-        result["b2b_final_price_uzs"] = b2b_weekday_uzs
-        result["b2b_final_price_usd"] = b2b_weekday_usd
-        if room.base_price_weekend is not None:
-            b2b_weekend, b2b_weekend_uzs, b2b_weekend_usd = _price_block(
-                room, usd_uzs_rate, discount=room.b2b_discount_percent, weekend=True
-            )
-            result["b2b_final_price_weekend"] = b2b_weekend
-            result["b2b_final_price_weekend_uzs"] = b2b_weekend_uzs
-            result["b2b_final_price_weekend_usd"] = b2b_weekend_usd
     return result
