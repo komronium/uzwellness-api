@@ -17,6 +17,7 @@ async def make_room(
     sanatorium: Sanatorium,
     name: str = "Standard",
     capacity: int = 2,
+    inventory_count: int = 5,
     base_price: str = "100.00",
     base_currency: str = "USD",
     min_nights: int = 1,
@@ -29,6 +30,7 @@ async def make_room(
         sanatorium_id=sanatorium.id,
         name={"en": name},
         capacity=capacity,
+        inventory_count=inventory_count,
         base_price=Decimal(base_price),
         base_currency=base_currency,
         min_nights=min_nights,
@@ -72,6 +74,7 @@ class TestRoomCRUD:
                 "sanatorium_id": str(san.id),
                 "name": {"en": "Deluxe"},
                 "capacity": 2,
+                "inventory_count": 3,
                 "base_price": "150.00",
                 "base_currency": "USD",
                 "min_nights": 2,
@@ -81,6 +84,7 @@ class TestRoomCRUD:
         assert resp.status_code == 201
         data = resp.json()
         assert data["capacity"] == 2
+        assert data["inventory_count"] == 3
         assert data["base_currency"] == "USD"
         assert data["final_price"] == "150.00"
 
@@ -166,127 +170,93 @@ class TestRoomCRUD:
         assert resp.status_code == 403
 
 
-# ── Availability ───────────────────────────────────────────────────────────
+# ── Availability (lazy materialization) ────────────────────────────────────
 
 class TestAvailability:
-    async def test_bulk_create(
+    async def test_lazy_returns_full_inventory_when_no_rows(
         self,
         client: AsyncClient,
         db: AsyncSession,
         admin_user: User,
-        admin_headers,
     ):
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        room = await make_room(db, sanatorium=san)
-        resp = await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={
-                "date_from": "2026-06-01",
-                "date_to": "2026-06-08",
-                "units_total": 5,
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 201
-        assert len(resp.json()) == 7  # 7 nights: Jun 1–7
-
-    async def test_get_availability(
-        self,
-        client: AsyncClient,
-        db: AsyncSession,
-        admin_user: User,
-        admin_headers,
-    ):
-        san = await make_sanatorium(
-            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
-        )
-        room = await make_room(db, sanatorium=san)
-        await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={"date_from": "2026-07-01", "date_to": "2026-07-04", "units_total": 3},
-            headers=admin_headers,
-        )
+        room = await make_room(db, sanatorium=san, inventory_count=5)
         resp = await client.get(
             f"/api/rooms/{room.id}/availability?from=2026-07-01&to=2026-07-04"
         )
         assert resp.status_code == 200
-        dates = [r["date"] for r in resp.json()]
-        assert dates == ["2026-07-01", "2026-07-02", "2026-07-03"]
+        rows = resp.json()
+        assert len(rows) == 3
+        for row in rows:
+            assert row["inventory_count"] == 5
+            assert row["units_blocked"] == 0
+            assert row["units_booked"] == 0
+            assert row["units_available"] == 5
 
-    async def test_no_overwrite_by_default(
+    async def test_block_range_creates_exception_rows(
         self,
         client: AsyncClient,
         db: AsyncSession,
         admin_user: User,
         admin_headers,
     ):
-        san = await make_sanatorium(db, admin_user_id=admin_user.id)
-        room = await make_room(db, sanatorium=san)
-        await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={"date_from": "2026-08-01", "date_to": "2026-08-03", "units_total": 10},
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(db, sanatorium=san, inventory_count=5)
+        resp = await client.post(
+            f"/api/rooms/{room.id}/availability/block",
+            json={
+                "date_from": "2026-06-01",
+                "date_to": "2026-06-04",
+                "units_blocked": 2,
+            },
             headers=admin_headers,
         )
-        await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={"date_from": "2026-08-01", "date_to": "2026-08-03", "units_total": 1},
-            headers=admin_headers,
-        )
-        # units should still be 10, not overwritten
-        resp = await client.get(
-            f"/api/rooms/{room.id}/availability?from=2026-08-01&to=2026-08-03"
-        )
-        for row in resp.json():
-            assert row["units_total"] == 10
+        assert resp.status_code == 201
+        rows = resp.json()
+        assert len(rows) == 3
+        for row in rows:
+            assert row["units_blocked"] == 2
+            assert row["units_available"] == 3
 
-    async def test_overwrite_flag(
+    async def test_block_exceeding_inventory_returns_409(
         self,
         client: AsyncClient,
         db: AsyncSession,
         admin_user: User,
         admin_headers,
     ):
-        san = await make_sanatorium(db, admin_user_id=admin_user.id)
-        room = await make_room(db, sanatorium=san)
-        for units in (10, 2):
-            await client.post(
-                f"/api/rooms/{room.id}/availability",
-                json={
-                    "date_from": "2026-09-01",
-                    "date_to": "2026-09-03",
-                    "units_total": units,
-                    "overwrite": True,
-                },
-                headers=admin_headers,
-            )
-        resp = await client.get(
-            f"/api/rooms/{room.id}/availability?from=2026-09-01&to=2026-09-03"
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        for row in resp.json():
-            assert row["units_total"] == 2
+        room = await make_room(db, sanatorium=san, inventory_count=3)
+        resp = await client.post(
+            f"/api/rooms/{room.id}/availability/block",
+            json={
+                "date_from": "2026-06-01",
+                "date_to": "2026-06-02",
+                "units_blocked": 5,
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 409
 
 
 # ── Room search ────────────────────────────────────────────────────────────
 
 class TestRoomSearch:
-    async def _setup(self, db, admin_user, client, admin_headers):
-        san = await make_sanatorium(
-            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
-        )
-        room = await make_room(db, sanatorium=san, capacity=2, min_nights=1)
-        await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={"date_from": "2026-10-01", "date_to": "2026-10-08", "units_total": 3},
-            headers=admin_headers,
-        )
-        return san, room
-
     async def test_finds_available_room(
         self, client, db, admin_user, admin_headers
     ):
-        san, room = await self._setup(db, admin_user, client, admin_headers)
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(
+            db, sanatorium=san, capacity=2, min_nights=1, inventory_count=3
+        )
         resp = await client.get(
             "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
         )
@@ -294,23 +264,80 @@ class TestRoomSearch:
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) in ids
 
-    async def test_excludes_room_with_missing_dates(
+    async def test_multi_unit_fits_via_multiple_rooms(
+        self, client, db, admin_user
+    ):
+        # 5 inventory, capacity 2; 3 guests need 2 rooms → still available
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        await make_room(db, sanatorium=san, capacity=2, inventory_count=5)
+        resp = await client.get(
+            f"/api/rooms/search?sanatorium_id={san.id}"
+            "&check_in=2026-10-02&check_out=2026-10-05&guests=3"
+        )
+        rows = resp.json()
+        assert len(rows) == 1
+        assert rows[0]["available"] is True
+        assert rows[0]["rooms_count_needed"] == 2
+
+    async def test_search_returns_unavailable_rows_when_sanatorium_filter(
+        self, client, db, admin_user
+    ):
+        # With sanatorium_id, even unavailable rooms come back with a reason
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(
+            db, sanatorium=san, capacity=2, inventory_count=1
+        )
+        # 5 guests → need 3 rooms, only 1 exists → exceeds_inventory
+        resp = await client.get(
+            f"/api/rooms/search?sanatorium_id={san.id}"
+            "&check_in=2026-10-02&check_out=2026-10-05&guests=5"
+        )
+        rows = resp.json()
+        assert len(rows) == 1
+        assert rows[0]["available"] is False
+        assert rows[0]["unavailable_reason"] == "exceeds_inventory"
+        assert rows[0]["rooms_count_needed"] == 3
+        assert str(room.id) == rows[0]["id"]
+
+    async def test_excludes_room_fully_booked(
         self, client, db, admin_user, admin_headers
     ):
-        san, room = await self._setup(db, admin_user, client, admin_headers)
-        # availability ends Oct 7; request through Oct 10 — not fully covered
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(db, sanatorium=san, inventory_count=1)
+        # Block the only unit on Oct 3
+        await client.post(
+            f"/api/rooms/{room.id}/availability/block",
+            json={
+                "date_from": "2026-10-03",
+                "date_to": "2026-10-04",
+                "units_blocked": 1,
+            },
+            headers=admin_headers,
+        )
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-06&check_out=2026-10-10&guests=2"
+            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
 
-    async def test_excludes_room_with_insufficient_capacity(
-        self, client, db, admin_user, admin_headers
+    async def test_excludes_room_with_zero_inventory(
+        self, client, db, admin_user
     ):
-        san, room = await self._setup(db, admin_user, client, admin_headers)
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(db, sanatorium=san, inventory_count=1)
+        # Drop inventory to 0 via direct mutation (simulating "I'm closing this room")
+        room.inventory_count = 0
+        await db.commit()
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=3"
+            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids

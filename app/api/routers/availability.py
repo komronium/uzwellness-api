@@ -51,10 +51,23 @@ async def get_availability(
             detail="Sanatorium not found",
         )
 
+    # Total inventory across active rooms of the sanatorium.
+    total_inventory = (
+        await db.execute(
+            select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
+                Room.sanatorium_id == sanatorium_id,
+                Room.is_active.is_(True),
+            )
+        )
+    ).scalar_one()
+
+    # Per-day blocked + booked across active rooms.
     stmt = (
         select(
             RoomAvailability.date,
-            func.sum(RoomAvailability.units_available).label("rooms_left"),
+            func.sum(
+                RoomAvailability.units_blocked + RoomAvailability.units_booked
+            ).label("used"),
         )
         .join(Room, RoomAvailability.room_id == Room.id)
         .where(
@@ -65,13 +78,16 @@ async def get_availability(
         )
         .group_by(RoomAvailability.date)
     )
-    rows = {row.date: int(row.rooms_left) for row in (await db.execute(stmt)).all()}
+    used_per_date = {
+        row.date: int(row.used) for row in (await db.execute(stmt)).all()
+    }
 
     dates: dict[str, dict] = {}
     current = first
     while current <= last:
-        rooms_left = rows.get(current)
-        if rooms_left is None:
+        used = used_per_date.get(current, 0)
+        rooms_left = max(int(total_inventory) - used, 0)
+        if total_inventory == 0:
             dates[current.isoformat()] = {"available": False}
         elif rooms_left <= 0:
             dates[current.isoformat()] = {"available": False, "rooms_left": 0}

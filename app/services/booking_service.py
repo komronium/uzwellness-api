@@ -100,7 +100,7 @@ class BookingService:
                 ).scalars()
             )
             for row in avail_rows:
-                row.units_available = min(row.units_available + 1, row.units_total)
+                row.units_booked = max(row.units_booked - booking.rooms_count, 0)
 
         booking.status = BookingStatus.CANCELLED
         self.db.add(

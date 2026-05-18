@@ -24,11 +24,12 @@ async def _setup_room_with_availability(
     san = await make_sanatorium(
         db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
     )
-    room = await make_room(db, sanatorium=san, capacity=capacity, min_nights=1)
-    await client.post(
-        f"/api/rooms/{room.id}/availability",
-        json={"date_from": _CHECK_IN, "date_to": _CHECK_OUT, "units_total": units},
-        headers=admin_headers,
+    room = await make_room(
+        db,
+        sanatorium=san,
+        capacity=capacity,
+        min_nights=1,
+        inventory_count=units,
     )
     return san, room
 
@@ -140,11 +141,8 @@ class TestBookingValidation:
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        room = await make_room(db, sanatorium=san, min_nights=3)
-        await client.post(
-            f"/api/rooms/{room.id}/availability",
-            json={"date_from": _CHECK_IN, "date_to": _CHECK_OUT, "units_total": 5},
-            headers=admin_headers,
+        room = await make_room(
+            db, sanatorium=san, min_nights=3, inventory_count=5
         )
         # Only 1 night — below min_nights=3
         resp = await client.post(
@@ -159,11 +157,12 @@ class TestBookingValidation:
         )
         assert resp.status_code == 400
 
-    async def test_capacity_enforced(
+    async def test_multi_unit_booking_books_enough_rooms(
         self, client, db, admin_user, admin_headers, customer_headers
     ):
+        # 5 rooms, capacity 2 each. Booking for 5 guests → 3 rooms reserved.
         san, room = await _setup_room_with_availability(
-            db, client, admin_user, admin_headers, capacity=2
+            db, client, admin_user, admin_headers, units=5, capacity=2
         )
         resp = await client.post(
             "/api/bookings",
@@ -171,20 +170,44 @@ class TestBookingValidation:
                 "room_id": str(room.id),
                 "check_in": _CHECK_IN,
                 "check_out": _CHECK_OUT,
-                "guests": 3,
+                "guests": 5,
             },
             headers=customer_headers,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["guests"] == 5
+        assert body["rooms_count"] == 3  # ceil(5/2)
 
-    async def test_no_availability_returns_409(
+    async def test_multi_unit_booking_exceeds_inventory_returns_409(
+        self, client, db, admin_user, admin_headers, customer_headers
+    ):
+        # Only 2 rooms exist but 5 guests → need 3 → 409
+        san, room = await _setup_room_with_availability(
+            db, client, admin_user, admin_headers, units=2, capacity=2
+        )
+        resp = await client.post(
+            "/api/bookings",
+            json={
+                "room_id": str(room.id),
+                "check_in": _CHECK_IN,
+                "check_out": _CHECK_OUT,
+                "guests": 5,
+            },
+            headers=customer_headers,
+        )
+        assert resp.status_code == 409
+
+    async def test_no_inventory_returns_409(
         self, client, db, admin_user, customer_headers
     ):
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        room = await make_room(db, sanatorium=san)
-        # No availability rows created
+        room = await make_room(db, sanatorium=san, inventory_count=1)
+        # Drop inventory to 0 → no units to sell
+        room.inventory_count = 0
+        await db.commit()
         resp = await client.post(
             "/api/bookings",
             json={
@@ -388,6 +411,37 @@ class TestCancellation:
         assert cancel.status_code == 200
         assert cancel.json()["status"] == "cancelled"
 
+    async def test_cancel_restores_multi_unit_availability(
+        self, client, db, admin_user, admin_headers, customer_headers
+    ):
+        # 5 guests → 3 rooms booked, cancel should restore all 3
+        san, room = await _setup_room_with_availability(
+            db, client, admin_user, admin_headers, units=5, capacity=2
+        )
+        b = (
+            await client.post(
+                "/api/bookings",
+                json={
+                    "room_id": str(room.id),
+                    "check_in": _CHECK_IN,
+                    "check_out": _CHECK_OUT,
+                    "guests": 5,
+                },
+                headers=customer_headers,
+            )
+        ).json()
+        assert b["rooms_count"] == 3
+        avail = await client.get(
+            f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
+        )
+        assert all(r["units_booked"] == 3 for r in avail.json())
+
+        await client.patch(f"/api/bookings/{b['id']}/cancel", headers=customer_headers)
+        avail2 = await client.get(
+            f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
+        )
+        assert all(r["units_booked"] == 0 for r in avail2.json())
+
     async def test_cancel_restores_availability(
         self, client, db, admin_user, admin_headers, customer_headers
     ):
@@ -406,18 +460,20 @@ class TestCancellation:
                 headers=customer_headers,
             )
         ).json()
-        # After booking, availability should be 0
+        # After booking, units_booked should be 1 (sold out)
         avail = await client.get(
             f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
         )
+        assert all(r["units_booked"] == 1 for r in avail.json())
         assert all(r["units_available"] == 0 for r in avail.json())
 
         await client.patch(f"/api/bookings/{b['id']}/cancel", headers=customer_headers)
 
-        # After cancel, availability restored to 1
+        # After cancel, units_booked back to 0 → available again
         avail2 = await client.get(
             f"/api/rooms/{room.id}/availability?from={_CHECK_IN}&to={_CHECK_OUT}"
         )
+        assert all(r["units_booked"] == 0 for r in avail2.json())
         assert all(r["units_available"] == 1 for r in avail2.json())
 
 

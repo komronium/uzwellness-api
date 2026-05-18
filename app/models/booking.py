@@ -81,6 +81,9 @@ class Booking(Base):
     check_in: Mapped[date] = mapped_column(Date, nullable=False)
     check_out: Mapped[date] = mapped_column(Date, nullable=False)
     guests: Mapped[int] = mapped_column(Integer, nullable=False)
+    rooms_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
 
     status: Mapped[BookingStatus] = mapped_column(
         SQLEnum(

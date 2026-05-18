@@ -8,12 +8,13 @@ from app.core.pricing import enrich_room
 from app.models.room import Room
 from app.models.user import UserRole
 from app.schemas.room import (
-    AvailabilityBulkCreate,
+    AvailabilityBlock,
     AvailabilityRead,
     AvailabilityUpsert,
     RoomCreate,
     RoomList,
     RoomRead,
+    RoomSearchResult,
     RoomUpdate,
 )
 from app.services.room_service import RoomService, get_room_service
@@ -26,14 +27,13 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 def _with_pricing(
     room: Room,
     pricing: dict,
-    availability_until: date | None = None,
+    *,
+    has_availability: bool | None = None,
 ) -> RoomRead:
+    if has_availability is None:
+        has_availability = room.is_active and room.inventory_count >= 1
     return RoomRead.model_validate(room).model_copy(
-        update={
-            **pricing,
-            "availability_until": availability_until,
-            "has_availability": availability_until is not None,
-        }
+        update={**pricing, "has_availability": has_availability}
     )
 
 
@@ -57,10 +57,14 @@ async def list_rooms(
         is_active=is_active,
     )
     rate = await rooms.rates.get_usd_uzs()
-    summary = await rooms.availability_summary([r.id for r in items])
+    has_avail = await rooms.has_availability_map([r.id for r in items])
     return RoomList(
         items=[
-            _with_pricing(r, enrich_room(r, rate), summary.get(r.id))
+            _with_pricing(
+                r,
+                enrich_room(r, rate),
+                has_availability=has_avail.get(r.id, False),
+            )
             for r in items
         ],
         total=total,
@@ -69,26 +73,43 @@ async def list_rooms(
     )
 
 
-@router.get("/search", response_model=list[RoomRead])
+@router.get("/search", response_model=list[RoomSearchResult])
 async def search_rooms(
     check_in: date = Query(...),
     check_out: date = Query(...),
     guests: int = Query(default=1, ge=1),
     sanatorium_id: uuid.UUID | None = Query(default=None),
     rooms: RoomService = Depends(get_room_service),
-) -> list[RoomRead]:
+) -> list[RoomSearchResult]:
     if check_out <= check_in:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="check_out must be after check_in",
         )
-    results = await rooms.search(
+    hits = await rooms.search(
         check_in=check_in,
         check_out=check_out,
         guests=guests,
         sanatorium_id=sanatorium_id,
     )
-    return [_with_pricing(room, pricing) for room, pricing in results]
+    results: list[RoomSearchResult] = []
+    for hit in hits:
+        base = RoomRead.model_validate(hit.room).model_copy(
+            update={
+                **hit.pricing,
+                "has_availability": hit.room.is_active
+                and hit.room.inventory_count >= 1,
+            }
+        )
+        results.append(
+            RoomSearchResult(
+                **base.model_dump(),
+                available=hit.available,
+                rooms_count_needed=hit.rooms_count_needed,
+                unavailable_reason=hit.unavailable_reason,
+            )
+        )
+    return results
 
 
 @router.get("/{room_id}", response_model=RoomRead)
@@ -100,8 +121,7 @@ async def get_room(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     pricing = await rooms.enrich(room)
-    summary = await rooms.availability_summary([room.id])
-    return _with_pricing(room, pricing, summary.get(room.id))
+    return _with_pricing(room, pricing)
 
 
 @router.post(
@@ -164,26 +184,44 @@ async def get_room_availability(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     rows = await rooms.get_availability(room, date_from, date_to)
-    return [AvailabilityRead.model_validate(r) for r in rows]
+    return [
+        AvailabilityRead(
+            date=r.date,
+            inventory_count=r.inventory_count,
+            units_blocked=r.units_blocked,
+            units_booked=r.units_booked,
+            units_available=r.units_available,
+        )
+        for r in rows
+    ]
 
 
 @router.post(
-    "/{room_id}/availability",
+    "/{room_id}/availability/block",
     response_model=list[AvailabilityRead],
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_admin_or_above)],
 )
-async def bulk_create_availability(
+async def block_availability_range(
     room_id: uuid.UUID,
-    payload: AvailabilityBulkCreate,
+    payload: AvailabilityBlock,
     current_user: CurrentUser,
     rooms: RoomService = Depends(get_room_service),
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    rows = await rooms.bulk_create_availability(room, payload, current_user)
-    return [AvailabilityRead.model_validate(r) for r in rows]
+    rows = await rooms.block_range(room, payload, current_user)
+    return [
+        AvailabilityRead(
+            date=r.date,
+            inventory_count=r.inventory_count,
+            units_blocked=r.units_blocked,
+            units_booked=r.units_booked,
+            units_available=r.units_available,
+        )
+        for r in rows
+    ]
 
 
 @router.patch(
@@ -201,7 +239,13 @@ async def upsert_room_availability(
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    row = await rooms.set_availability_for_date(
-        room, target_date, payload.units_total, current_user
+    row = await rooms.set_blocked_for_date(
+        room, target_date, payload.units_blocked, current_user
     )
-    return AvailabilityRead.model_validate(row)
+    return AvailabilityRead(
+        date=row.date,
+        inventory_count=row.inventory_count,
+        units_blocked=row.units_blocked,
+        units_booked=row.units_booked,
+        units_available=row.units_available,
+    )

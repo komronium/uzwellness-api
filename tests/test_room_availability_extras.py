@@ -24,17 +24,19 @@ class TestAvailabilityUpsert:
             db, slug="upsert-1", admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
-        room = await make_room(db, sanatorium=san)
+        room = await make_room(db, sanatorium=san, inventory_count=5)
         target = (date.today() + timedelta(days=7)).isoformat()
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 5},
+            json={"units_blocked": 2},
             headers=admin_headers,
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["units_total"] == 5
-        assert body["units_available"] == 5
+        assert body["inventory_count"] == 5
+        assert body["units_blocked"] == 2
+        assert body["units_booked"] == 0
+        assert body["units_available"] == 3
 
     async def test_upsert_updates_existing_preserves_booked(
         self,
@@ -47,30 +49,32 @@ class TestAvailabilityUpsert:
             db, slug="upsert-2", admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
-        room = await make_room(db, sanatorium=san)
+        room = await make_room(db, sanatorium=san, inventory_count=10)
         target = date.today() + timedelta(days=7)
 
-        # Existing row: 5 units, 2 already booked → 3 available
+        # Existing row: 2 already booked, 0 blocked
         row = RoomAvailability(
-            room_id=room.id, date=target, units_total=5, units_available=3
+            room_id=room.id, date=target, units_blocked=0, units_booked=2
         )
         db.add(row)
         await db.commit()
 
-        # Increase total to 10 → should preserve booked count, new available = 8
+        # Block 3 → preserves booked
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target.isoformat()}",
-            json={"units_total": 10},
+            json={"units_blocked": 3},
             headers=admin_headers,
         )
         assert resp.status_code == 200
         assert resp.json() == {
             "date": target.isoformat(),
-            "units_total": 10,
-            "units_available": 8,
+            "inventory_count": 10,
+            "units_blocked": 3,
+            "units_booked": 2,
+            "units_available": 5,
         }
 
-    async def test_upsert_below_booked_returns_409(
+    async def test_upsert_blocked_plus_booked_exceeds_inventory_409(
         self,
         client: AsyncClient,
         db: AsyncSession,
@@ -81,22 +85,22 @@ class TestAvailabilityUpsert:
             db, slug="upsert-3", admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
-        room = await make_room(db, sanatorium=san)
+        room = await make_room(db, sanatorium=san, inventory_count=5)
         target = date.today() + timedelta(days=7)
         row = RoomAvailability(
-            room_id=room.id, date=target, units_total=5, units_available=2
+            room_id=room.id, date=target, units_blocked=0, units_booked=3
         )
         db.add(row)
         await db.commit()
-        # 3 bookings exist (5 - 2). Try setting total to 2 → rejected.
+        # 3 booked, try blocking 3 more → 6 > inventory 5 → 409
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target.isoformat()}",
-            json={"units_total": 2},
+            json={"units_blocked": 3},
             headers=admin_headers,
         )
         assert resp.status_code == 409
 
-    async def test_upsert_to_zero_blocks_date(
+    async def test_upsert_block_full_inventory(
         self,
         client: AsyncClient,
         db: AsyncSession,
@@ -107,15 +111,15 @@ class TestAvailabilityUpsert:
             db, slug="upsert-4", admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
-        room = await make_room(db, sanatorium=san)
+        room = await make_room(db, sanatorium=san, inventory_count=5)
         target = (date.today() + timedelta(days=7)).isoformat()
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 0},
+            json={"units_blocked": 5},
             headers=admin_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["units_total"] == 0
+        assert resp.json()["units_blocked"] == 5
         assert resp.json()["units_available"] == 0
 
     async def test_upsert_anon_returns_401(
@@ -126,7 +130,7 @@ class TestAvailabilityUpsert:
         target = (date.today() + timedelta(days=7)).isoformat()
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 5},
+            json={"units_blocked": 1},
         )
         assert resp.status_code == 401
 
@@ -143,65 +147,40 @@ class TestAvailabilityUpsert:
         target = (date.today() + timedelta(days=7)).isoformat()
         resp = await client.patch(
             f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 5},
+            json={"units_blocked": 1},
             headers=admin_headers,
         )
         assert resp.status_code == 403
 
 
 class TestRoomAvailabilityFields:
-    async def test_room_without_availability_flags(
+    async def test_room_with_inventory_has_availability(
         self, client: AsyncClient, db: AsyncSession
     ):
         san = await make_sanatorium(db, slug="avail-1")
-        room = await make_room(db, sanatorium=san)
+        room = await make_room(db, sanatorium=san, inventory_count=3)
         resp = await client.get(f"/api/rooms/{room.id}")
         body = resp.json()
-        assert body["has_availability"] is False
-        assert body["availability_until"] is None
-
-    async def test_room_with_future_availability(
-        self,
-        client: AsyncClient,
-        db: AsyncSession,
-        admin_user,
-        admin_headers,
-    ):
-        san = await make_sanatorium(
-            db, slug="avail-2", admin_user_id=admin_user.id,
-            status=SanatoriumStatus.APPROVED,
-        )
-        room = await make_room(db, sanatorium=san)
-        target = (date.today() + timedelta(days=30)).isoformat()
-        await client.patch(
-            f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 3},
-            headers=admin_headers,
-        )
-        resp = await client.get(f"/api/rooms/{room.id}")
-        body = resp.json()
+        assert body["inventory_count"] == 3
         assert body["has_availability"] is True
-        assert body["availability_until"] == target
 
-    async def test_room_with_only_zero_units_no_availability(
-        self,
-        client: AsyncClient,
-        db: AsyncSession,
-        admin_user,
-        admin_headers,
+    async def test_room_with_zero_inventory_no_availability(
+        self, client: AsyncClient, db: AsyncSession
     ):
-        san = await make_sanatorium(
-            db, slug="avail-3", admin_user_id=admin_user.id,
-            status=SanatoriumStatus.APPROVED,
-        )
-        room = await make_room(db, sanatorium=san)
-        target = (date.today() + timedelta(days=30)).isoformat()
-        await client.patch(
-            f"/api/rooms/{room.id}/availability/{target}",
-            json={"units_total": 0},
-            headers=admin_headers,
-        )
+        san = await make_sanatorium(db, slug="avail-2")
+        room = await make_room(db, sanatorium=san, inventory_count=1)
+        room.inventory_count = 0
+        await db.commit()
         resp = await client.get(f"/api/rooms/{room.id}")
         body = resp.json()
-        # Zero-units rows don't count as "has availability"
+        assert body["inventory_count"] == 0
+        assert body["has_availability"] is False
+
+    async def test_inactive_room_no_availability(
+        self, client: AsyncClient, db: AsyncSession
+    ):
+        san = await make_sanatorium(db, slug="avail-3")
+        room = await make_room(db, sanatorium=san, inventory_count=5, is_active=False)
+        resp = await client.get(f"/api/rooms/{room.id}")
+        body = resp.json()
         assert body["has_availability"] is False

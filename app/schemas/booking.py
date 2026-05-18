@@ -45,6 +45,7 @@ class BookingRead(BaseModel):
     check_in: date
     check_out: date
     guests: int
+    rooms_count: int
     status: BookingStatus
     final_price: Decimal
     currency: str

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
@@ -21,7 +22,14 @@ from app.schemas.booking import BookingCreate
 from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext
 
-_CENTS = Decimal("0.01")  # noqa: F841 — kept for symmetry with session flow
+_CENTS = Decimal("0.01")
+
+
+def rooms_needed_for(guests: int, capacity: int) -> int:
+    """How many same-type rooms fit `guests`, given per-room `capacity`."""
+    if capacity < 1:
+        return 0
+    return math.ceil(guests / capacity)
 
 
 class RoomBookingFlow:
@@ -48,18 +56,18 @@ class RoomBookingFlow:
             )
 
         nights = (payload.check_out - payload.check_in).days
-        all_dates = date_range(payload.check_in, payload.check_out)
+        all_dates = list(date_range(payload.check_in, payload.check_out))
 
         room = await self._lock_room(payload.room_id)
         sanatorium = await self._approved_sanatorium(room.sanatorium_id)
-        self._validate_room_constraints(room, payload, nights)
+        rooms_count = self._validate_and_compute_rooms(room, payload, nights)
 
-        avail_rows = await self._lock_availability(room.id, list(all_dates), nights)
-        for row in avail_rows:
-            row.units_available -= 1
+        await self._reserve_units(room, all_dates, rooms_count)
 
         is_b2b = user.role == UserRole.AGENT
-        base_total = calculate_stay_total(room, list(all_dates), room.price_periods)
+        base_total = calculate_stay_total(
+            room, all_dates, room.price_periods
+        ) * rooms_count
         extra_bed_records = await self._build_extra_beds(
             payload, room.sanatorium_id, nights
         )
@@ -79,6 +87,7 @@ class RoomBookingFlow:
             check_in=payload.check_in,
             check_out=payload.check_out,
             guests=payload.guests,
+            rooms_count=rooms_count,
             status=BookingStatus.CONFIRMED,
             final_price=pricing.final_price,
             currency=room.base_currency,
@@ -135,47 +144,79 @@ class RoomBookingFlow:
         return sanatorium
 
     @staticmethod
-    def _validate_room_constraints(
+    def _validate_and_compute_rooms(
         room: Room, payload: BookingCreate, nights: int
-    ) -> None:
+    ) -> int:
         if nights < room.min_nights:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Minimum stay is {room.min_nights} night(s)",
             )
-        if room.capacity < payload.guests:
+        if room.capacity < 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Room capacity is {room.capacity} guest(s)",
+                detail="Room has no capacity",
             )
+        rooms_count = rooms_needed_for(payload.guests, room.capacity)
+        if rooms_count > room.inventory_count:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Need {rooms_count} room(s) for {payload.guests} guest(s) "
+                    f"but only {room.inventory_count} exist"
+                ),
+            )
+        return rooms_count
 
-    async def _lock_availability(
-        self, room_id, dates: list, nights: int
-    ) -> list[RoomAvailability]:
-        rows = list(
-            (
+    async def _reserve_units(
+        self, room: Room, dates: list, rooms_count: int
+    ) -> None:
+        """Lazy-materialize rows and increment units_booked by `rooms_count`.
+
+        409 if any night has fewer than `rooms_count` free units.
+        """
+        if room.inventory_count < 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Room has no inventory",
+            )
+        existing = {
+            row.date: row
+            for row in (
                 await self.db.execute(
                     select(RoomAvailability)
                     .where(
-                        RoomAvailability.room_id == room_id,
+                        RoomAvailability.room_id == room.id,
                         RoomAvailability.date.in_(dates),
                     )
                     .with_for_update()
                 )
             ).scalars()
-        )
-        if len(rows) != nights:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Not all dates are available",
-            )
-        for row in rows:
-            if row.units_available < 1:
+        }
+        for d in dates:
+            row = existing.get(d)
+            if row is None:
+                row = RoomAvailability(
+                    room_id=room.id,
+                    date=d,
+                    units_blocked=0,
+                    units_booked=rooms_count,
+                )
+                self.db.add(row)
+                continue
+            if (
+                row.units_blocked + row.units_booked + rooms_count
+                > room.inventory_count
+            ):
+                free = room.inventory_count - row.units_blocked - row.units_booked
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"No units available on {row.date}",
+                    detail=(
+                        f"Only {max(free, 0)} unit(s) free on {d}, "
+                        f"need {rooms_count}"
+                    ),
                 )
-        return rows
+            row.units_booked += rooms_count
 
     async def _build_extra_beds(
         self, payload: BookingCreate, sanatorium_id, nights: int

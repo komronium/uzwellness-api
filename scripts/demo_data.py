@@ -255,10 +255,12 @@ async def main() -> None:
                     continue
 
                 markup = Decimal(str(random.choice([0, 5, 10, 15])))
+                inventory = random.randint(3, 8)
                 room = Room(
                     sanatorium_id=san.id,
                     name=tmpl["name"],
                     capacity=tmpl["capacity"],
+                    inventory_count=inventory,
                     base_price=tmpl["base_price"],
                     base_currency=tmpl["base_currency"],
                     markup_percent=markup,
@@ -268,27 +270,11 @@ async def main() -> None:
                 db.add(room)
                 await db.flush()
                 all_rooms.append(room)
-                print(f"  ✓ room: {tmpl['name']['en']} ({tmpl['base_price']} {tmpl['base_currency']})")
-
-                # Availability: today + 90 days
-                existing_avail = (
-                    await db.execute(
-                        select(RoomAvailability).where(
-                            RoomAvailability.room_id == room.id
-                        ).limit(1)
-                    )
-                ).scalar_one_or_none()
-
-                if existing_avail is None:
-                    units = random.randint(3, 8)
-                    for offset in range(90):
-                        db.add(RoomAvailability(
-                            room_id=room.id,
-                            date=today + timedelta(days=offset),
-                            units_total=units,
-                            units_available=units,
-                        ))
-                    print(f"    ✓ availability: {units} units × 90 days")
+                print(
+                    f"  ✓ room: {tmpl['name']['en']} "
+                    f"({tmpl['base_price']} {tmpl['base_currency']}, "
+                    f"{inventory} units)"
+                )
 
         await db.flush()
 
@@ -307,20 +293,41 @@ async def main() -> None:
                 check_in = today + timedelta(days=start_offset)
                 check_out = check_in + timedelta(days=nights)
 
-                # decrement availability
-                avail_rows = (
-                    await db.execute(
-                        select(RoomAvailability).where(
-                            RoomAvailability.room_id == room.id,
-                            RoomAvailability.date >= check_in,
-                            RoomAvailability.date < check_out,
-                            RoomAvailability.units_available >= 1,
+                # lazy availability: get-or-create rows and bump units_booked
+                existing_rows = {
+                    row.date: row
+                    for row in (
+                        await db.execute(
+                            select(RoomAvailability).where(
+                                RoomAvailability.room_id == room.id,
+                                RoomAvailability.date >= check_in,
+                                RoomAvailability.date < check_out,
+                            )
                         )
-                    )
-                ).scalars().all()
-
-                if len(avail_rows) < nights:
-                    continue  # not enough availability, skip
+                    ).scalars().all()
+                }
+                full = False
+                for offset_d in range(nights):
+                    d = check_in + timedelta(days=offset_d)
+                    row = existing_rows.get(d)
+                    if row is None:
+                        existing_rows[d] = RoomAvailability(
+                            room_id=room.id,
+                            date=d,
+                            units_blocked=0,
+                            units_booked=1,
+                        )
+                        db.add(existing_rows[d])
+                    else:
+                        if (
+                            row.units_blocked + row.units_booked + 1
+                            > room.inventory_count
+                        ):
+                            full = True
+                            break
+                        row.units_booked += 1
+                if full:
+                    continue
 
                 from app.core.pricing import calculate_final_price
                 final_price = calculate_final_price(room.base_price, room.markup_percent)
@@ -337,9 +344,6 @@ async def main() -> None:
                 )
                 db.add(booking)
                 await db.flush()
-
-                for row in avail_rows:
-                    row.units_available -= 1
 
                 db.add(Notification(
                     booking_id=booking.id,

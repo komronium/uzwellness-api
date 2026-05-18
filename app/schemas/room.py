@@ -12,6 +12,7 @@ class RoomCreate(BaseModel):
     name: Translations = Field(default_factory=Translations)
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int = Field(ge=1)
+    inventory_count: int = Field(default=1, ge=1)
     base_price: Decimal = Field(ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_currency: str = Field(pattern=r"^(UZS|USD)$")
@@ -22,6 +23,7 @@ class RoomUpdate(BaseModel):
     name: Translations | None = None
     room_amenities: list[str] | None = None
     capacity: int | None = Field(default=None, ge=1)
+    inventory_count: int | None = Field(default=None, ge=0)
     base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
@@ -39,6 +41,7 @@ class RoomRead(BaseModel):
     name: dict
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int
+    inventory_count: int
     base_price: Decimal
     base_price_weekend: Decimal | None = None
     base_currency: str
@@ -47,7 +50,6 @@ class RoomRead(BaseModel):
     min_nights: int
     is_active: bool
     has_availability: bool = False
-    availability_until: date | None = None
     final_price: Decimal = Decimal("0")
     final_price_uzs: Decimal | None = None
     final_price_usd: Decimal | None = None
@@ -65,23 +67,40 @@ class RoomList(BaseModel):
     offset: int
 
 
-class AvailabilityBulkCreate(BaseModel):
+class RoomSearchResult(RoomRead):
+    """Search result row: includes availability flags for a date range."""
+
+    available: bool
+    rooms_count_needed: int
+    unavailable_reason: str | None = None
+
+
+class AvailabilityBlock(BaseModel):
+    """Block (close) units across a date range — e.g. for maintenance.
+
+    `date_to` is exclusive (matches booking semantics).
+    """
+
     date_from: date
     date_to: date
-    units_total: int = Field(ge=1)
-    overwrite: bool = False
+    units_blocked: int = Field(ge=0, description="Units to mark blocked per day")
 
 
 class AvailabilityUpsert(BaseModel):
-    units_total: int = Field(ge=0)
+    units_blocked: int = Field(ge=0)
 
 
 class AvailabilityRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Per-day availability row (computed view).
+
+    `units_available = inventory_count - units_blocked - units_booked`.
+    """
 
     date: date
+    inventory_count: int
+    units_blocked: int
+    units_booked: int
     units_available: int
-    units_total: int
 
 
 class RoomPricePeriodCreate(BaseModel):
