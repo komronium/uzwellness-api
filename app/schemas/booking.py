@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.booking import BookingStatus, BookingType
 from app.models.user import UserRole
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
+from app.schemas.payment import BookingPaymentSummary
 
 
 class BookingCustomerRead(BaseModel):
@@ -67,6 +68,7 @@ class BookingRead(BaseModel):
     b2b_commission: Decimal | None = None
     guest_details: list[GuestDetail] = Field(default_factory=list)
     extra_beds: list[BookingExtraBedRead] = []
+    payments: list[BookingPaymentSummary] = Field(default_factory=list)
     customer: BookingCustomerRead | None = None
     created_at: datetime
 

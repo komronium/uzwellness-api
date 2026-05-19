@@ -6,6 +6,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.utils import pick_locale
 from app.models.booking import Booking, BookingStatus
 from app.models.exchange_rate import ExchangeRate
 from app.models.room import Room
@@ -124,7 +125,7 @@ class AdminService:
         return [
             {
                 "id": row.id,
-                "name": row.name,
+                "name": pick_locale(row.name),
                 "booking_count": int(row.booking_count),
                 "revenue": Decimal(row.revenue).quantize(Decimal("0.01")),
             }

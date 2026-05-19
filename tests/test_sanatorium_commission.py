@@ -93,9 +93,9 @@ class TestSuperAdminOnlyFields:
         s = await make_sanatorium(db, slug="norm", admin_user_id=admin_user.id)
         resp = await client.patch(
             f"/api/sanatoriums/{s.id}",
-            json={"name": "Renamed", "city": "Samarqand"},
+            json={"name": {"uz": "Renamed"}, "city": "Samarqand"},
             headers=admin_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["name"] == "Renamed"
+        assert resp.json()["name"]["uz"] == "Renamed"
         assert resp.json()["city"] == "Samarqand"

@@ -53,7 +53,11 @@ class SqlBookingRepository:
     async def get_with_extras(self, booking_id: uuid.UUID) -> Booking | None:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
+            .options(
+                selectinload(Booking.extra_beds),
+                selectinload(Booking.user),
+                selectinload(Booking.payments),
+            )
             .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
@@ -69,7 +73,11 @@ class SqlBookingRepository:
     ) -> Booking | None:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
+            .options(
+                selectinload(Booking.extra_beds),
+                selectinload(Booking.user),
+                selectinload(Booking.payments),
+            )
             .where(Booking.id == booking_id)
         )
         for clause in base_filters:
@@ -93,7 +101,9 @@ class SqlBookingRepository:
         ).scalar_one()
         stmt = (
             base.options(
-                selectinload(Booking.extra_beds), selectinload(Booking.user)
+                selectinload(Booking.extra_beds),
+                selectinload(Booking.user),
+                selectinload(Booking.payments),
             )
             .order_by(Booking.created_at.desc())
             .limit(limit)

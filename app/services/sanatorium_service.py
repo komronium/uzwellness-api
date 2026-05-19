@@ -14,7 +14,7 @@ from app.core.permissions import (
 )
 from app.core.policies import SanatoriumPolicy
 from app.core.slug import slugify as _slugify
-from app.core.utils import merge_translation_fields
+from app.core.utils import merge_translation_fields, pick_locale
 from app.models.amenity import Amenity
 from app.models.sanatorium import (
     PropertyType,
@@ -57,13 +57,20 @@ class SanatoriumService:
             suffix += 1
 
     async def create(self, payload: SanatoriumCreate) -> Sanatorium:
-        base_slug = slugify(payload.slug or payload.name)
+        name_dict = payload.name.model_dump(exclude_none=True)
+        slug_seed = payload.slug or pick_locale(name_dict)
+        if not slug_seed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="name must contain at least one locale",
+            )
+        base_slug = slugify(slug_seed)
         slug = await self._resolve_slug(base_slug)
 
         amenities = await self._fetch_amenities(payload.amenity_ids)
 
         sanatorium = Sanatorium(
-            name=payload.name,
+            name=name_dict,
             slug=slug,
             description=payload.description.model_dump(exclude_none=True),
             city=payload.city,
@@ -113,14 +120,14 @@ class SanatoriumService:
         merge_translation_fields(
             sanatorium,
             data,
-            ("description", "house_rules", "cancellation_policy"),
+            ("name", "description", "house_rules", "cancellation_policy"),
         )
 
         if "slug" in data and data["slug"] is not None:
             base_slug = slugify(data["slug"])
             data["slug"] = await self._resolve_slug(base_slug, exclude_id=sanatorium.id)
         elif "name" in data and "slug" not in data:
-            base_slug = slugify(data["name"])
+            base_slug = slugify(pick_locale(data["name"]))
             data["slug"] = await self._resolve_slug(base_slug, exclude_id=sanatorium.id)
 
         for field, value in data.items():
@@ -208,7 +215,12 @@ class SanatoriumService:
         if min_rating is not None:
             base = base.where(Sanatorium.avg_rating >= min_rating)
         if q is not None and q.strip():
-            base = base.where(Sanatorium.name.icontains(q.strip(), autoescape=True))
+            term = q.strip()
+            base = base.where(
+                Sanatorium.name["uz"].astext.icontains(term, autoescape=True)
+                | Sanatorium.name["ru"].astext.icontains(term, autoescape=True)
+                | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
+            )
         if treatment_focus is not None:
             base = base.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
         if amenity_ids:
@@ -271,8 +283,8 @@ _MISSING: object = object()
 
 
 _SORT_CLAUSES = {
-    "name": Sanatorium.name.asc(),
-    "-name": Sanatorium.name.desc(),
+    "name": Sanatorium.name["uz"].astext.asc(),
+    "-name": Sanatorium.name["uz"].astext.desc(),
     "stars": Sanatorium.stars.asc(),
     "-stars": Sanatorium.stars.desc(),
     "rating": Sanatorium.avg_rating.asc(),

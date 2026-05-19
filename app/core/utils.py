@@ -14,6 +14,27 @@ def date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days)]
 
 
+def pick_locale(translations: dict | None, locale: str = "uz") -> str:
+    """Pick a display string from a translations dict.
+
+    Tries the requested locale, then falls through uz → ru → en, then any
+    non-empty value. Returns an empty string if the dict has nothing usable.
+    """
+    if not translations:
+        return ""
+    preferred = translations.get(locale)
+    if preferred:
+        return preferred
+    for k in ("uz", "ru", "en"):
+        value = translations.get(k)
+        if value:
+            return value
+    for value in translations.values():
+        if value:
+            return value
+    return ""
+
+
 def merge_translation_fields(
     obj, data: dict, fields: tuple[str, ...]
 ) -> None:

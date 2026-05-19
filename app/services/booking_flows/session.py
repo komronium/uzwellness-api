@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.notifier import BookingNotifier
+from app.core.utils import pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.program import TreatmentProgram
@@ -109,7 +110,7 @@ class SessionBookingFlow:
             )
         )
         await self.db.commit()
-        await self._send_received_email(booking, user, sanatorium.name)
+        await self._send_received_email(booking, user, pick_locale(sanatorium.name))
         return await self._load(booking.id)
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
@@ -128,7 +129,11 @@ class SessionBookingFlow:
     async def _load(self, booking_id) -> Booking:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
+            .options(
+                selectinload(Booking.extra_beds),
+                selectinload(Booking.user),
+                selectinload(Booking.payments),
+            )
             .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one()

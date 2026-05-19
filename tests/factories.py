@@ -47,7 +47,7 @@ async def make_user(
 async def make_sanatorium(
     db: AsyncSession,
     *,
-    name: str = "Test Sanatorium",
+    name: str | dict = "Test Sanatorium",
     slug: str | None = None,
     city: str = "Toshkent",
     address: str = "Test Address 1",
@@ -56,9 +56,11 @@ async def make_sanatorium(
     admin_user_id: uuid.UUID | None = None,
     description: dict | None = None,
 ) -> Sanatorium:
+    name_dict = {"uz": name} if isinstance(name, str) else name
+    primary = next((v for v in name_dict.values() if v), "sanatorium")
     sanatorium = Sanatorium(
-        name=name,
-        slug=slug or name.lower().replace(" ", "-"),
+        name=name_dict,
+        slug=slug or primary.lower().replace(" ", "-"),
         description=description or {},
         city=city,
         address=address,

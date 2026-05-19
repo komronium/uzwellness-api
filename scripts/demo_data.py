@@ -46,7 +46,11 @@ CUSTOMERS = [
 
 SANATORIUMS = [
     {
-        "name": "Charvak Oromgohi",
+        "name": {
+            "uz": "Charvak Oromgohi",
+            "ru": "Чарвак Оромгохи",
+            "en": "Charvak Resort",
+        },
         "slug": "charvak-oromgohi",
         "description": {
             "uz": "Charvak suv ombori yonida joylashgan zamonaviy dam olish maskani.",
@@ -60,7 +64,11 @@ SANATORIUMS = [
         "stars": 5,
     },
     {
-        "name": "Nur Samarqand",
+        "name": {
+            "uz": "Nur Samarqand",
+            "ru": "Нур Самарканд",
+            "en": "Nur Samarkand",
+        },
         "slug": "nur-samarqand",
         "description": {
             "uz": "Samarqandning tarixiy markazida joylashgan, zamonaviy shifo markazi.",
@@ -74,7 +82,11 @@ SANATORIUMS = [
         "stars": 4,
     },
     {
-        "name": "Buxoro Ziloli",
+        "name": {
+            "uz": "Buxoro Ziloli",
+            "ru": "Бухара Зилоли",
+            "en": "Bukhara Ziloli",
+        },
         "slug": "buxoro-ziloli",
         "description": {
             "uz": "Qadimiy Buxoro shahri yaqinida, toza havo va shifo manbalari bilan.",
@@ -88,7 +100,11 @@ SANATORIUMS = [
         "stars": 3,
     },
     {
-        "name": "Namangan Bog'i",
+        "name": {
+            "uz": "Namangan Bog'i",
+            "ru": "Наманган Боги",
+            "en": "Namangan Garden",
+        },
         "slug": "namangan-bogi",
         "description": {
             "uz": "Namangan shahridagi katta bog' ichida joylashgan tinch dam olish joyi.",
@@ -238,7 +254,7 @@ async def main() -> None:
 
         for i, san_data in enumerate(SANATORIUMS):
             san, san_created = await get_or_create_sanatorium(db, san_data, admin_users[i].id)
-            print(f"{'✓' if san_created else '-'} sanatorium: {san_data['name']}")
+            print(f"{'✓' if san_created else '-'} sanatorium: {san_data['name']['uz']}")
 
             for tmpl in ROOM_TEMPLATES[i]:
                 existing_room = (

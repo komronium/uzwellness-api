@@ -43,7 +43,7 @@ class SanatoriumImageUpdate(BaseModel):
 
 
 class SanatoriumBase(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+    name: Translations = Field(default_factory=Translations)
     description: Translations = Field(default_factory=Translations)
     city: str = Field(min_length=1, max_length=120)
     region: str | None = Field(default=None, max_length=120)
@@ -81,7 +81,7 @@ class SanatoriumCreate(SanatoriumBase):
 
 
 class SanatoriumUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
+    name: Translations | None = None
     slug: str | None = Field(default=None, max_length=255)
     description: Translations | None = None
     city: str | None = Field(default=None, min_length=1, max_length=120)
@@ -121,7 +121,7 @@ class SanatoriumRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    name: str
+    name: Translations
     slug: str
     description: Translations
     city: str

@@ -19,7 +19,7 @@ async def _login(client: AsyncClient, email: str, password: str) -> dict[str, st
 
 
 CREATE_PAYLOAD = {
-    "name": "Vodiy Shifosi",
+    "name": {"uz": "Vodiy Shifosi", "en": "Valley Healing"},
     "description": {"uz": "Eng yaxshi", "en": "The best"},
     "city": "Toshkent",
     "address": "Amir Temur 12",
@@ -38,7 +38,8 @@ async def test_create_as_super_admin_works(
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["name"] == "Vodiy Shifosi"
+    assert body["name"]["uz"] == "Vodiy Shifosi"
+    assert body["name"]["en"] == "Valley Healing"
     assert body["slug"] == "vodiy-shifosi"
     assert body["status"] == "pending"
     assert body["description"]["uz"] == "Eng yaxshi"
@@ -105,12 +106,12 @@ async def test_patch_as_super_admin(
     sanatorium = await make_sanatorium(db, name="Old Name", slug="old-name")
     resp = await client.patch(
         f"/api/sanatoriums/{sanatorium.id}",
-        json={"name": "New Name", "stars": 5},
+        json={"name": {"uz": "New Name"}, "stars": 5},
         headers=super_admin_headers,
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["name"] == "New Name"
+    assert body["name"]["uz"] == "New Name"
     assert body["slug"] == "new-name"  # auto-regenerated
     assert body["stars"] == 5
 
@@ -333,7 +334,7 @@ async def test_list_search_name(client: AsyncClient, db: AsyncSession) -> None:
     await make_sanatorium(db, name="Yangi Hayot", slug="yangi")
     resp = await client.get("/api/sanatoriums?q=vodi")
     assert resp.json()["total"] == 1
-    assert resp.json()["items"][0]["name"] == "Vodiy Shifosi"
+    assert resp.json()["items"][0]["name"]["uz"] == "Vodiy Shifosi"
 
 
 async def test_list_search_escapes_wildcards(
@@ -350,7 +351,9 @@ async def test_list_sort_by_name(client: AsyncClient, db: AsyncSession) -> None:
     await make_sanatorium(db, name="Alpha", slug="a")
     await make_sanatorium(db, name="Bravo", slug="b")
     resp = await client.get("/api/sanatoriums?sort=name")
-    assert [s["name"] for s in resp.json()["items"]] == ["Alpha", "Bravo", "Charlie"]
+    assert [s["name"]["uz"] for s in resp.json()["items"]] == [
+        "Alpha", "Bravo", "Charlie"
+    ]
 
 
 async def test_list_sort_by_stars_desc(

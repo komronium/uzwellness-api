@@ -9,20 +9,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.notifier import BookingNotifier
-from app.core.pricing import calculate_stay_total
-from app.core.utils import date_range
+from app.core.pricing import (
+    calculate_stay_total,
+    convert_to_usd,
+    convert_to_uzs,
+)
+from app.core.utils import date_range, pick_locale
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
+from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
+from app.services.exchange_rate_service import USD_UZS
 from app.schemas.booking import BookingCreate
 from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext
 
 _CENTS = Decimal("0.01")
+_UNFETCHED: object = object()
 
 
 def rooms_needed_for(guests: int, capacity: int) -> int:
@@ -116,7 +123,7 @@ class RoomBookingFlow:
         )
         await self.db.commit()
 
-        await self._send_received_email(booking, user, sanatorium.name)
+        await self._send_received_email(booking, user, pick_locale(sanatorium.name))
         return await self._load(booking.id)
 
     async def _lock_room(self, room_id) -> Room:
@@ -230,6 +237,7 @@ class RoomBookingFlow:
         room_currency: str,
     ) -> list[BookingExtraBed]:
         records: list[BookingExtraBed] = []
+        rate: ExchangeRate | None | object = _UNFETCHED
         for item in payload.extra_beds:
             config = (
                 await self.db.execute(
@@ -246,28 +254,46 @@ class RoomBookingFlow:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Extra bed config does not belong to this sanatorium",
                 )
-            if config.currency != room_currency:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Extra bed currency {config.currency} does not match "
-                        f"room currency {room_currency}"
-                    ),
-                )
             if item.count > config.max_count:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Maximum {config.max_count} of this bed type allowed",
                 )
-            total = (config.price_per_night * item.count * nights).quantize(
+
+            if config.currency == room_currency:
+                price_per_night = config.price_per_night
+            else:
+                if rate is _UNFETCHED:
+                    rate = (
+                        await self.db.execute(
+                            select(ExchangeRate).where(ExchangeRate.pair == USD_UZS)
+                        )
+                    ).scalar_one_or_none()
+                converter = (
+                    convert_to_usd if room_currency == "USD" else convert_to_uzs
+                )
+                converted = converter(
+                    config.price_per_night, config.currency, rate  # type: ignore[arg-type]
+                )
+                if converted is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Exchange rate is not configured; cannot convert extra "
+                            f"bed from {config.currency} to {room_currency}"
+                        ),
+                    )
+                price_per_night = converted
+
+            total = (price_per_night * item.count * nights).quantize(
                 _CENTS, ROUND_HALF_UP
             )
             records.append(
                 BookingExtraBed(
                     config_id=config.id,
                     name_snapshot=config.name,
-                    price_per_night_snapshot=config.price_per_night,
-                    currency=config.currency,
+                    price_per_night_snapshot=price_per_night,
+                    currency=room_currency,
                     count=item.count,
                     total_price=total,
                 )
@@ -277,7 +303,11 @@ class RoomBookingFlow:
     async def _load(self, booking_id) -> Booking:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
+            .options(
+                selectinload(Booking.extra_beds),
+                selectinload(Booking.user),
+                selectinload(Booking.payments),
+            )
             .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one()

@@ -55,7 +55,7 @@ class Sanatorium(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     slug: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
     )

@@ -31,3 +31,17 @@ class PaymentRead(BaseModel):
     provider_payment_id: str | None
     created_at: datetime
     paid_at: datetime | None
+
+
+class BookingPaymentSummary(BaseModel):
+    """Payment fields embedded in a booking detail/list response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    method: PaymentMethod
+    status: PaymentStatus
+    amount: Decimal
+    currency: str
+    created_at: datetime
+    paid_at: datetime | None
