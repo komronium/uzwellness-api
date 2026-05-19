@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+
+from app.core.ids import uuid7
 from datetime import datetime, time
 from decimal import Decimal
 from enum import StrEnum
@@ -53,7 +55,7 @@ class WellnessCategory(StrEnum):
 class Sanatorium(Base):
     __tablename__ = "sanatoriums"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
 
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     slug: Mapped[str] = mapped_column(
@@ -172,7 +174,7 @@ class Sanatorium(Base):
 class SanatoriumImage(Base):
     __tablename__ = "sanatorium_images"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),

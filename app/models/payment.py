@@ -1,4 +1,6 @@
 import uuid
+
+from app.core.ids import uuid7
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -27,7 +29,7 @@ class PaymentStatus(StrEnum):
 class Payment(Base):
     __tablename__ = "payments"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     booking_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("bookings.id", ondelete="CASCADE"),

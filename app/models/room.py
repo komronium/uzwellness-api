@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+
+from app.core.ids import uuid7
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 class Room(Base):
     __tablename__ = "rooms"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),
@@ -75,7 +77,7 @@ class Room(Base):
 class RoomPricePeriod(Base):
     __tablename__ = "room_price_periods"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("rooms.id", ondelete="CASCADE"),

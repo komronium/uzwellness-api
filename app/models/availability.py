@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+
+from app.core.ids import uuid7
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -37,7 +39,7 @@ class RoomAvailability(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("rooms.id", ondelete="CASCADE"),

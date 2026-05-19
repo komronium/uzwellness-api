@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+
+from app.core.ids import uuid7
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -60,7 +62,7 @@ sanatorium_amenities = Table(
 class Amenity(Base):
     __tablename__ = "amenities"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     category: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     icon: Mapped[str | None] = mapped_column(String(100))

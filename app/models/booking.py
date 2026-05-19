@@ -3,6 +3,8 @@ from __future__ import annotations
 import secrets
 import string
 import uuid
+
+from app.core.ids import uuid7
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -53,7 +55,7 @@ class BookingType(StrEnum):
 class Booking(Base):
     __tablename__ = "bookings"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     code: Mapped[str] = mapped_column(
         String(16), unique=True, nullable=False, index=True, default=_generate_code
     )

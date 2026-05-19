@@ -1,4 +1,6 @@
 import uuid
+
+from app.core.ids import uuid7
 from datetime import datetime
 from enum import StrEnum
 
@@ -19,7 +21,7 @@ class UserRole(StrEnum):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
     )

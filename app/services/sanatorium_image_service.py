@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.ids import uuid7
 from app.core.storage import MIME_EXTENSIONS, StorageBackend
 from app.models.sanatorium import Sanatorium, SanatoriumImage
 
@@ -30,7 +31,7 @@ class SanatoriumImageService:
         order: int,
     ) -> SanatoriumImage:
         ext = MIME_EXTENSIONS[content_type]
-        image_id = uuid.uuid7()
+        image_id = uuid7()
         key = f"sanatoriums/{sanatorium.id}/{image_id}.{ext}"
         url = await storage.save(key=key, content=content, content_type=content_type)
 

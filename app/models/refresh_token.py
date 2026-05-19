@@ -1,4 +1,6 @@
 import uuid
+
+from app.core.ids import uuid7
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Uuid, func
@@ -10,7 +12,7 @@ from app.core.database import Base
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("users.id", ondelete="CASCADE"),
