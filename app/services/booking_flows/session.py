@@ -128,7 +128,7 @@ class SessionBookingFlow:
     async def _load(self, booking_id) -> Booking:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds))
+            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
             .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one()

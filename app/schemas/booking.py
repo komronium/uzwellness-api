@@ -5,7 +5,20 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, BookingType
+from app.models.user import UserRole
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
+
+
+class BookingCustomerRead(BaseModel):
+    """User info exposed to admin/super_admin viewers on bookings."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    full_name: str | None = None
+    phone: str | None = None
+    role: UserRole
 
 
 class GuestDetail(BaseModel):
@@ -54,6 +67,7 @@ class BookingRead(BaseModel):
     b2b_commission: Decimal | None = None
     guest_details: list[GuestDetail] = Field(default_factory=list)
     extra_beds: list[BookingExtraBedRead] = []
+    customer: BookingCustomerRead | None = None
     created_at: datetime
 
 

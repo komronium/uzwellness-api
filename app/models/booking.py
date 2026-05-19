@@ -28,6 +28,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.extra_bed import BookingExtraBed
     from app.models.notification import Notification
+    from app.models.user import User
 
 _ALPHABET = string.ascii_uppercase + string.digits
 
@@ -124,6 +125,7 @@ class Booking(Base):
     extra_beds: Mapped[list["BookingExtraBed"]] = relationship(
         back_populates="booking", cascade="all, delete-orphan"
     )
+    user: Mapped["User | None"] = relationship(foreign_keys=[user_id], lazy="raise")
 
     @property
     def b2b_commission(self) -> Decimal | None:

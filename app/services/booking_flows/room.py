@@ -65,12 +65,16 @@ class RoomBookingFlow:
         await self._reserve_units(room, all_dates, rooms_count)
 
         is_b2b = user.role == UserRole.AGENT
-        base_total = calculate_stay_total(
+        rooms_total = calculate_stay_total(
             room, all_dates, room.price_periods
         ) * rooms_count
         extra_bed_records = await self._build_extra_beds(
-            payload, room.sanatorium_id, nights
+            payload, room.sanatorium_id, nights, room.base_currency
         )
+        extras_total = sum(
+            (eb.total_price for eb in extra_bed_records), Decimal("0")
+        )
+        base_total = (rooms_total + extras_total).quantize(_CENTS, ROUND_HALF_UP)
 
         pricing = await self.pricing.apply(
             base_total=base_total,
@@ -219,7 +223,11 @@ class RoomBookingFlow:
             row.units_booked += rooms_count
 
     async def _build_extra_beds(
-        self, payload: BookingCreate, sanatorium_id, nights: int
+        self,
+        payload: BookingCreate,
+        sanatorium_id,
+        nights: int,
+        room_currency: str,
     ) -> list[BookingExtraBed]:
         records: list[BookingExtraBed] = []
         for item in payload.extra_beds:
@@ -237,6 +245,14 @@ class RoomBookingFlow:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Extra bed config does not belong to this sanatorium",
+                )
+            if config.currency != room_currency:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Extra bed currency {config.currency} does not match "
+                        f"room currency {room_currency}"
+                    ),
                 )
             if item.count > config.max_count:
                 raise HTTPException(
@@ -261,7 +277,7 @@ class RoomBookingFlow:
     async def _load(self, booking_id) -> Booking:
         stmt = (
             select(Booking)
-            .options(selectinload(Booking.extra_beds))
+            .options(selectinload(Booking.extra_beds), selectinload(Booking.user))
             .where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one()

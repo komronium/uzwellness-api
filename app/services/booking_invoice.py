@@ -25,15 +25,16 @@ class BookingInvoiceBuilder:
             else None
         )
         nights = max((booking.check_out - booking.check_in).days, 1)
-        subtotal = booking.final_price
+        total = booking.final_price
         extras_total = sum(
             (eb.total_price for eb in booking.extra_beds), Decimal("0")
         )
+        rooms_subtotal = total - extras_total
         line_items: list[dict] = [
             {
                 "description": "Room/program",
                 "qty": booking.guests,
-                "amount": subtotal,
+                "amount": rooms_subtotal,
             }
         ]
         for eb in booking.extra_beds:
@@ -54,8 +55,8 @@ class BookingInvoiceBuilder:
             "check_out": booking.check_out,
             "nights": nights,
             "guests": booking.guests,
-            "subtotal": subtotal,
-            "total": subtotal + extras_total,
+            "subtotal": rooms_subtotal,
+            "total": total,
             "currency": booking.currency,
             "is_b2b": booking.is_b2b,
             "line_items": line_items,
