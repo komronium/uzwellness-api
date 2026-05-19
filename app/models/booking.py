@@ -52,7 +52,7 @@ class BookingType(StrEnum):
 class Booking(Base):
     __tablename__ = "bookings"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     code: Mapped[str] = mapped_column(
         String(16), unique=True, nullable=False, index=True, default=_generate_code
     )

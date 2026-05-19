@@ -11,7 +11,7 @@ from app.core.database import Base
 class ExchangeRate(Base):
     __tablename__ = "exchange_rates"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     pair: Mapped[str] = mapped_column(
         String(10), unique=True, nullable=False, index=True
     )

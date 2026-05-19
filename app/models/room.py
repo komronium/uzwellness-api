@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 class Room(Base):
     __tablename__ = "rooms"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),
@@ -75,7 +75,7 @@ class Room(Base):
 class RoomPricePeriod(Base):
     __tablename__ = "room_price_periods"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("rooms.id", ondelete="CASCADE"),

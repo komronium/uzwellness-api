@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class SanatoriumReview(Base):
     __tablename__ = "sanatorium_reviews"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("sanatoriums.id", ondelete="CASCADE"), nullable=False, index=True
     )

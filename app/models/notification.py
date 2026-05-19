@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class Notification(Base):
     __tablename__ = "notifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     booking_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False, index=True
     )

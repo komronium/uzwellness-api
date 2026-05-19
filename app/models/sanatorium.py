@@ -53,7 +53,7 @@ class WellnessCategory(StrEnum):
 class Sanatorium(Base):
     __tablename__ = "sanatoriums"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     slug: Mapped[str] = mapped_column(
@@ -172,7 +172,7 @@ class Sanatorium(Base):
 class SanatoriumImage(Base):
     __tablename__ = "sanatorium_images"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),

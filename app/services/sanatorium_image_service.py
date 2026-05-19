@@ -30,7 +30,7 @@ class SanatoriumImageService:
         order: int,
     ) -> SanatoriumImage:
         ext = MIME_EXTENSIONS[content_type]
-        image_id = uuid.uuid4()
+        image_id = uuid.uuid7()
         key = f"sanatoriums/{sanatorium.id}/{image_id}.{ext}"
         url = await storage.save(key=key, content=content, content_type=content_type)
 

@@ -24,7 +24,7 @@ from app.models.amenity import Amenity, program_amenities
 class TreatmentProgram(Base):
     __tablename__ = "treatment_programs"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),

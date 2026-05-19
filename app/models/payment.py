@@ -27,7 +27,7 @@ class PaymentStatus(StrEnum):
 class Payment(Base):
     __tablename__ = "payments"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid7)
     booking_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("bookings.id", ondelete="CASCADE"),
