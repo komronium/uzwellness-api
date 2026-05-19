@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
-from app.core.utils import strip_translation_fields
+from app.core.utils import merge_translation_fields
 from app.models.amenity import Amenity
 from app.models.program import TreatmentProgram
 from app.models.user import User
@@ -89,7 +89,7 @@ class ProgramService:
 
         data = payload.model_dump(exclude_unset=True)
         amenity_ids = data.pop("amenity_ids", None)
-        strip_translation_fields(data, _TRANSLATION_FIELDS)
+        merge_translation_fields(program, data, _TRANSLATION_FIELDS)
 
         self._validate_nights(
             data.get("min_nights", program.min_nights),

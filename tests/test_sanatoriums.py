@@ -159,6 +159,46 @@ async def test_patch_as_customer_returns_403(
     assert resp.status_code == 403
 
 
+async def test_patch_merges_partial_translations(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        slug="merge-target",
+        description={"uz": "Eski uz", "ru": "Старый ru", "en": "Old en"},
+    )
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={"description": {"uz": "Yangi uz"}},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()["description"]
+    assert body["uz"] == "Yangi uz"
+    assert body["ru"] == "Старый ru"
+    assert body["en"] == "Old en"
+
+
+async def test_patch_translation_null_clears_single_locale(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        slug="clear-target",
+        description={"uz": "X", "ru": "Y", "en": "Z"},
+    )
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={"description": {"ru": None}},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()["description"]
+    assert body["uz"] == "X"
+    assert body["ru"] is None
+    assert body["en"] == "Z"
+
+
 async def test_patch_not_found_returns_404(
     client: AsyncClient, super_admin_headers
 ) -> None:

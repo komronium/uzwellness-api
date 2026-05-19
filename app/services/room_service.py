@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
-from app.core.utils import date_range, strip_none
+from app.core.utils import date_range, merge_translation_fields
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -157,8 +157,7 @@ class RoomService:
             )
         if "inventory_count" in data and data["inventory_count"] is not None:
             await self._assert_inventory_safe(room.id, data["inventory_count"])
-        if "name" in data and data["name"] is not None:
-            data["name"] = strip_none(data["name"])
+        merge_translation_fields(room, data, ("name",))
 
         for field, value in data.items():
             setattr(room, field, value)

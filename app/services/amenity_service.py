@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.pagination import paginated
-from app.core.utils import strip_none
+from app.core.utils import merge_translation_fields
 from app.models.amenity import Amenity
 from app.schemas.amenity import AmenityCreate, AmenityUpdate
 
@@ -39,8 +39,7 @@ class AmenityService:
 
     async def update(self, amenity: Amenity, payload: AmenityUpdate) -> Amenity:
         data = payload.model_dump(exclude_unset=True)
-        if "name" in data and data["name"] is not None:
-            data["name"] = strip_none(data["name"])
+        merge_translation_fields(amenity, data, ("name",))
         for field, value in data.items():
             setattr(amenity, field, value)
         await self.db.commit()

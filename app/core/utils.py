@@ -14,11 +14,24 @@ def date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days)]
 
 
-def strip_none(d: dict) -> dict:
-    return {k: v for k, v in d.items() if v is not None}
+def merge_translation_fields(
+    obj, data: dict, fields: tuple[str, ...]
+) -> None:
+    """Merge partial Translations payloads into the existing JSONB dict on `obj`.
 
-
-def strip_translation_fields(data: dict, fields: tuple[str, ...]) -> None:
+    For each named field present in `data`:
+      - if the payload value is None, drop it from `data` (no-op);
+      - otherwise overlay the partial dict on top of `getattr(obj, field)` and
+        drop None values, so existing translations the client did not send are
+        preserved.
+    """
     for field in fields:
-        if field in data and data[field] is not None:
-            data[field] = strip_none(data[field])
+        if field not in data:
+            continue
+        partial = data[field]
+        if partial is None:
+            data.pop(field)
+            continue
+        current = getattr(obj, field) or {}
+        merged = {**current, **partial}
+        data[field] = {k: v for k, v in merged.items() if v is not None}

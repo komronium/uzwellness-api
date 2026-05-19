@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
-from app.core.utils import strip_none
+from app.core.utils import merge_translation_fields
 from app.models.extra_bed import ExtraBedConfig
 from app.models.user import User
 from app.schemas.extra_bed import ExtraBedConfigCreate, ExtraBedConfigUpdate
@@ -69,8 +69,7 @@ class ExtraBedService:
             self.db, config.sanatorium_id, user, action=_ACTION
         )
         data = payload.model_dump(exclude_unset=True)
-        if "name" in data and data["name"] is not None:
-            data["name"] = strip_none(data["name"])
+        merge_translation_fields(config, data, ("name",))
         for field, value in data.items():
             setattr(config, field, value)
         await self.db.commit()

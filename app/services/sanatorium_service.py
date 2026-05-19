@@ -14,6 +14,7 @@ from app.core.permissions import (
 )
 from app.core.policies import SanatoriumPolicy
 from app.core.slug import slugify as _slugify
+from app.core.utils import merge_translation_fields
 from app.models.amenity import Amenity
 from app.models.sanatorium import (
     PropertyType,
@@ -109,11 +110,11 @@ class SanatoriumService:
         amenity_ids = data.pop("amenity_ids", None)
         tiers = data.pop("agent_discount_tiers", _MISSING)
 
-        for translation_field in ("description", "house_rules", "cancellation_policy"):
-            if translation_field in data and data[translation_field] is not None:
-                data[translation_field] = {
-                    k: v for k, v in data[translation_field].items() if v is not None
-                }
+        merge_translation_fields(
+            sanatorium,
+            data,
+            ("description", "house_rules", "cancellation_policy"),
+        )
 
         if "slug" in data and data["slug"] is not None:
             base_slug = slugify(data["slug"])
