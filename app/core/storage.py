@@ -8,9 +8,7 @@ from app.core.config import settings
 
 
 class StorageBackend(Protocol):
-    async def save(
-        self, *, key: str, content: bytes, content_type: str
-    ) -> str: ...
+    async def save(self, *, key: str, content: bytes, content_type: str) -> str: ...
 
     async def delete(self, *, key: str) -> None: ...
 
@@ -20,12 +18,7 @@ def _validate_key(key: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid storage key"
         )
-    if (
-        ".." in Path(key).parts
-        or key.startswith("/")
-        or "\x00" in key
-        or "\\" in key
-    ):
+    if ".." in Path(key).parts or key.startswith("/") or "\x00" in key or "\\" in key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid storage key"
         )
@@ -84,8 +77,19 @@ def detect_image_mime(data: bytes) -> str | None:
     return None
 
 
+def detect_document_mime(data: bytes) -> str | None:
+    """Image (JPEG/PNG/WebP) or PDF — for passport scans and visa documents."""
+    image = detect_image_mime(data)
+    if image is not None:
+        return image
+    if data.startswith(b"%PDF-"):
+        return "application/pdf"
+    return None
+
+
 MIME_EXTENSIONS: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
+    "application/pdf": "pdf",
 }

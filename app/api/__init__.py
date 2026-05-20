@@ -17,6 +17,7 @@ from app.api.routers import (
     rooms,
     sanatoriums,
     users,
+    visa_requests,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,4 @@ api_router.include_router(availability.router)
 api_router.include_router(payments.router)
 api_router.include_router(admin.router)
 api_router.include_router(b2b.router)
+api_router.include_router(visa_requests.router)
