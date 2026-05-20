@@ -72,13 +72,9 @@ class SanatoriumImageService:
         await self.db.refresh(image)
         return image
 
-    async def delete(
-        self, image: SanatoriumImage, storage: StorageBackend
-    ) -> None:
+    async def delete(self, image: SanatoriumImage, storage: StorageBackend) -> None:
         prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
-        key = (
-            image.url[len(prefix):] if image.url.startswith(prefix) else image.url
-        )
+        key = image.url[len(prefix) :] if image.url.startswith(prefix) else image.url
         await storage.delete(key=key)
         await self.db.delete(image)
         await self.db.commit()

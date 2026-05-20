@@ -50,3 +50,6 @@ uploads/
 
 # Local notes / planning (not for repo)
 TASKS.md
+FRONTEND*.md
+
+.claude/

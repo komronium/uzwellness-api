@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import uuid
-
-from app.core.ids import uuid7
 from datetime import datetime, time
 from decimal import Decimal
 from enum import StrEnum
@@ -25,6 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.ids import uuid7
 from app.models.amenity import sanatorium_amenities
 
 if TYPE_CHECKING:

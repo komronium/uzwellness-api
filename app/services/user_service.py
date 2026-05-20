@@ -17,9 +17,7 @@ class UserService:
         self.db = db
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.db.execute(
-            select(User).where(User.email == email.lower())
-        )
+        result = await self.db.execute(select(User).where(User.email == email.lower()))
         return result.scalar_one_or_none()
 
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
@@ -107,9 +105,7 @@ class UserService:
         await self.db.refresh(user)
         return user
 
-    async def primary_sanatorium_id(
-        self, user_id: uuid.UUID
-    ) -> uuid.UUID | None:
+    async def primary_sanatorium_id(self, user_id: uuid.UUID) -> uuid.UUID | None:
         return (
             await self.db.execute(
                 select(Sanatorium.id)
@@ -190,10 +186,14 @@ class UserService:
 
     async def _unassign_sanatoriums(self, user_id: uuid.UUID) -> None:
         rows = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.admin_user_id == user_id)
+            (
+                await self.db.execute(
+                    select(Sanatorium).where(Sanatorium.admin_user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for s in rows:
             s.admin_user_id = None
 

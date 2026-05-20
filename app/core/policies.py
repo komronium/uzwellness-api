@@ -44,9 +44,7 @@ class BookingPolicy:
         return booking.user_id == user.id
 
     @staticmethod
-    def cancel_block_reason(
-        booking: Booking, user: User
-    ) -> str | None:
+    def cancel_block_reason(booking: Booking, user: User) -> str | None:
         if booking.status not in _CANCELLABLE:
             return f"Booking cannot be cancelled (status: {booking.status})"
         if user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
@@ -58,7 +56,9 @@ class BookingPolicy:
 
 class ReviewPolicy:
     @staticmethod
-    def can_moderate(review: SanatoriumReview, user: User, sanatorium: Sanatorium | None) -> bool:
+    def can_moderate(
+        review: SanatoriumReview, user: User, sanatorium: Sanatorium | None
+    ) -> bool:
         if user.role == UserRole.SUPER_ADMIN:
             return True
         if user.role == UserRole.ADMIN and sanatorium is not None:

@@ -72,9 +72,7 @@ class PaymentService:
         await self.db.refresh(payment)
         return payment, redirect_url
 
-    async def confirm_cash(
-        self, payment_id: uuid.UUID, user: User
-    ) -> Payment:
+    async def confirm_cash(self, payment_id: uuid.UUID, user: User) -> Payment:
         if user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -57,9 +57,7 @@ class RateLimiter:
         self.window_seconds = window_seconds
         self.scope = scope
 
-    async def __call__(
-        self, request: Request, user: OptionalUser = None
-    ) -> None:
+    async def __call__(self, request: Request, user: OptionalUser = None) -> None:
         if not settings.RATE_LIMIT_ENABLED:
             return
 
@@ -98,9 +96,7 @@ class RateLimiter:
 
 # Pre-built limiters used by the routers. Mirrors the limits from
 # TASKS_BACKEND.md task #14.
-login_rate_limit = RateLimiter(
-    prefix="login", limit=10, window_seconds=600, scope="ip"
-)
+login_rate_limit = RateLimiter(prefix="login", limit=10, window_seconds=600, scope="ip")
 register_rate_limit = RateLimiter(
     prefix="register", limit=5, window_seconds=3600, scope="ip"
 )

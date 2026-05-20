@@ -24,7 +24,9 @@ def effective_prices_for_date(
                 return (
                     p.base_price,
                     p.base_price_weekend,
-                    p.discount_percent if p.discount_percent is not None else room.discount_percent,
+                    p.discount_percent
+                    if p.discount_percent is not None
+                    else room.discount_percent,
                 )
     return (room.base_price, room.base_price_weekend, room.discount_percent)
 
@@ -36,7 +38,9 @@ def calculate_night_price(
     discount_percent: Decimal | None,
     weekend: bool,
 ) -> Decimal:
-    effective_base = base_price_weekend if weekend and base_price_weekend is not None else base_price
+    effective_base = (
+        base_price_weekend if weekend and base_price_weekend is not None else base_price
+    )
     after_markup = effective_base * (1 + markup_percent / 100)
     if discount_percent:
         after_markup = after_markup * (1 - discount_percent / 100)
@@ -52,12 +56,18 @@ def calculate_stay_total(
     for d in dates:
         base, weekend, discount = effective_prices_for_date(room, d, periods)
         total += calculate_night_price(
-            base, weekend, room.markup_percent, discount, d.weekday() in _WEEKEND_DAYS,
+            base,
+            weekend,
+            room.markup_percent,
+            discount,
+            d.weekday() in _WEEKEND_DAYS,
         )
     return total.quantize(_TWO, ROUND_HALF_UP)
 
 
-def convert_to_uzs(amount: Decimal, currency: str, rate: ExchangeRate | None) -> Decimal | None:
+def convert_to_uzs(
+    amount: Decimal, currency: str, rate: ExchangeRate | None
+) -> Decimal | None:
     if currency == "UZS":
         return amount.quantize(_TWO, ROUND_HALF_UP)
     if rate is None:
@@ -65,7 +75,9 @@ def convert_to_uzs(amount: Decimal, currency: str, rate: ExchangeRate | None) ->
     return (amount * rate.rate).quantize(_TWO, ROUND_HALF_UP)
 
 
-def convert_to_usd(amount: Decimal, currency: str, rate: ExchangeRate | None) -> Decimal | None:
+def convert_to_usd(
+    amount: Decimal, currency: str, rate: ExchangeRate | None
+) -> Decimal | None:
     if currency == "USD":
         return amount.quantize(_TWO, ROUND_HALF_UP)
     if rate is None:

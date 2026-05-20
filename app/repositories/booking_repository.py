@@ -1,14 +1,3 @@
-"""BookingRepository — abstracts ORM queries behind a Protocol.
-
-Services depend on this interface, not on ``AsyncSession`` or SQLAlchemy
-constructs. For tests, swap in an in-memory fake; in production, the SQL
-implementation is bound via FastAPI's dependency system.
-
-Note: this is the first repository in the codebase. Other services still
-construct queries inline against ``self.db``. New work should follow this
-pattern; existing services will migrate gradually.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -95,9 +84,7 @@ class SqlBookingRepository:
         for clause in base_filters:
             base = base.where(clause)
         total = (
-            await self.db.execute(
-                select(func.count()).select_from(base.subquery())
-            )
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
         stmt = (
             base.options(

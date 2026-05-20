@@ -34,9 +34,7 @@ def send_email(*, to: str, subject: str, body: str) -> None:
     if settings.EMAIL_BACKEND == "smtp" and settings.SMTP_HOST:
         _send_smtp(to=to, subject=subject, body=body)
         return
-    logger.info(
-        "email[%s] → %s: %s\n%s", settings.EMAIL_BACKEND, to, subject, body
-    )
+    logger.info("email[%s] → %s: %s\n%s", settings.EMAIL_BACKEND, to, subject, body)
 
 
 def _send_smtp(*, to: str, subject: str, body: str) -> None:

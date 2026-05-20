@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import uuid
-
-from app.core.ids import uuid7
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, Text, Uuid, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.ids import uuid7
 
 if TYPE_CHECKING:
     from app.models.sanatorium import Sanatorium
@@ -20,7 +28,10 @@ class SanatoriumReview(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("sanatoriums.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid,
+        ForeignKey("sanatoriums.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")

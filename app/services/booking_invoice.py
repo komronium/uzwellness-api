@@ -26,9 +26,7 @@ class BookingInvoiceBuilder:
         )
         nights = max((booking.check_out - booking.check_in).days, 1)
         total = booking.final_price
-        extras_total = sum(
-            (eb.total_price for eb in booking.extra_beds), Decimal("0")
-        )
+        extras_total = sum((eb.total_price for eb in booking.extra_beds), Decimal("0"))
         rooms_subtotal = total - extras_total
         line_items: list[dict] = [
             {

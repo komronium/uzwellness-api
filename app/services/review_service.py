@@ -106,9 +106,7 @@ class ReviewService:
             await self._recompute_rating(sanatorium)
         await self.db.commit()
 
-    async def _assert_can_moderate(
-        self, review: SanatoriumReview, user: User
-    ) -> None:
+    async def _assert_can_moderate(self, review: SanatoriumReview, user: User) -> None:
         sanatorium = await self._review_sanatorium(review)
         if not ReviewPolicy.can_moderate(review, user, sanatorium):
             raise HTTPException(
@@ -116,9 +114,7 @@ class ReviewService:
                 detail="Not allowed to moderate this review",
             )
 
-    async def _assert_can_delete(
-        self, review: SanatoriumReview, user: User
-    ) -> None:
+    async def _assert_can_delete(self, review: SanatoriumReview, user: User) -> None:
         sanatorium = await self._review_sanatorium(review)
         if not ReviewPolicy.can_delete(review, user, sanatorium):
             raise HTTPException(
@@ -126,9 +122,7 @@ class ReviewService:
                 detail="Not allowed to delete this review",
             )
 
-    async def _review_sanatorium(
-        self, review: SanatoriumReview
-    ) -> Sanatorium | None:
+    async def _review_sanatorium(self, review: SanatoriumReview) -> Sanatorium | None:
         return (
             await self.db.execute(
                 select(Sanatorium).where(Sanatorium.id == review.sanatorium_id)

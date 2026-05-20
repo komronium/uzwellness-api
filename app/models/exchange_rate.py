@@ -1,6 +1,4 @@
 import uuid
-
-from app.core.ids import uuid7
 from datetime import datetime
 from decimal import Decimal
 
@@ -8,6 +6,7 @@ from sqlalchemy import DateTime, Numeric, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.ids import uuid7
 
 
 class ExchangeRate(Base):
