@@ -96,6 +96,7 @@ async def list_sanatoriums(
         min_rating=min_rating,
         q=q,
         sort=sort,
+        locale=locale,
         amenity_ids=amenity_ids,
         treatment_focus=treatment_focus,
         property_type=property_type,

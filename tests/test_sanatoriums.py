@@ -361,6 +361,36 @@ async def test_list_sort_by_name(client: AsyncClient, db: AsyncSession) -> None:
     ]
 
 
+async def test_list_sort_by_name_respects_locale(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    # Each row alphabetizes differently per locale, so the response order
+    # must reflect the requested locale.
+    await make_sanatorium(
+        db,
+        name={"uz": "Charlie", "ru": "Bravo", "en": "Alpha"},
+        slug="loc-1",
+    )
+    await make_sanatorium(
+        db,
+        name={"uz": "Bravo", "ru": "Alpha", "en": "Charlie"},
+        slug="loc-2",
+    )
+    await make_sanatorium(
+        db,
+        name={"uz": "Alpha", "ru": "Charlie", "en": "Bravo"},
+        slug="loc-3",
+    )
+    en = await client.get("/api/sanatoriums?sort=name&lang=en")
+    assert [s["slug"] for s in en.json()["items"]] == ["loc-1", "loc-3", "loc-2"]
+
+    uz = await client.get("/api/sanatoriums?sort=name&lang=uz")
+    assert [s["slug"] for s in uz.json()["items"]] == ["loc-3", "loc-2", "loc-1"]
+
+    ru = await client.get("/api/sanatoriums?sort=name&lang=ru")
+    assert [s["slug"] for s in ru.json()["items"]] == ["loc-2", "loc-1", "loc-3"]
+
+
 async def test_list_sort_by_stars_desc(
     client: AsyncClient, db: AsyncSession
 ) -> None:

@@ -198,6 +198,7 @@ class SanatoriumService:
         min_rating: Decimal | None = None,
         q: str | None = None,
         sort: str = "-created_at",
+        locale: str = "en",
         amenity_ids: list[uuid.UUID] | None = None,
         treatment_focus: str | None = None,
         property_type: PropertyType | None = None,
@@ -247,7 +248,7 @@ class SanatoriumService:
                 selectinload(Sanatorium.images),
                 selectinload(Sanatorium.amenities),
             )
-            .order_by(_SORT_CLAUSES.get(sort, Sanatorium.created_at.desc()))
+            .order_by(_resolve_sort(sort, locale))
             .limit(limit)
             .offset(offset)
         )
@@ -290,9 +291,7 @@ class SanatoriumService:
 _MISSING: object = object()
 
 
-_SORT_CLAUSES = {
-    "name": Sanatorium.name["uz"].astext.asc(),
-    "-name": Sanatorium.name["uz"].astext.desc(),
+_STATIC_SORT_CLAUSES = {
     "stars": Sanatorium.stars.asc(),
     "-stars": Sanatorium.stars.desc(),
     "rating": Sanatorium.avg_rating.asc(),
@@ -301,7 +300,28 @@ _SORT_CLAUSES = {
     "-created_at": Sanatorium.created_at.desc(),
 }
 
-SORT_FIELDS = tuple(_SORT_CLAUSES.keys())
+SORT_FIELDS: tuple[str, ...] = ("name", "-name", *_STATIC_SORT_CLAUSES.keys())
+
+
+def _name_locale_expr(locale: str):
+    """Coalesce name across locales, preferring the request locale.
+
+    Returns a SQL expression that picks the first non-null translation
+    in the order: requested locale → uz → ru → en.
+    """
+    fallbacks: list[str] = []
+    for key in (locale, "uz", "ru", "en"):
+        if key not in fallbacks:
+            fallbacks.append(key)
+    return func.coalesce(*[Sanatorium.name[k].astext for k in fallbacks])
+
+
+def _resolve_sort(sort: str, locale: str):
+    if sort == "name":
+        return _name_locale_expr(locale).asc()
+    if sort == "-name":
+        return _name_locale_expr(locale).desc()
+    return _STATIC_SORT_CLAUSES.get(sort, Sanatorium.created_at.desc())
 
 
 def _apply_visibility(stmt, user: User | None):
