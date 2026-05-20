@@ -28,9 +28,7 @@ class B2BService:
 
     async def dashboard(self, agent: User) -> dict:
         now = datetime.now(UTC)
-        month_start = now.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         year_start = _year_start(now)
         owned = Booking.user_id == agent.id
         not_cancelled = Booking.status != BookingStatus.CANCELLED
@@ -78,9 +76,7 @@ class B2BService:
             "current_year_bookings": int(current_year_bookings or 0),
         }
 
-    async def discount_status(
-        self, agent: User, sanatorium_id: uuid.UUID
-    ) -> dict:
+    async def discount_status(self, agent: User, sanatorium_id: uuid.UUID) -> dict:
         sanatorium = (
             await self.db.execute(
                 select(Sanatorium).where(Sanatorium.id == sanatorium_id)
@@ -120,20 +116,22 @@ class B2BService:
         owned = Booking.user_id == agent.id
 
         total = (
-            await self.db.execute(
-                select(func.count(Booking.id)).where(owned)
-            )
+            await self.db.execute(select(func.count(Booking.id)).where(owned))
         ).scalar_one()
 
         rows = (
-            await self.db.execute(
-                select(Booking)
-                .where(owned)
-                .order_by(Booking.created_at.desc())
-                .limit(limit)
-                .offset(offset)
+            (
+                await self.db.execute(
+                    select(Booking)
+                    .where(owned)
+                    .order_by(Booking.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         items: list[dict] = []
         for booking in rows:
@@ -158,17 +156,26 @@ class B2BService:
 
     @staticmethod
     def _booking_belongs_to_sanatorium(sanatorium_id: uuid.UUID):
+        from app.models.package import Package
+
         room_sub = (
-            select(Room.id)
-            .where(Room.sanatorium_id == sanatorium_id)
-            .scalar_subquery()
+            select(Room.id).where(Room.sanatorium_id == sanatorium_id).scalar_subquery()
         )
         program_sub = (
             select(TreatmentProgram.id)
             .where(TreatmentProgram.sanatorium_id == sanatorium_id)
             .scalar_subquery()
         )
-        return Booking.room_id.in_(room_sub) | Booking.program_id.in_(program_sub)
+        package_sub = (
+            select(Package.id)
+            .where(Package.sanatorium_id == sanatorium_id)
+            .scalar_subquery()
+        )
+        return (
+            Booking.room_id.in_(room_sub)
+            | Booking.program_id.in_(program_sub)
+            | Booking.package_id.in_(package_sub)
+        )
 
 
 def get_b2b_service(db: AsyncSession = Depends(get_db)) -> B2BService:

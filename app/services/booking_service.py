@@ -14,6 +14,7 @@ from app.core.utils import today_tashkent
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
+from app.models.package import Package
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
@@ -22,6 +23,7 @@ from app.repositories import BookingRepository, get_booking_repository
 from app.schemas.booking import BookingCreate
 from app.services.booking_flows import (
     BookingFlow,
+    PackageBookingFlow,
     RoomBookingFlow,
     SessionBookingFlow,
 )
@@ -55,7 +57,7 @@ class BookingService:
                 return await flow.create(payload, user)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either room_id or program_id is required",
+            detail="One of room_id, program_id, or package_id is required",
         )
 
     async def list_for_user(
@@ -131,8 +133,16 @@ class BookingService:
                 .where(Sanatorium.admin_user_id == user.id)
                 .scalar_subquery()
             )
+            package_sub = (
+                select(Package.id)
+                .join(Sanatorium, Package.sanatorium_id == Sanatorium.id)
+                .where(Sanatorium.admin_user_id == user.id)
+                .scalar_subquery()
+            )
             return [
-                Booking.room_id.in_(room_sub) | Booking.program_id.in_(program_sub)
+                Booking.room_id.in_(room_sub)
+                | Booking.program_id.in_(program_sub)
+                | Booking.package_id.in_(package_sub)
             ]
         return [Booking.user_id == user.id]
 
@@ -184,6 +194,7 @@ def get_booking_service(
     pricing = BookingPricingPolicy(db)
     flows: list[BookingFlow] = [
         SessionBookingFlow(db, pricing, notifier),
+        PackageBookingFlow(db, pricing, notifier),
         RoomBookingFlow(db, pricing, notifier),
     ]
     return BookingService(db, notifier, flows, repository)

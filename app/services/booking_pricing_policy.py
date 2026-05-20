@@ -31,19 +31,20 @@ class BookingPricingPolicy:
         self,
         *,
         base_total: Decimal,
-        sanatorium: Sanatorium,
+        sanatorium: Sanatorium | None,
         user: User,
         is_b2b: bool,
         payload: BookingCreate,
     ) -> "BookingPricing":
         agent_discount_percent = (
-            await self._agent_tier_discount(user, sanatorium) if is_b2b else _ZERO
+            await self._agent_tier_discount(user, sanatorium)
+            if is_b2b and sanatorium is not None
+            else _ZERO
         )
         discounted = base_total
         if agent_discount_percent > _ZERO:
             discounted = (
-                base_total
-                * (Decimal("1") - agent_discount_percent / Decimal("100"))
+                base_total * (Decimal("1") - agent_discount_percent / Decimal("100"))
             ).quantize(_CENTS, ROUND_HALF_UP)
         b2b_client_price = self._resolve_b2b_client_price(payload, is_b2b, discounted)
         commission_percent, commission_amount = self._commission_snapshot(
@@ -59,8 +60,10 @@ class BookingPricingPolicy:
 
     @staticmethod
     def _commission_snapshot(
-        sanatorium: Sanatorium, final_price: Decimal, is_b2b: bool
+        sanatorium: Sanatorium | None, final_price: Decimal, is_b2b: bool
     ) -> tuple[Decimal, Decimal]:
+        if sanatorium is None:
+            return _ZERO, _ZERO
         percent = (
             sanatorium.b2b_commission_percent
             if is_b2b
@@ -68,9 +71,7 @@ class BookingPricingPolicy:
         ) or _ZERO
         return percent, apply_percent(final_price, percent)
 
-    async def _agent_tier_discount(
-        self, user: User, sanatorium: Sanatorium
-    ) -> Decimal:
+    async def _agent_tier_discount(self, user: User, sanatorium: Sanatorium) -> Decimal:
         if not sanatorium.agent_discount_tiers:
             return _ZERO
         year_start = datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC)

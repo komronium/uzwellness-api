@@ -3,8 +3,6 @@ from __future__ import annotations
 import secrets
 import string
 import uuid
-
-from app.core.ids import uuid7
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -26,6 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.ids import uuid7
 
 if TYPE_CHECKING:
     from app.models.extra_bed import BookingExtraBed
@@ -50,6 +49,7 @@ class BookingStatus(StrEnum):
 class BookingType(StrEnum):
     ROOM = "room"
     SESSION = "session"
+    PACKAGE = "package"
 
 
 class Booking(Base):
@@ -68,6 +68,9 @@ class Booking(Base):
     )
     program_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("treatment_programs.id", ondelete="SET NULL"), index=True
+    )
+    package_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("packages.id", ondelete="SET NULL"), index=True
     )
 
     booking_type: Mapped["BookingType"] = mapped_column(

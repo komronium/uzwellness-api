@@ -11,8 +11,6 @@ from app.schemas.payment import BookingPaymentSummary
 
 
 class BookingCustomerRead(BaseModel):
-    """User info exposed to admin/super_admin viewers on bookings."""
-
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -31,6 +29,7 @@ class GuestDetail(BaseModel):
 class BookingCreate(BaseModel):
     room_id: uuid.UUID | None = None
     program_id: uuid.UUID | None = None
+    package_id: uuid.UUID | None = None
     check_in: date
     check_out: date | None = None
     guests: int = Field(default=1, ge=1)
@@ -40,8 +39,13 @@ class BookingCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self):
-        if (self.room_id is None) == (self.program_id is None):
-            raise ValueError("Provide exactly one of room_id or program_id")
+        provided = sum(
+            x is not None for x in (self.room_id, self.program_id, self.package_id)
+        )
+        if provided != 1:
+            raise ValueError(
+                "Provide exactly one of room_id, program_id, or package_id"
+            )
         if self.guest_details and len(self.guest_details) > self.guests:
             raise ValueError("guest_details cannot exceed guests count")
         return self
@@ -55,6 +59,7 @@ class BookingRead(BaseModel):
     user_id: uuid.UUID | None
     room_id: uuid.UUID | None
     program_id: uuid.UUID | None
+    package_id: uuid.UUID | None
     booking_type: BookingType
     check_in: date
     check_out: date
