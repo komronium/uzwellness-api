@@ -72,7 +72,8 @@ class TestRoomCRUD:
             "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
-                "name": {"en": "Deluxe"},
+                "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
+                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
                 "capacity": 2,
                 "inventory_count": 3,
                 "base_price": "150.00",
@@ -99,7 +100,8 @@ class TestRoomCRUD:
             "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
-                "name": {"en": "Deluxe"},
+                "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
+                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
                 "capacity": 2,
                 "base_price": "100.00",
                 "base_currency": "USD",
@@ -116,7 +118,8 @@ class TestRoomCRUD:
             "/api/rooms",
             json={
                 "sanatorium_id": str(san.id),
-                "name": {"en": "Deluxe"},
+                "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
+                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
                 "capacity": 2,
                 "base_price": "100.00",
                 "base_currency": "USD",

@@ -41,16 +41,14 @@ class ExtraBedService:
         stmt = select(ExtraBedConfig).where(ExtraBedConfig.id == config_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def create(
-        self, payload: ExtraBedConfigCreate, user: User
-    ) -> ExtraBedConfig:
+    async def create(self, payload: ExtraBedConfigCreate, user: User) -> ExtraBedConfig:
         await assert_sanatorium_access(
             self.db, payload.sanatorium_id, user, action=_ACTION
         )
         config = ExtraBedConfig(
             sanatorium_id=payload.sanatorium_id,
-            name=payload.name.model_dump(exclude_none=True),
-            description=payload.description.model_dump(exclude_none=True),
+            name=payload.name.model_dump(),
+            description=payload.description.model_dump(),
             price_per_night=payload.price_per_night,
             currency=payload.currency,
             max_count=payload.max_count,

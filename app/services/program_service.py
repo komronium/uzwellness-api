@@ -59,8 +59,8 @@ class ProgramService:
 
         program = TreatmentProgram(
             sanatorium_id=payload.sanatorium_id,
-            name=payload.name.model_dump(exclude_none=True),
-            description=payload.description.model_dump(exclude_none=True),
+            name=payload.name.model_dump(),
+            description=payload.description.model_dump(),
             min_nights=payload.min_nights,
             max_nights=payload.max_nights,
             duration_minutes=payload.duration_minutes,
@@ -111,16 +111,14 @@ class ProgramService:
         await self.db.delete(program)
         await self.db.commit()
 
-    async def _fetch_amenities(
-        self, amenity_ids: list[uuid.UUID]
-    ) -> list[Amenity]:
+    async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
         if not amenity_ids:
             return []
         rows = (
-            await self.db.execute(
-                select(Amenity).where(Amenity.id.in_(amenity_ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(Amenity).where(Amenity.id.in_(amenity_ids))))
+            .scalars()
+            .all()
+        )
         if len(rows) != len(amenity_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -130,7 +128,11 @@ class ProgramService:
 
     @staticmethod
     def _validate_nights(min_nights: int | None, max_nights: int | None) -> None:
-        if min_nights is not None and max_nights is not None and max_nights < min_nights:
+        if (
+            min_nights is not None
+            and max_nights is not None
+            and max_nights < min_nights
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="max_nights must be >= min_nights",

@@ -48,16 +48,18 @@ class SanatoriumService:
         candidate = base
         suffix = 2
         while True:
-            existing = (await self.db.execute(
-                select(Sanatorium).where(Sanatorium.slug == candidate)
-            )).scalar_one_or_none()
+            existing = (
+                await self.db.execute(
+                    select(Sanatorium).where(Sanatorium.slug == candidate)
+                )
+            ).scalar_one_or_none()
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"
             suffix += 1
 
     async def create(self, payload: SanatoriumCreate) -> Sanatorium:
-        name_dict = payload.name.model_dump(exclude_none=True)
+        name_dict = payload.name.model_dump()
         slug_seed = payload.slug or pick_locale(name_dict)
         if not slug_seed:
             raise HTTPException(
@@ -72,10 +74,10 @@ class SanatoriumService:
         sanatorium = Sanatorium(
             name=name_dict,
             slug=slug,
-            description=payload.description.model_dump(exclude_none=True),
+            description=payload.description.model_dump(),
             city=payload.city,
             region=payload.region,
-            address=payload.address.model_dump(exclude_none=True),
+            address=payload.address.model_dump(),
             lat=payload.lat,
             lng=payload.lng,
             phones=payload.phones,
@@ -84,7 +86,9 @@ class SanatoriumService:
             check_out_time=payload.check_out_time,
             payment_methods=payload.payment_methods,
             house_rules=payload.house_rules.model_dump(exclude_none=True),
-            cancellation_policy=payload.cancellation_policy.model_dump(exclude_none=True),
+            cancellation_policy=payload.cancellation_policy.model_dump(
+                exclude_none=True
+            ),
             weekly_schedule=payload.weekly_schedule,
             stars=payload.stars,
             property_type=payload.property_type,
@@ -92,7 +96,9 @@ class SanatoriumService:
             treatment_focuses=payload.treatment_focuses,
             platform_commission_percent=payload.platform_commission_percent,
             b2b_commission_percent=payload.b2b_commission_percent,
-            agent_discount_tiers=[t.model_dump(mode="json") for t in payload.agent_discount_tiers],
+            agent_discount_tiers=[
+                t.model_dump(mode="json") for t in payload.agent_discount_tiers
+            ],
             admin_user_id=payload.admin_user_id,
             status=SanatoriumStatus.PENDING,
             amenities=amenities,
@@ -268,9 +274,11 @@ class SanatoriumService:
     async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
         if not amenity_ids:
             return []
-        rows = (await self.db.execute(
-            select(Amenity).where(Amenity.id.in_(amenity_ids))
-        )).scalars().all()
+        rows = (
+            (await self.db.execute(select(Amenity).where(Amenity.id.in_(amenity_ids))))
+            .scalars()
+            .all()
+        )
         if len(rows) != len(amenity_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

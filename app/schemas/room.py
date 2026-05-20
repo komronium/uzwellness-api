@@ -4,13 +4,14 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.common import Translations
+from app.core.utils import pick_locale
+from app.schemas.common import Translations, TranslationsCreate
 
 
 class RoomCreate(BaseModel):
     sanatorium_id: uuid.UUID
-    name: Translations = Field(default_factory=Translations)
-    description: Translations = Field(default_factory=Translations)
+    name: TranslationsCreate
+    description: TranslationsCreate
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int = Field(ge=1)
     inventory_count: int = Field(default=1, ge=1)
@@ -35,13 +36,11 @@ class RoomUpdate(BaseModel):
     is_active: bool | None = None
 
 
-class RoomRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class _RoomReadCommon(BaseModel):
+    """Shared fields between public and admin Room reads (excluding i18n)."""
 
     id: uuid.UUID
     sanatorium_id: uuid.UUID
-    name: dict
-    description: dict
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int
     inventory_count: int
@@ -63,8 +62,59 @@ class RoomRead(BaseModel):
     updated_at: datetime
 
 
+class RoomRead(_RoomReadCommon):
+    """Public read: i18n fields resolved to a single locale string."""
+
+    name: str
+    description: str
+
+    @classmethod
+    def from_obj(cls, obj, locale: str) -> "RoomRead":
+        return cls(
+            id=obj.id,
+            sanatorium_id=obj.sanatorium_id,
+            name=pick_locale(getattr(obj, "name", None), locale),
+            description=pick_locale(getattr(obj, "description", None), locale),
+            room_amenities=getattr(obj, "room_amenities", []) or [],
+            capacity=obj.capacity,
+            inventory_count=obj.inventory_count,
+            base_price=obj.base_price,
+            base_price_weekend=obj.base_price_weekend,
+            base_currency=obj.base_currency,
+            markup_percent=obj.markup_percent,
+            discount_percent=obj.discount_percent,
+            min_nights=obj.min_nights,
+            is_active=obj.is_active,
+            has_availability=getattr(obj, "has_availability", False),
+            final_price=getattr(obj, "final_price", Decimal("0")),
+            final_price_uzs=getattr(obj, "final_price_uzs", None),
+            final_price_usd=getattr(obj, "final_price_usd", None),
+            final_price_weekend=getattr(obj, "final_price_weekend", None),
+            final_price_weekend_uzs=getattr(obj, "final_price_weekend_uzs", None),
+            final_price_weekend_usd=getattr(obj, "final_price_weekend_usd", None),
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+        )
+
+
+class RoomAdminRead(_RoomReadCommon):
+    """Admin read: i18n fields returned as {uz, ru, en} dicts."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: dict
+    description: dict
+
+
 class RoomList(BaseModel):
     items: list[RoomRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class RoomAdminList(BaseModel):
+    items: list[RoomAdminRead]
     total: int
     limit: int
     offset: int

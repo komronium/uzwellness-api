@@ -19,7 +19,9 @@ class AmenityService:
     async def list_all(
         self, *, limit: int, offset: int
     ) -> tuple[Sequence[Amenity], int]:
-        stmt = select(Amenity).order_by(Amenity.category.asc(), Amenity.created_at.asc())
+        stmt = select(Amenity).order_by(
+            Amenity.category.asc(), Amenity.created_at.asc()
+        )
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def get_by_id(self, amenity_id: uuid.UUID) -> Amenity | None:
@@ -28,8 +30,8 @@ class AmenityService:
 
     async def create(self, payload: AmenityCreate) -> Amenity:
         amenity = Amenity(
-            name=payload.name.model_dump(exclude_none=True),
-            description=payload.description.model_dump(exclude_none=True),
+            name=payload.name.model_dump(),
+            description=payload.description.model_dump(),
             category=payload.category,
             icon=payload.icon,
         )

@@ -45,9 +45,7 @@ class RoomAvailabilityView:
         self.inventory_count = inventory_count
         self.units_blocked = units_blocked
         self.units_booked = units_booked
-        self.units_available = max(
-            inventory_count - units_blocked - units_booked, 0
-        )
+        self.units_available = max(inventory_count - units_blocked - units_booked, 0)
 
 
 class RoomSearchHit:
@@ -126,12 +124,15 @@ class RoomService:
 
     async def create(self, payload: RoomCreate, user: User) -> Room:
         await assert_sanatorium_access(
-            self.db, payload.sanatorium_id, user, action="manage this sanatorium's rooms"
+            self.db,
+            payload.sanatorium_id,
+            user,
+            action="manage this sanatorium's rooms",
         )
         room = Room(
             sanatorium_id=payload.sanatorium_id,
-            name=payload.name.model_dump(exclude_none=True),
-            description=payload.description.model_dump(exclude_none=True),
+            name=payload.name.model_dump(),
+            description=payload.description.model_dump(),
             room_amenities=payload.room_amenities,
             capacity=payload.capacity,
             inventory_count=payload.inventory_count,
@@ -196,7 +197,9 @@ class RoomService:
                     )
                     .with_for_update()
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         }
 
         if payload.units_blocked > room.inventory_count:
@@ -331,7 +334,9 @@ class RoomService:
                         RoomAvailability.date < date_to,
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         }
         result: list[RoomAvailabilityView] = []
         for d in date_range(date_from, date_to):
@@ -398,8 +403,7 @@ class RoomService:
                 select(
                     RoomAvailability.room_id,
                     func.max(
-                        RoomAvailability.units_blocked
-                        + RoomAvailability.units_booked
+                        RoomAvailability.units_blocked + RoomAvailability.units_booked
                     ).label("max_used"),
                 )
                 .where(
@@ -417,9 +421,7 @@ class RoomService:
         rate = await self.rates.get_usd_uzs()
         hits: list[RoomSearchHit] = []
         for room in rooms:
-            rooms_needed = (
-                math.ceil(guests / room.capacity) if room.capacity > 0 else 0
-            )
+            rooms_needed = math.ceil(guests / room.capacity) if room.capacity > 0 else 0
             used = max_used_by_room.get(room.id, 0)
             free_worst_case = max(room.inventory_count - used, 0)
 
@@ -450,9 +452,7 @@ class RoomService:
             )
         return hits
 
-    async def _assert_inventory_safe(
-        self, room_id: uuid.UUID, new_count: int
-    ) -> None:
+    async def _assert_inventory_safe(self, room_id: uuid.UUID, new_count: int) -> None:
         """Block lowering inventory_count below any date's (blocked+booked)."""
         max_used = (
             await self.db.execute(

@@ -4,9 +4,10 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.utils import pick_locale
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
-from app.schemas.amenity import AmenityRead
-from app.schemas.common import Translations
+from app.schemas.amenity import AmenityAdminRead, AmenityRead
+from app.schemas.common import Translations, TranslationsCreate
 
 
 class AgentDiscountTier(BaseModel):
@@ -42,12 +43,12 @@ class SanatoriumImageUpdate(BaseModel):
     caption: str | None = Field(default=None, max_length=255)
 
 
-class SanatoriumBase(BaseModel):
-    name: Translations = Field(default_factory=Translations)
-    description: Translations = Field(default_factory=Translations)
+class SanatoriumCreate(BaseModel):
+    name: TranslationsCreate
+    description: TranslationsCreate
     city: str = Field(min_length=1, max_length=120)
     region: str | None = Field(default=None, max_length=120)
-    address: Translations = Field(default_factory=Translations)
+    address: TranslationsCreate
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     phones: list[str] = Field(default_factory=list, max_length=10)
@@ -62,9 +63,6 @@ class SanatoriumBase(BaseModel):
     property_type: PropertyType = PropertyType.SANATORIUM
     wellness_category: WellnessCategory | None = None
     treatment_focuses: list[str] = Field(default_factory=list)
-
-
-class SanatoriumCreate(SanatoriumBase):
     slug: str | None = Field(default=None, max_length=255)
     admin_user_id: uuid.UUID | None = None
     amenity_ids: list[uuid.UUID] = Field(default_factory=list)
@@ -117,16 +115,13 @@ class SanatoriumUpdate(BaseModel):
         return _normalize_tiers(value)
 
 
-class SanatoriumRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class _SanatoriumReadCommon(BaseModel):
+    """Shared non-i18n fields between public and admin sanatorium reads."""
 
     id: uuid.UUID
-    name: Translations
     slug: str
-    description: Translations
     city: str
     region: str | None
-    address: Translations
     lat: Decimal | None
     lng: Decimal | None
     phones: list[str]
@@ -134,8 +129,6 @@ class SanatoriumRead(BaseModel):
     check_in_time: time | None
     check_out_time: time | None
     payment_methods: list[str]
-    house_rules: Translations
-    cancellation_policy: Translations
     weekly_schedule: dict
     stars: int
     status: SanatoriumStatus
@@ -151,11 +144,80 @@ class SanatoriumRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     images: list[SanatoriumImageRead] = Field(default_factory=list)
+
+
+class SanatoriumRead(_SanatoriumReadCommon):
+    """Public read: i18n fields resolved to a single locale string."""
+
+    name: str
+    description: str
+    address: str
+    house_rules: str
+    cancellation_policy: str
     amenities: list[AmenityRead] = Field(default_factory=list)
+
+    @classmethod
+    def from_obj(cls, obj, locale: str) -> "SanatoriumRead":
+        return cls(
+            id=obj.id,
+            slug=obj.slug,
+            name=pick_locale(obj.name, locale),
+            description=pick_locale(obj.description, locale),
+            city=obj.city,
+            region=obj.region,
+            address=pick_locale(obj.address, locale),
+            lat=obj.lat,
+            lng=obj.lng,
+            phones=obj.phones,
+            website=obj.website,
+            check_in_time=obj.check_in_time,
+            check_out_time=obj.check_out_time,
+            payment_methods=obj.payment_methods,
+            house_rules=pick_locale(obj.house_rules, locale),
+            cancellation_policy=pick_locale(obj.cancellation_policy, locale),
+            weekly_schedule=obj.weekly_schedule,
+            stars=obj.stars,
+            status=obj.status,
+            property_type=obj.property_type,
+            wellness_category=obj.wellness_category,
+            treatment_focuses=obj.treatment_focuses,
+            avg_rating=obj.avg_rating,
+            review_count=obj.review_count,
+            admin_user_id=obj.admin_user_id,
+            platform_commission_percent=obj.platform_commission_percent,
+            b2b_commission_percent=obj.b2b_commission_percent,
+            agent_discount_tiers=[
+                AgentDiscountTier(**t) for t in (obj.agent_discount_tiers or [])
+            ],
+            created_at=obj.created_at,
+            updated_at=obj.updated_at,
+            images=[SanatoriumImageRead.model_validate(i) for i in obj.images],
+            amenities=[AmenityRead.from_obj(a, locale) for a in obj.amenities],
+        )
+
+
+class SanatoriumAdminRead(_SanatoriumReadCommon):
+    """Admin read: i18n fields returned as {uz, ru, en} dicts."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: dict
+    description: dict
+    address: dict
+    house_rules: dict
+    cancellation_policy: dict
+    amenities: list[AmenityAdminRead] = Field(default_factory=list)
 
 
 class SanatoriumList(BaseModel):
     items: list[SanatoriumRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class SanatoriumAdminList(BaseModel):
+    items: list[SanatoriumAdminRead]
     total: int
     limit: int
     offset: int

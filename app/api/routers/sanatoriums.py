@@ -13,11 +13,19 @@ from fastapi import (
     status,
 )
 
-from app.api.deps import CurrentUser, OptionalUser, require_roles
+from app.api.deps import (
+    CurrentUser,
+    IncludeTranslationsDep,
+    LocaleDep,
+    OptionalUser,
+    require_roles,
+)
 from app.core.config import settings
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import (
+    SanatoriumAdminList,
+    SanatoriumAdminRead,
     SanatoriumCreate,
     SanatoriumImageRead,
     SanatoriumImageUpdate,
@@ -57,9 +65,11 @@ SortField = Literal[
 ]
 
 
-@router.get("", response_model=SanatoriumList)
+@router.get("", response_model=None)
 async def list_sanatoriums(
     current_user: OptionalUser,
+    locale: LocaleDep,
+    include_translations: IncludeTranslationsDep,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -74,7 +84,7 @@ async def list_sanatoriums(
     treatment_focus: str | None = Query(default=None, max_length=60),
     property_type: PropertyType | None = Query(default=None),
     wellness_category: WellnessCategory | None = Query(default=None),
-) -> SanatoriumList:
+) -> SanatoriumList | SanatoriumAdminList:
     items, total = await sanatoriums.list_for_user(
         user=current_user,
         limit=limit,
@@ -91,54 +101,65 @@ async def list_sanatoriums(
         property_type=property_type,
         wellness_category=wellness_category,
     )
+    if include_translations:
+        return SanatoriumAdminList(
+            items=[SanatoriumAdminRead.model_validate(s) for s in items],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
     return SanatoriumList(
-        items=[SanatoriumRead.model_validate(s) for s in items],
+        items=[SanatoriumRead.from_obj(s, locale) for s in items],
         total=total,
         limit=limit,
         offset=offset,
     )
 
 
-@router.get("/{sanatorium_id}", response_model=SanatoriumRead)
+@router.get("/{sanatorium_id}", response_model=None)
 async def get_sanatorium(
     sanatorium_id: uuid.UUID,
     current_user: OptionalUser,
+    locale: LocaleDep,
+    include_translations: IncludeTranslationsDep,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-) -> SanatoriumRead:
+) -> SanatoriumRead | SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_visible(sanatorium_id, current_user)
     if sanatorium is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sanatorium not found",
         )
-    return SanatoriumRead.model_validate(sanatorium)
+    if include_translations:
+        return SanatoriumAdminRead.model_validate(sanatorium)
+    return SanatoriumRead.from_obj(sanatorium, locale)
 
 
 @router.post(
     "",
-    response_model=SanatoriumRead,
+    response_model=SanatoriumAdminRead,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_sanatorium(
     payload: SanatoriumCreate,
     current_user: User = Depends(require_admin_or_above),
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-) -> SanatoriumRead:
+) -> SanatoriumAdminRead:
     # Admins always own the sanatorium they create; only super_admin may
     # explicitly assign it to a different admin.
     if current_user.role == UserRole.ADMIN:
         payload = payload.model_copy(update={"admin_user_id": current_user.id})
     sanatorium = await sanatoriums.create(payload)
-    return SanatoriumRead.model_validate(sanatorium)
+    return SanatoriumAdminRead.model_validate(sanatorium)
 
 
-@router.patch("/{sanatorium_id}", response_model=SanatoriumRead)
+@router.patch("/{sanatorium_id}", response_model=SanatoriumAdminRead)
 async def update_sanatorium(
     sanatorium_id: uuid.UUID,
     payload: SanatoriumUpdate,
     current_user: CurrentUser,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-) -> SanatoriumRead:
+) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise HTTPException(
@@ -147,18 +168,18 @@ async def update_sanatorium(
         )
     _ensure_can_edit(sanatorium.admin_user_id, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
-    return SanatoriumRead.model_validate(updated)
+    return SanatoriumAdminRead.model_validate(updated)
 
 
 @router.post(
     "/{sanatorium_id}/approve",
-    response_model=SanatoriumRead,
+    response_model=SanatoriumAdminRead,
     dependencies=[Depends(require_super_admin)],
 )
 async def approve_sanatorium(
     sanatorium_id: uuid.UUID,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-) -> SanatoriumRead:
+) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise HTTPException(
@@ -166,18 +187,18 @@ async def approve_sanatorium(
             detail="Sanatorium not found",
         )
     approved = await sanatoriums.approve(sanatorium)
-    return SanatoriumRead.model_validate(approved)
+    return SanatoriumAdminRead.model_validate(approved)
 
 
 @router.post(
     "/{sanatorium_id}/reject",
-    response_model=SanatoriumRead,
+    response_model=SanatoriumAdminRead,
     dependencies=[Depends(require_super_admin)],
 )
 async def reject_sanatorium(
     sanatorium_id: uuid.UUID,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-) -> SanatoriumRead:
+) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise HTTPException(
@@ -185,7 +206,7 @@ async def reject_sanatorium(
             detail="Sanatorium not found",
         )
     rejected = await sanatoriums.reject(sanatorium)
-    return SanatoriumRead.model_validate(rejected)
+    return SanatoriumAdminRead.model_validate(rejected)
 
 
 @router.post(

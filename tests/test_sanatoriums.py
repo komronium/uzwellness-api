@@ -19,10 +19,10 @@ async def _login(client: AsyncClient, email: str, password: str) -> dict[str, st
 
 
 CREATE_PAYLOAD = {
-    "name": {"uz": "Vodiy Shifosi", "en": "Valley Healing"},
-    "description": {"uz": "Eng yaxshi", "en": "The best"},
+    "name": {"uz": "Vodiy Shifosi", "ru": "Долина Исцеления", "en": "Valley Healing"},
+    "description": {"uz": "Eng yaxshi", "ru": "Лучший", "en": "The best"},
     "city": "Toshkent",
-    "address": {"uz": "Amir Temur 12"},
+    "address": {"uz": "Amir Temur 12", "ru": "Амир Темур 12", "en": "Amir Temur 12"},
     "stars": 4,
 }
 
@@ -44,7 +44,7 @@ async def test_create_as_super_admin_works(
     assert body["status"] == "pending"
     assert body["description"]["uz"] == "Eng yaxshi"
     assert body["description"]["en"] == "The best"
-    assert body["description"]["ru"] is None
+    assert body["description"]["ru"] == "Лучший"
 
 
 async def test_create_as_admin_auto_assigns_owner(
@@ -79,7 +79,10 @@ async def test_create_slug_collision_suffixes(
     )
     second = await client.post(
         "/api/sanatoriums",
-        json={**CREATE_PAYLOAD, "address": {"uz": "Other 2"}},
+        json={
+            **CREATE_PAYLOAD,
+            "address": {"uz": "Other 2", "ru": "Другой 2", "en": "Other 2"},
+        },
         headers=super_admin_headers,
     )
     assert first.json()["slug"] == "vodiy-shifosi"
@@ -196,7 +199,8 @@ async def test_patch_translation_null_clears_single_locale(
     assert resp.status_code == 200, resp.text
     body = resp.json()["description"]
     assert body["uz"] == "X"
-    assert body["ru"] is None
+    # Sending {ru: null} drops the key entirely from the JSONB payload.
+    assert "ru" not in body
     assert body["en"] == "Z"
 
 
@@ -334,7 +338,8 @@ async def test_list_search_name(client: AsyncClient, db: AsyncSession) -> None:
     await make_sanatorium(db, name="Yangi Hayot", slug="yangi")
     resp = await client.get("/api/sanatoriums?q=vodi")
     assert resp.json()["total"] == 1
-    assert resp.json()["items"][0]["name"]["uz"] == "Vodiy Shifosi"
+    # Public list returns name resolved to the request locale (default: en → uz fallback)
+    assert resp.json()["items"][0]["name"] == "Vodiy Shifosi"
 
 
 async def test_list_search_escapes_wildcards(
@@ -351,7 +356,7 @@ async def test_list_sort_by_name(client: AsyncClient, db: AsyncSession) -> None:
     await make_sanatorium(db, name="Alpha", slug="a")
     await make_sanatorium(db, name="Bravo", slug="b")
     resp = await client.get("/api/sanatoriums?sort=name")
-    assert [s["name"]["uz"] for s in resp.json()["items"]] == [
+    assert [s["name"] for s in resp.json()["items"]] == [
         "Alpha", "Bravo", "Charlie"
     ]
 
