@@ -4,6 +4,7 @@ from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
+from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.program import TreatmentProgram
 from app.models.refresh_token import RefreshToken
@@ -27,6 +28,9 @@ __all__ = [
     "ExchangeRate",
     "ExtraBedConfig",
     "Notification",
+    "Package",
+    "PackageItem",
+    "PackageItemType",
     "Payment",
     "PaymentMethod",
     "PaymentStatus",

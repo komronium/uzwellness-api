@@ -10,6 +10,7 @@ from app.api.routers import (
     exchange_rates,
     extra_beds,
     health,
+    packages,
     payments,
     programs,
     reviews,
@@ -28,6 +29,7 @@ api_router.include_router(exchange_rates.router)
 api_router.include_router(bookings.router)
 api_router.include_router(amenities.router)
 api_router.include_router(programs.router)
+api_router.include_router(packages.router)
 api_router.include_router(extra_beds.router)
 api_router.include_router(reviews.router)
 api_router.include_router(availability.router)
