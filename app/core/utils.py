@@ -35,6 +35,18 @@ def pick_locale(translations: dict | None, locale: str = "uz") -> str:
     return ""
 
 
+def localize(
+    obj, fields: tuple[str, ...], locale: str = "uz"
+) -> dict[str, str]:
+    """Resolve i18n JSONB fields on an ORM object to plain strings in `locale`.
+
+    Returns a dict mapping each field name to its resolved string (falling back
+    via pick_locale). Use this to build public read responses where the client
+    receives strings instead of {uz, ru, en} dicts.
+    """
+    return {field: pick_locale(getattr(obj, field), locale) for field in fields}
+
+
 def merge_translation_fields(
     obj, data: dict, fields: tuple[str, ...]
 ) -> None:

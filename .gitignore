@@ -47,3 +47,6 @@ Thumbs.db
 
 # Local uploads (until S3 wired up)
 uploads/
+
+# Local notes / planning (not for repo)
+TASKS.md
