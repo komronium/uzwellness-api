@@ -10,6 +10,7 @@ from app.schemas.common import Translations
 class RoomCreate(BaseModel):
     sanatorium_id: uuid.UUID
     name: Translations = Field(default_factory=Translations)
+    description: Translations = Field(default_factory=Translations)
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int = Field(ge=1)
     inventory_count: int = Field(default=1, ge=1)
@@ -21,6 +22,7 @@ class RoomCreate(BaseModel):
 
 class RoomUpdate(BaseModel):
     name: Translations | None = None
+    description: Translations | None = None
     room_amenities: list[str] | None = None
     capacity: int | None = Field(default=None, ge=1)
     inventory_count: int | None = Field(default=None, ge=0)
@@ -39,6 +41,7 @@ class RoomRead(BaseModel):
     id: uuid.UUID
     sanatorium_id: uuid.UUID
     name: dict
+    description: dict
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int
     inventory_count: int

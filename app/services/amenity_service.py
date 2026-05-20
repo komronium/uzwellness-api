@@ -29,6 +29,7 @@ class AmenityService:
     async def create(self, payload: AmenityCreate) -> Amenity:
         amenity = Amenity(
             name=payload.name.model_dump(exclude_none=True),
+            description=payload.description.model_dump(exclude_none=True),
             category=payload.category,
             icon=payload.icon,
         )
@@ -39,7 +40,7 @@ class AmenityService:
 
     async def update(self, amenity: Amenity, payload: AmenityUpdate) -> Amenity:
         data = payload.model_dump(exclude_unset=True)
-        merge_translation_fields(amenity, data, ("name",))
+        merge_translation_fields(amenity, data, ("name", "description"))
         for field, value in data.items():
             setattr(amenity, field, value)
         await self.db.commit()

@@ -40,6 +40,9 @@ class Room(Base):
     )
 
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    description: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     room_amenities: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     inventory_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

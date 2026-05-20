@@ -50,20 +50,21 @@ async def make_sanatorium(
     name: str | dict = "Test Sanatorium",
     slug: str | None = None,
     city: str = "Toshkent",
-    address: str = "Test Address 1",
+    address: str | dict = "Test Address 1",
     stars: int = 4,
     status: SanatoriumStatus = SanatoriumStatus.APPROVED,
     admin_user_id: uuid.UUID | None = None,
     description: dict | None = None,
 ) -> Sanatorium:
     name_dict = {"uz": name} if isinstance(name, str) else name
+    address_dict = {"uz": address} if isinstance(address, str) else address
     primary = next((v for v in name_dict.values() if v), "sanatorium")
     sanatorium = Sanatorium(
         name=name_dict,
         slug=slug or primary.lower().replace(" ", "-"),
         description=description or {},
         city=city,
-        address=address,
+        address=address_dict,
         stars=stars,
         status=status,
         admin_user_id=admin_user_id,

@@ -9,12 +9,14 @@ from app.schemas.common import Translations
 
 class AmenityCreate(BaseModel):
     name: Translations = Field(default_factory=Translations)
+    description: Translations = Field(default_factory=Translations)
     category: str = Field(min_length=1, max_length=60)
     icon: str | None = Field(default=None, max_length=100)
 
 
 class AmenityUpdate(BaseModel):
     name: Translations | None = None
+    description: Translations | None = None
     category: str | None = Field(default=None, min_length=1, max_length=60)
     icon: str | None = None
 
@@ -24,6 +26,7 @@ class AmenityRead(BaseModel):
 
     id: uuid.UUID
     name: dict
+    description: dict
     category: str
     icon: str | None
     created_at: datetime

@@ -75,7 +75,7 @@ class SanatoriumService:
             description=payload.description.model_dump(exclude_none=True),
             city=payload.city,
             region=payload.region,
-            address=payload.address,
+            address=payload.address.model_dump(exclude_none=True),
             lat=payload.lat,
             lng=payload.lng,
             phones=payload.phones,
@@ -120,7 +120,7 @@ class SanatoriumService:
         merge_translation_fields(
             sanatorium,
             data,
-            ("name", "description", "house_rules", "cancellation_policy"),
+            ("name", "description", "address", "house_rules", "cancellation_policy"),
         )
 
         if "slug" in data and data["slug"] is not None:

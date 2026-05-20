@@ -10,6 +10,7 @@ from app.schemas.common import Translations
 class ExtraBedConfigCreate(BaseModel):
     sanatorium_id: uuid.UUID
     name: Translations = Field(default_factory=Translations)
+    description: Translations = Field(default_factory=Translations)
     price_per_night: Decimal = Field(ge=0, decimal_places=2)
     currency: str = Field(pattern=r"^(UZS|USD)$")
     max_count: int = Field(default=10, ge=1)
@@ -17,6 +18,7 @@ class ExtraBedConfigCreate(BaseModel):
 
 class ExtraBedConfigUpdate(BaseModel):
     name: Translations | None = None
+    description: Translations | None = None
     price_per_night: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
     max_count: int | None = Field(default=None, ge=1)
@@ -29,6 +31,7 @@ class ExtraBedConfigRead(BaseModel):
     id: uuid.UUID
     sanatorium_id: uuid.UUID
     name: dict
+    description: dict
     price_per_night: Decimal
     currency: str
     max_count: int

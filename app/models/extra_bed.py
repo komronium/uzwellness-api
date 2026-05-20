@@ -25,6 +25,9 @@ class ExtraBedConfig(Base):
         Uuid, ForeignKey("sanatoriums.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    description: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     price_per_night: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     max_count: Mapped[int] = mapped_column(Integer, nullable=False, default=10)

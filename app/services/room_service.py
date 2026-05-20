@@ -131,6 +131,7 @@ class RoomService:
         room = Room(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(exclude_none=True),
+            description=payload.description.model_dump(exclude_none=True),
             room_amenities=payload.room_amenities,
             capacity=payload.capacity,
             inventory_count=payload.inventory_count,
@@ -157,7 +158,7 @@ class RoomService:
             )
         if "inventory_count" in data and data["inventory_count"] is not None:
             await self._assert_inventory_safe(room.id, data["inventory_count"])
-        merge_translation_fields(room, data, ("name",))
+        merge_translation_fields(room, data, ("name", "description"))
 
         for field, value in data.items():
             setattr(room, field, value)

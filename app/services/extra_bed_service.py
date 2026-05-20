@@ -50,6 +50,7 @@ class ExtraBedService:
         config = ExtraBedConfig(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(exclude_none=True),
+            description=payload.description.model_dump(exclude_none=True),
             price_per_night=payload.price_per_night,
             currency=payload.currency,
             max_count=payload.max_count,
@@ -69,7 +70,7 @@ class ExtraBedService:
             self.db, config.sanatorium_id, user, action=_ACTION
         )
         data = payload.model_dump(exclude_unset=True)
-        merge_translation_fields(config, data, ("name",))
+        merge_translation_fields(config, data, ("name", "description"))
         for field, value in data.items():
             setattr(config, field, value)
         await self.db.commit()

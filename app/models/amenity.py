@@ -64,6 +64,9 @@ class Amenity(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    description: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     category: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     icon: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(

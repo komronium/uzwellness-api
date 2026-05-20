@@ -65,7 +65,7 @@ class Sanatorium(Base):
 
     city: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     region: Mapped[str | None] = mapped_column(String(120), index=True)
-    address: Mapped[str] = mapped_column(String(500), nullable=False)
+    address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
 

@@ -22,7 +22,7 @@ CREATE_PAYLOAD = {
     "name": {"uz": "Vodiy Shifosi", "en": "Valley Healing"},
     "description": {"uz": "Eng yaxshi", "en": "The best"},
     "city": "Toshkent",
-    "address": "Amir Temur 12",
+    "address": {"uz": "Amir Temur 12"},
     "stars": 4,
 }
 
@@ -79,7 +79,7 @@ async def test_create_slug_collision_suffixes(
     )
     second = await client.post(
         "/api/sanatoriums",
-        json={**CREATE_PAYLOAD, "address": "Other 2"},
+        json={**CREATE_PAYLOAD, "address": {"uz": "Other 2"}},
         headers=super_admin_headers,
     )
     assert first.json()["slug"] == "vodiy-shifosi"
@@ -124,11 +124,11 @@ async def test_patch_as_owning_admin(
     )
     resp = await client.patch(
         f"/api/sanatoriums/{sanatorium.id}",
-        json={"address": "Updated 99"},
+        json={"address": {"uz": "Updated 99"}},
         headers=admin_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["address"] == "Updated 99"
+    assert resp.json()["address"]["uz"] == "Updated 99"
 
 
 async def test_patch_as_other_admin_returns_403(
@@ -142,7 +142,7 @@ async def test_patch_as_other_admin_returns_403(
     )
     resp = await client.patch(
         f"/api/sanatoriums/{sanatorium.id}",
-        json={"address": "should not work"},
+        json={"address": {"uz": "should not work"}},
         headers=admin_headers,
     )
     assert resp.status_code == 403

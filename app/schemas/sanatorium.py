@@ -47,7 +47,7 @@ class SanatoriumBase(BaseModel):
     description: Translations = Field(default_factory=Translations)
     city: str = Field(min_length=1, max_length=120)
     region: str | None = Field(default=None, max_length=120)
-    address: str = Field(min_length=1, max_length=500)
+    address: Translations = Field(default_factory=Translations)
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     phones: list[str] = Field(default_factory=list, max_length=10)
@@ -86,7 +86,7 @@ class SanatoriumUpdate(BaseModel):
     description: Translations | None = None
     city: str | None = Field(default=None, min_length=1, max_length=120)
     region: str | None = Field(default=None, max_length=120)
-    address: str | None = Field(default=None, min_length=1, max_length=500)
+    address: Translations | None = None
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     phones: list[str] | None = Field(default=None, max_length=10)
@@ -126,7 +126,7 @@ class SanatoriumRead(BaseModel):
     description: Translations
     city: str
     region: str | None
-    address: str
+    address: Translations
     lat: Decimal | None
     lng: Decimal | None
     phones: list[str]
