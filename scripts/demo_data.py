@@ -15,10 +15,13 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus
+from app.models.exchange_rate import ExchangeRate
 from app.models.notification import Notification
-from app.models.room import ExchangeRate, Room
+from app.models.package import Package, PackageItem, PackageItemType
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
+from app.models.visa_request import VisaPurpose, VisaRequest, VisaStatus
 from sqlalchemy import select
 
 # ── constants ──────────────────────────────────────────────────────────────
@@ -173,6 +176,231 @@ ROOM_TEMPLATES = [
     ],
 ]
 
+PACKAGE_TEMPLATES = [
+    {
+        "slug": "charvak-wellness-weekend",
+        "sanatorium_slug": "charvak-oromgohi",
+        "title": {
+            "uz": "Charvak Wellness Weekend",
+            "ru": "Велнес-уикенд в Чарваке",
+            "en": "Charvak Wellness Weekend",
+        },
+        "description": {
+            "uz": "3 kecha davomida tog' havosi, transfer, ovqatlanish va shifo muolajalari.",
+            "ru": "3 ночи с горным воздухом, трансфером, питанием и оздоровительными процедурами.",
+            "en": "3 nights with mountain air, transfer, meals, and wellness treatments.",
+        },
+        "duration_nights": 3,
+        "base_price": Decimal("690.00"),
+        "currency": "USD",
+        "items": [
+            {
+                "item_type": PackageItemType.TRANSFER,
+                "title": {
+                    "uz": "Aeroportdan transfer",
+                    "ru": "Трансфер из аэропорта",
+                    "en": "Airport transfer",
+                },
+                "description": {
+                    "uz": "Toshkent aeroportidan Charvakka borish va qaytish.",
+                    "ru": "Трансфер из аэропорта Ташкента в Чарвак и обратно.",
+                    "en": "Round-trip transfer from Tashkent airport to Charvak.",
+                },
+                "display_order": 1,
+            },
+            {
+                "item_type": PackageItemType.HOTEL,
+                "title": {
+                    "uz": "3 kecha joylashuv",
+                    "ru": "Проживание на 3 ночи",
+                    "en": "3-night stay",
+                },
+                "description": {
+                    "uz": "Standart yoki deluxe xona, mavjudlikka qarab.",
+                    "ru": "Стандартный или делюкс номер при наличии.",
+                    "en": "Standard or deluxe room, subject to availability.",
+                },
+                "display_order": 2,
+            },
+            {
+                "item_type": PackageItemType.TREATMENT,
+                "title": {
+                    "uz": "Wellness muolajalari",
+                    "ru": "Оздоровительные процедуры",
+                    "en": "Wellness treatments",
+                },
+                "description": {
+                    "uz": "Kundalik konsultatsiya va tiklanish dasturi.",
+                    "ru": "Ежедневная консультация и восстановительная программа.",
+                    "en": "Daily consultation and recovery program.",
+                },
+                "display_order": 3,
+            },
+        ],
+    },
+    {
+        "slug": "samarqand-health-retreat",
+        "sanatorium_slug": "nur-samarqand",
+        "title": {
+            "uz": "Samarqand Health Retreat",
+            "ru": "Оздоровительный ретрит в Самарканде",
+            "en": "Samarkand Health Retreat",
+        },
+        "description": {
+            "uz": "5 kecha Samarqandda dam olish, tekshiruv va shaharga qisqa ekskursiya.",
+            "ru": "5 ночей в Самарканде с отдыхом, обследованием и короткой экскурсией.",
+            "en": "5 nights in Samarkand with rest, check-up, and a short city tour.",
+        },
+        "duration_nights": 5,
+        "base_price": Decimal("990.00"),
+        "currency": "USD",
+        "items": [
+            {
+                "item_type": PackageItemType.HOTEL,
+                "title": {
+                    "uz": "5 kecha joylashuv",
+                    "ru": "Проживание на 5 ночей",
+                    "en": "5-night stay",
+                },
+                "description": {
+                    "uz": "Nur Samarqand sanatoriysida ikki kishilik xona.",
+                    "ru": "Двухместный номер в санатории Нур Самарканд.",
+                    "en": "Double room at Nur Samarkand sanatorium.",
+                },
+                "display_order": 1,
+            },
+            {
+                "item_type": PackageItemType.TREATMENT,
+                "title": {
+                    "uz": "Boshlang'ich tibbiy tekshiruv",
+                    "ru": "Первичный медицинский осмотр",
+                    "en": "Initial medical check-up",
+                },
+                "description": {
+                    "uz": "Shifokor konsultatsiyasi va asosiy tavsiyalar.",
+                    "ru": "Консультация врача и базовые рекомендации.",
+                    "en": "Doctor consultation and baseline recommendations.",
+                },
+                "display_order": 2,
+            },
+            {
+                "item_type": PackageItemType.EXCURSION,
+                "title": {
+                    "uz": "Registon ekskursiyasi",
+                    "ru": "Экскурсия на Регистан",
+                    "en": "Registan excursion",
+                },
+                "description": {
+                    "uz": "Gid bilan yarim kunlik shaharga sayohat.",
+                    "ru": "Полудневная экскурсия по городу с гидом.",
+                    "en": "Half-day guided city tour.",
+                },
+                "display_order": 3,
+            },
+        ],
+    },
+    {
+        "slug": "buxoro-recovery-tour",
+        "sanatorium_slug": "buxoro-ziloli",
+        "title": {
+            "uz": "Buxoro Recovery Tour",
+            "ru": "Восстановительный тур в Бухару",
+            "en": "Bukhara Recovery Tour",
+        },
+        "description": {
+            "uz": "7 kecha tiklanish dasturi, ovqatlanish va transport xizmati.",
+            "ru": "7 ночей восстановительной программы с питанием и транспортом.",
+            "en": "7-night recovery program with meals and transport.",
+        },
+        "duration_nights": 7,
+        "base_price": Decimal("1250.00"),
+        "currency": "USD",
+        "items": [
+            {
+                "item_type": PackageItemType.MEAL,
+                "title": {
+                    "uz": "Kuniga 3 mahal ovqat",
+                    "ru": "Трехразовое питание",
+                    "en": "Three meals per day",
+                },
+                "description": {
+                    "uz": "Diyetolog tavsiyasi bo'yicha menyu.",
+                    "ru": "Меню по рекомендации диетолога.",
+                    "en": "Menu based on dietitian recommendations.",
+                },
+                "display_order": 1,
+            },
+            {
+                "item_type": PackageItemType.TREATMENT,
+                "title": {
+                    "uz": "7 kunlik tiklanish kursi",
+                    "ru": "7-дневный курс восстановления",
+                    "en": "7-day recovery course",
+                },
+                "description": {
+                    "uz": "Mineral vannalar va yengil fizioterapiya.",
+                    "ru": "Минеральные ванны и легкая физиотерапия.",
+                    "en": "Mineral baths and light physiotherapy.",
+                },
+                "display_order": 2,
+            },
+            {
+                "item_type": PackageItemType.TRANSFER,
+                "title": {
+                    "uz": "Temir yo'l vokzalidan transfer",
+                    "ru": "Трансфер с железнодорожного вокзала",
+                    "en": "Railway station transfer",
+                },
+                "description": {
+                    "uz": "Buxoro vokzalidan sanatoriygacha kutib olish.",
+                    "ru": "Встреча на вокзале Бухары и трансфер в санаторий.",
+                    "en": "Pickup from Bukhara railway station to the sanatorium.",
+                },
+                "display_order": 3,
+            },
+        ],
+    },
+]
+
+VISA_REQUEST_TEMPLATES = [
+    {
+        "user_email": "ali@gmail.com",
+        "full_name": "Ali Karimov",
+        "citizenship": "Kazakhstan",
+        "passport_number": "KZ1234567",
+        "date_of_birth": date(1991, 5, 14),
+        "arrival_offset_days": 35,
+        "stay_nights": 10,
+        "purpose": VisaPurpose.TREATMENT,
+        "status": VisaStatus.PENDING,
+        "admin_notes": None,
+    },
+    {
+        "user_email": "zulfiya@gmail.com",
+        "full_name": "Zulfiya Yusupova",
+        "citizenship": "Kyrgyzstan",
+        "passport_number": "KG7654321",
+        "date_of_birth": date(1988, 11, 3),
+        "arrival_offset_days": 50,
+        "stay_nights": 8,
+        "purpose": VisaPurpose.TOURISM,
+        "status": VisaStatus.PROCESSING,
+        "admin_notes": "Passport scan received; invitation letter in progress.",
+    },
+    {
+        "user_email": "jasur@gmail.com",
+        "full_name": "Jasur Toshmatov",
+        "citizenship": "Tajikistan",
+        "passport_number": "TJ9988776",
+        "date_of_birth": date(1985, 2, 22),
+        "arrival_offset_days": 70,
+        "stay_nights": 14,
+        "purpose": VisaPurpose.TREATMENT,
+        "status": VisaStatus.ISSUED,
+        "admin_notes": "Demo visa issued for testing.",
+    },
+]
+
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -214,6 +442,93 @@ async def get_or_create_sanatorium(db, data, admin_id):
     db.add(san)
     await db.flush()
     return san, True
+
+
+async def ensure_package_items(db, package: Package, item_templates):
+    existing_items = (
+        await db.execute(
+            select(PackageItem).where(PackageItem.package_id == package.id)
+        )
+    ).scalars().all()
+    existing_keys = {
+        (item.item_type, item.display_order)
+        for item in existing_items
+    }
+    created_count = 0
+    for item_data in item_templates:
+        key = (item_data["item_type"], item_data["display_order"])
+        if key in existing_keys:
+            continue
+        db.add(PackageItem(
+            package_id=package.id,
+            item_type=item_data["item_type"],
+            title=item_data["title"],
+            description=item_data["description"],
+            is_included=item_data.get("is_included", True),
+            extra_price=item_data.get("extra_price"),
+            display_order=item_data["display_order"],
+        ))
+        created_count += 1
+    if created_count:
+        await db.flush()
+    return created_count
+
+
+async def get_or_create_package(db, data, sanatorium_by_slug):
+    existing = (
+        await db.execute(select(Package).where(Package.slug == data["slug"]))
+    ).scalar_one_or_none()
+    if existing:
+        created_items = await ensure_package_items(db, existing, data["items"])
+        return existing, False, created_items
+
+    sanatorium = sanatorium_by_slug.get(data["sanatorium_slug"])
+    package = Package(
+        slug=data["slug"],
+        title=data["title"],
+        description=data["description"],
+        duration_nights=data["duration_nights"],
+        base_price=data["base_price"],
+        currency=data["currency"],
+        sanatorium_id=sanatorium.id if sanatorium is not None else None,
+        is_active=True,
+    )
+    db.add(package)
+    await db.flush()
+    created_items = await ensure_package_items(db, package, data["items"])
+    return package, True, created_items
+
+
+async def get_or_create_visa_request(db, data, customer_by_email, today):
+    existing = (
+        await db.execute(
+            select(VisaRequest).where(
+                VisaRequest.passport_number == data["passport_number"]
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return existing, False
+
+    customer = customer_by_email.get(data["user_email"])
+    arrival_date = today + timedelta(days=data["arrival_offset_days"])
+    visa = VisaRequest(
+        user_id=customer.id if customer is not None else None,
+        full_name=data["full_name"],
+        citizenship=data["citizenship"],
+        passport_number=data["passport_number"],
+        date_of_birth=data["date_of_birth"],
+        arrival_date=arrival_date,
+        departure_date=arrival_date + timedelta(days=data["stay_nights"]),
+        purpose=data["purpose"],
+        status=data["status"],
+        admin_notes=data["admin_notes"],
+        contact_email=customer.email if customer is not None else None,
+        contact_phone=customer.phone if customer is not None else None,
+    )
+    db.add(visa)
+    await db.flush()
+    return visa, True
 
 
 # ── main seed ──────────────────────────────────────────────────────────────
@@ -310,7 +625,36 @@ async def main() -> None:
 
         await db.flush()
 
-        # 6. Sample bookings (only if none exist yet)
+        # 6. Demo packages
+        sanatorium_by_slug = {
+            san.slug: san
+            for san in (
+                await db.execute(select(Sanatorium))
+            ).scalars().all()
+        }
+        print("\nCreating demo packages...")
+        for package_data in PACKAGE_TEMPLATES:
+            package, created, created_items = await get_or_create_package(
+                db, package_data, sanatorium_by_slug
+            )
+            prefix = "✓" if created else "-"
+            item_msg = (
+                f", {created_items} item(s) added"
+                if created_items and not created
+                else ""
+            )
+            print(f"{prefix} package: {package.title['en']}{item_msg}")
+
+        # 7. Demo visa requests
+        customer_by_email = {customer.email: customer for customer in customer_users}
+        print("\nCreating demo visa requests...")
+        for visa_data in VISA_REQUEST_TEMPLATES:
+            visa, created = await get_or_create_visa_request(
+                db, visa_data, customer_by_email, today
+            )
+            print(f"{'✓' if created else '-'} visa request: {visa.full_name}")
+
+        # 8. Sample bookings (only if none exist yet)
         existing_bookings = (
             await db.execute(select(Booking).limit(1))
         ).scalar_one_or_none()
