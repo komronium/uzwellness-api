@@ -151,6 +151,64 @@ enrich_room(room, rate)             # → final_price, final_price_weekend, UZS/
 | Super_admin | `markup_percent` belgilaydi (0–100%) |
 | Kurs | `USD_UZS` — `exchange_rates` jadvalidan |
 
+## i18n — uz / ru / en
+
+Tarjima qilinadigan matnlar JSONB ustunda `{uz, ru, en}` shaklida saqlanadi.
+Tegishli ustunlar: `sanatoriums.name|description|address|house_rules|cancellation_policy`,
+`room_categories.name|description`, `treatment_programs.name|description|instructor_bio|what_to_bring`,
+`amenities.name|description`, `extra_bed_configs.name|description`.
+
+### Kirish (POST)
+
+`TranslationsCreate` (`app/schemas/common.py`) — uchchala locale ham majburiy:
+```json
+{ "name": { "uz": "Vodiy", "ru": "Долина", "en": "Valley" } }
+```
+PATCH'lar `Translations` (qisman) qabul qiladi va `merge_translation_fields()`
+orqali mavjud JSONB ustiga qo'shadi (yuborilmagan locale o'zgarmaydi).
+`{ru: null}` yuborish — shu locale'ni butunlay olib tashlaydi.
+
+### Chiqish (GET)
+
+Dual-Read pattern (`XxxRead` vs `XxxAdminRead`):
+
+| So'rov | Shakl | Mas'ul model |
+|---|---|---|
+| `GET /...` (default) | `name: str` (resolved) | `XxxRead.from_obj(obj, locale)` |
+| `GET /...?include_translations=true` | `name: {uz,ru,en}` | `XxxAdminRead.model_validate(obj)` |
+| `POST` / `PATCH` / `approve` / `reject` | `name: {uz,ru,en}` | `XxxAdminRead` (har doim) |
+
+Yozish endpoint'lari doim AdminRead qaytaradi — admin nima saqlangani har 3 tilda
+ko'rishi kerak. Public GET strings qaytaradi — frontend `pick` qilib o'tirmaydi.
+
+### Locale resolution
+
+`get_locale` dependency (`app/api/deps.py`) request locale'ini tanlaydi:
+1. `?lang=uz|ru|en` query parametri
+2. `Accept-Language` header (`fr-FR,ru;q=0.9,en;q=0.8` → `ru`; q-values e'tiborga
+   olinmaydi, faqat ko'rsatilgan tartib)
+3. Default: `en`
+
+`pick_locale(translations, locale)` (`app/core/utils.py`) — so'ralgan locale yo'q
+bo'lsa, `uz → ru → en → birinchi non-empty` fallback qiladi.
+
+### Search / sort
+
+- `?q=...` — `GET /sanatoriums` har 3 locale bo'yicha OR qidiradi
+  (`coalesce` emas, `OR` — ko'p locale'larda match topish uchun).
+- `?sort=name` — `coalesce(name->>locale, name->>uz, name->>ru, name->>en)` —
+  request locale'iga qarab tartib o'zgaradi.
+
+### Yangi i18n ustun qo'shganda
+
+1. Model'da JSONB column: `description: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")`
+2. Schema'da Create — `TranslationsCreate`, Update — `Translations | None`
+3. `XxxRead`'da `description: str` + `from_obj` ichida `pick_locale(...)`
+4. `XxxAdminRead`'da `description: dict`
+5. Service create — `payload.description.model_dump()`
+6. Service update — `merge_translation_fields(obj, data, (..., "description"))`
+7. Alembic migration
+
 ## Ma'lumotlar bazasi
 
 ```
