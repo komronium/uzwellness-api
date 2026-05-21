@@ -8,6 +8,12 @@ Packages now anchor to exactly one sanatorium AND one room category. The
 admin picks both at package creation. The customer just picks a package —
 they never choose a room. This makes the package a real product with a
 single price, single inventory line, and unambiguous availability draws.
+
+Production data handling: existing package bookings get backfilled with
+their package's resolved room_id. Packages whose sanatorium has no rooms
+at all are deleted, and any bookings against them are cancelled with
+their FKs nulled out (the new check constraint has an escape hatch for
+cancelled rows so the cleanup is consistent).
 """
 from __future__ import annotations
 
@@ -26,7 +32,21 @@ def upgrade() -> None:
     # Drop legacy HOTEL line items — sanatorium accommodation is now implicit.
     op.execute("DELETE FROM package_items WHERE item_type = 'hotel'")
 
+    # Drop the OLD booking check EARLY so cascades + backfills below don't
+    # transiently violate it.
+    op.drop_constraint(
+        "ck_bookings_one_of_room_program_package", "bookings", type_="check"
+    )
+
     # ── sanatorium_id: nullable → NOT NULL, FK SET NULL → RESTRICT ─────────
+    # Cancel and unlink any bookings against orphan packages.
+    op.execute(
+        """
+        UPDATE bookings
+           SET status = 'cancelled', package_id = NULL
+         WHERE package_id IN (SELECT id FROM packages WHERE sanatorium_id IS NULL)
+        """
+    )
     op.execute("DELETE FROM packages WHERE sanatorium_id IS NULL")
     op.alter_column(
         "packages", "sanatorium_id", existing_type=sa.Uuid(), nullable=False
@@ -43,27 +63,67 @@ def upgrade() -> None:
         ondelete="RESTRICT",
     )
 
-    # ── room_id: new column, backfilled from same sanatorium, NOT NULL ────
+    # ── room_id: new column, two-pass backfill, then NOT NULL ─────────────
     op.add_column(
         "packages", sa.Column("room_id", sa.Uuid(), nullable=True)
     )
-    # Backfill: pick the cheapest active room in the same sanatorium whose
-    # currency matches the package. Existing packages without a viable room
-    # are deleted (the data is demo-only and can be re-seeded).
+
+    # Pass 1 — preferred: cheapest active room in the same sanatorium whose
+    # currency matches the package.
     op.execute(
         """
         UPDATE packages p
-        SET room_id = (
-            SELECT r.id FROM rooms r
-            WHERE r.sanatorium_id = p.sanatorium_id
-              AND r.base_currency = p.currency
-              AND r.is_active = TRUE
-            ORDER BY r.base_price
-            LIMIT 1
-        )
+           SET room_id = (
+               SELECT r.id FROM rooms r
+                WHERE r.sanatorium_id = p.sanatorium_id
+                  AND r.base_currency = p.currency
+                  AND r.is_active = TRUE
+                ORDER BY r.base_price
+                LIMIT 1
+           )
+        """
+    )
+
+    # Pass 2 — fallback: any active room in the sanatorium (currency mismatch
+    # is acceptable for legacy data; admin can fix later via PATCH).
+    op.execute(
+        """
+        UPDATE packages p
+           SET room_id = (
+               SELECT r.id FROM rooms r
+                WHERE r.sanatorium_id = p.sanatorium_id
+                  AND r.is_active = TRUE
+                ORDER BY r.base_price
+                LIMIT 1
+           )
+         WHERE p.room_id IS NULL
+        """
+    )
+
+    # Anything still NULL = sanatorium has zero rooms. Cancel dependent
+    # bookings (preserve the audit record) and delete the package.
+    op.execute(
+        """
+        UPDATE bookings
+           SET status = 'cancelled', room_id = NULL, package_id = NULL
+         WHERE package_id IN (SELECT id FROM packages WHERE room_id IS NULL)
         """
     )
     op.execute("DELETE FROM packages WHERE room_id IS NULL")
+
+    # Backfill bookings.room_id for any package bookings that pre-date this
+    # change — the new check requires both package_id AND room_id.
+    op.execute(
+        """
+        UPDATE bookings b
+           SET room_id = p.room_id
+          FROM packages p
+         WHERE b.package_id = p.id
+           AND b.booking_type = 'package'
+           AND b.room_id IS NULL
+        """
+    )
+
     op.alter_column(
         "packages", "room_id", existing_type=sa.Uuid(), nullable=False
     )
@@ -79,19 +139,17 @@ def upgrade() -> None:
         op.f("ix_packages_room_id"), "packages", ["room_id"], unique=False
     )
 
-    # ── booking link constraint: package bookings carry both package + room.
-    op.drop_constraint(
-        "ck_bookings_one_of_room_program_package", "bookings", type_="check"
-    )
+    # ── New booking link check ────────────────────────────────────────────
+    # Cancelled rows from the cleanup above (all FKs NULL) get an escape
+    # hatch; new bookings created via the API always carry the proper FKs.
     op.create_check_constraint(
         "ck_bookings_type_links_consistent",
         "bookings",
         """
-        (booking_type = 'room'    AND room_id IS NOT NULL AND program_id IS NULL    AND package_id IS NULL)
-        OR
-        (booking_type = 'session' AND program_id IS NOT NULL AND room_id IS NULL    AND package_id IS NULL)
-        OR
-        (booking_type = 'package' AND package_id IS NOT NULL AND room_id IS NOT NULL AND program_id IS NULL)
+        status = 'cancelled'
+        OR (booking_type = 'room'    AND room_id IS NOT NULL AND program_id IS NULL    AND package_id IS NULL)
+        OR (booking_type = 'session' AND program_id IS NOT NULL AND room_id IS NULL    AND package_id IS NULL)
+        OR (booking_type = 'package' AND package_id IS NOT NULL AND room_id IS NOT NULL AND program_id IS NULL)
         """,
     )
 
