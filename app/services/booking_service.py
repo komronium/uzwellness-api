@@ -87,7 +87,10 @@ class BookingService:
     async def cancel(self, booking: Booking, user: User) -> Booking:
         self._assert_can_cancel(booking, user)
 
-        if booking.booking_type == BookingType.ROOM and booking.room_id is not None:
+        if (
+            booking.booking_type in (BookingType.ROOM, BookingType.PACKAGE)
+            and booking.room_id is not None
+        ):
             avail_rows = list(
                 (
                     await self.db.execute(

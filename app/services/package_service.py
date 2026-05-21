@@ -12,6 +12,7 @@ from app.core.pagination import paginated
 from app.core.slug import slugify as _slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.package import Package, PackageItem
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 from app.schemas.package import (
     PackageCreate,
@@ -78,17 +79,10 @@ class PackageService:
         slug_seed = payload.slug or pick_locale(title_dict)
         slug = await self._resolve_slug(_slug(slug_seed))
 
-        if payload.sanatorium_id is not None:
-            exists = (
-                await self.db.execute(
-                    select(Sanatorium.id).where(Sanatorium.id == payload.sanatorium_id)
-                )
-            ).scalar_one_or_none()
-            if exists is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="sanatorium_id not found",
-                )
+        await self._require_sanatorium(payload.sanatorium_id)
+        await self._require_room(
+            payload.room_id, payload.sanatorium_id, payload.currency
+        )
 
         package = Package(
             slug=slug,
@@ -99,6 +93,7 @@ class PackageService:
             base_price=payload.base_price,
             currency=payload.currency,
             sanatorium_id=payload.sanatorium_id,
+            room_id=payload.room_id,
         )
         for item_payload in payload.items:
             package.items.append(self._build_item(item_payload))
@@ -120,17 +115,12 @@ class PackageService:
                 _slug(pick_locale(data["title"])), exclude_id=package.id
             )
 
-        if "sanatorium_id" in data and data["sanatorium_id"] is not None:
-            exists = (
-                await self.db.execute(
-                    select(Sanatorium.id).where(Sanatorium.id == data["sanatorium_id"])
-                )
-            ).scalar_one_or_none()
-            if exists is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="sanatorium_id not found",
-                )
+        if "room_id" in data and data["room_id"] is not None:
+            await self._require_room(
+                data["room_id"],
+                package.sanatorium_id,
+                data.get("currency", package.currency),
+            )
 
         for field, value in data.items():
             setattr(package, field, value)
@@ -173,6 +163,46 @@ class PackageService:
         await self.db.commit()
 
     # ---- helpers --------------------------------------------------------------
+
+    async def _require_sanatorium(self, sanatorium_id: uuid.UUID) -> None:
+        exists = (
+            await self.db.execute(
+                select(Sanatorium.id).where(Sanatorium.id == sanatorium_id)
+            )
+        ).scalar_one_or_none()
+        if exists is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="sanatorium_id not found",
+            )
+
+    async def _require_room(
+        self,
+        room_id: uuid.UUID,
+        sanatorium_id: uuid.UUID,
+        currency: str,
+    ) -> None:
+        room = (
+            await self.db.execute(select(Room).where(Room.id == room_id))
+        ).scalar_one_or_none()
+        if room is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_id not found",
+            )
+        if room.sanatorium_id != sanatorium_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_id does not belong to the package's sanatorium",
+            )
+        if room.base_currency != currency:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Room currency {room.base_currency} does not match "
+                    f"package currency {currency}"
+                ),
+            )
 
     @staticmethod
     def _build_item(payload: PackageItemCreate) -> PackageItem:

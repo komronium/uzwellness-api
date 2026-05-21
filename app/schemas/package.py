@@ -65,6 +65,9 @@ class PackageItemAdminRead(BaseModel):
     display_order: int
 
 
+# ── Package ────────────────────────────────────────────────────────────────
+
+
 class PackageCreate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)
     title: TranslationsCreate
@@ -73,7 +76,8 @@ class PackageCreate(BaseModel):
     duration_nights: int = Field(ge=1)
     base_price: Decimal = Field(ge=0, decimal_places=2)
     currency: str = Field(pattern=r"^(UZS|USD)$")
-    sanatorium_id: uuid.UUID | None = None
+    sanatorium_id: uuid.UUID
+    room_id: uuid.UUID
     items: list[PackageItemCreate] = Field(default_factory=list)
 
 
@@ -85,7 +89,7 @@ class PackageUpdate(BaseModel):
     duration_nights: int | None = Field(default=None, ge=1)
     base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
-    sanatorium_id: uuid.UUID | None = None
+    room_id: uuid.UUID | None = None
     is_active: bool | None = None
 
 
@@ -96,7 +100,8 @@ class _PackageReadCommon(BaseModel):
     duration_nights: int
     base_price: Decimal
     currency: str
-    sanatorium_id: uuid.UUID | None
+    sanatorium_id: uuid.UUID
+    room_id: uuid.UUID
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -121,6 +126,7 @@ class PackageRead(_PackageReadCommon):
             base_price=obj.base_price,
             currency=obj.currency,
             sanatorium_id=obj.sanatorium_id,
+            room_id=obj.room_id,
             is_active=obj.is_active,
             created_at=obj.created_at,
             updated_at=obj.updated_at,

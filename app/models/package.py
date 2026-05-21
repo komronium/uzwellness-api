@@ -25,7 +25,6 @@ from app.core.ids import uuid7
 
 class PackageItemType(StrEnum):
     FLIGHT = "flight"
-    HOTEL = "hotel"
     TREATMENT = "treatment"
     TRANSFER = "transfer"
     MEAL = "meal"
@@ -33,10 +32,15 @@ class PackageItemType(StrEnum):
 
 
 class Package(Base):
-    """Curated multi-day journey: flight + hotel + treatments + transfer + ...
+    """A curated wellness journey: one sanatorium, one room category, one
+    single price.
 
-    Sold as a single bundle priced per person. `sanatorium_id` is optional —
-    multi-sanatorium tours are allowed.
+    `base_price` is per person and the only price — there is no per-room
+    upcharge because each tier (Standard / Deluxe / Suite) lives as its own
+    package. The admin picks which room category hosts the package at
+    creation time, so customer bookings never carry a room choice; the room
+    is resolved from `room_id` and its availability is locked atomically
+    on every booking.
     """
 
     __tablename__ = "packages"
@@ -55,9 +59,16 @@ class Package(Base):
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
-    sanatorium_id: Mapped[uuid.UUID | None] = mapped_column(
+    sanatorium_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("sanatoriums.id", ondelete="SET NULL"),
+        ForeignKey("sanatoriums.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("rooms.id", ondelete="RESTRICT"),
+        nullable=False,
         index=True,
     )
 
@@ -82,7 +93,9 @@ class Package(Base):
 
 
 class PackageItem(Base):
-    """A single line in a package (flight, hotel, transfer, ...).
+    """A single line in a package (flight, treatment, transfer, meal, ...).
+
+    Accommodation isn't a line item — it comes from `Package.room_id`.
 
     `is_included=True` → covered by `Package.base_price`.
     `is_included=False` + `extra_price` → optional add-on at extra cost.

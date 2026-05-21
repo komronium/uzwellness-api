@@ -209,20 +209,6 @@ PACKAGE_TEMPLATES = [
                 "display_order": 1,
             },
             {
-                "item_type": PackageItemType.HOTEL,
-                "title": {
-                    "uz": "3 kecha joylashuv",
-                    "ru": "Проживание на 3 ночи",
-                    "en": "3-night stay",
-                },
-                "description": {
-                    "uz": "Standart yoki deluxe xona, mavjudlikka qarab.",
-                    "ru": "Стандартный или делюкс номер при наличии.",
-                    "en": "Standard or deluxe room, subject to availability.",
-                },
-                "display_order": 2,
-            },
-            {
                 "item_type": PackageItemType.TREATMENT,
                 "title": {
                     "uz": "Wellness muolajalari",
@@ -234,7 +220,7 @@ PACKAGE_TEMPLATES = [
                     "ru": "Ежедневная консультация и восстановительная программа.",
                     "en": "Daily consultation and recovery program.",
                 },
-                "display_order": 3,
+                "display_order": 2,
             },
         ],
     },
@@ -252,23 +238,9 @@ PACKAGE_TEMPLATES = [
             "en": "5 nights in Samarkand with rest, check-up, and a short city tour.",
         },
         "duration_nights": 5,
-        "base_price": Decimal("990.00"),
-        "currency": "USD",
+        "base_price": Decimal("12000000"),
+        "currency": "UZS",
         "items": [
-            {
-                "item_type": PackageItemType.HOTEL,
-                "title": {
-                    "uz": "5 kecha joylashuv",
-                    "ru": "Проживание на 5 ночей",
-                    "en": "5-night stay",
-                },
-                "description": {
-                    "uz": "Nur Samarqand sanatoriysida ikki kishilik xona.",
-                    "ru": "Двухместный номер в санатории Нур Самарканд.",
-                    "en": "Double room at Nur Samarkand sanatorium.",
-                },
-                "display_order": 1,
-            },
             {
                 "item_type": PackageItemType.TREATMENT,
                 "title": {
@@ -281,7 +253,7 @@ PACKAGE_TEMPLATES = [
                     "ru": "Консультация врача и базовые рекомендации.",
                     "en": "Doctor consultation and baseline recommendations.",
                 },
-                "display_order": 2,
+                "display_order": 1,
             },
             {
                 "item_type": PackageItemType.EXCURSION,
@@ -295,7 +267,7 @@ PACKAGE_TEMPLATES = [
                     "ru": "Полудневная экскурсия по городу с гидом.",
                     "en": "Half-day guided city tour.",
                 },
-                "display_order": 3,
+                "display_order": 2,
             },
         ],
     },
@@ -313,8 +285,8 @@ PACKAGE_TEMPLATES = [
             "en": "7-night recovery program with meals and transport.",
         },
         "duration_nights": 7,
-        "base_price": Decimal("1250.00"),
-        "currency": "USD",
+        "base_price": Decimal("16000000"),
+        "currency": "UZS",
         "items": [
             {
                 "item_type": PackageItemType.MEAL,
@@ -474,15 +446,38 @@ async def ensure_package_items(db, package: Package, item_templates):
     return created_count
 
 
+async def pick_room_for_package(db, sanatorium_id, currency):
+    """Cheapest active room in the sanatorium matching the package currency."""
+    return (
+        await db.execute(
+            select(Room)
+            .where(
+                Room.sanatorium_id == sanatorium_id,
+                Room.base_currency == currency,
+                Room.is_active.is_(True),
+            )
+            .order_by(Room.base_price)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def get_or_create_package(db, data, sanatorium_by_slug):
+    sanatorium = sanatorium_by_slug.get(data["sanatorium_slug"])
+    if sanatorium is None:
+        return None, False, 0, "no-sanatorium"
+
     existing = (
         await db.execute(select(Package).where(Package.slug == data["slug"]))
     ).scalar_one_or_none()
     if existing:
         created_items = await ensure_package_items(db, existing, data["items"])
-        return existing, False, created_items
+        return existing, False, created_items, None
 
-    sanatorium = sanatorium_by_slug.get(data["sanatorium_slug"])
+    room = await pick_room_for_package(db, sanatorium.id, data["currency"])
+    if room is None:
+        return None, False, 0, f"no {data['currency']} room"
+
     package = Package(
         slug=data["slug"],
         title=data["title"],
@@ -490,13 +485,14 @@ async def get_or_create_package(db, data, sanatorium_by_slug):
         duration_nights=data["duration_nights"],
         base_price=data["base_price"],
         currency=data["currency"],
-        sanatorium_id=sanatorium.id if sanatorium is not None else None,
+        sanatorium_id=sanatorium.id,
+        room_id=room.id,
         is_active=True,
     )
     db.add(package)
     await db.flush()
     created_items = await ensure_package_items(db, package, data["items"])
-    return package, True, created_items
+    return package, True, created_items, None
 
 
 async def get_or_create_visa_request(db, data, customer_by_email, today):
@@ -634,16 +630,26 @@ async def main() -> None:
         }
         print("\nCreating demo packages...")
         for package_data in PACKAGE_TEMPLATES:
-            package, created, created_items = await get_or_create_package(
+            (
+                package,
+                created,
+                created_items,
+                skip_reason,
+            ) = await get_or_create_package(
                 db, package_data, sanatorium_by_slug
             )
+            if package is None:
+                print(
+                    f"- skipped package {package_data['slug']!r} ({skip_reason})"
+                )
+                continue
             prefix = "✓" if created else "-"
-            item_msg = (
-                f", {created_items} item(s) added"
+            extras = (
+                f" ({created_items} item(s) added)"
                 if created_items and not created
                 else ""
             )
-            print(f"{prefix} package: {package.title['en']}{item_msg}")
+            print(f"{prefix} package: {package.title['en']}{extras}")
 
         # 7. Demo visa requests
         customer_by_email = {customer.email: customer for customer in customer_users}

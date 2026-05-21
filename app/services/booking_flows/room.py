@@ -53,7 +53,11 @@ class RoomBookingFlow:
         self.notifier = notifier
 
     def matches(self, payload: BookingCreate) -> bool:
-        return payload.program_id is None
+        return (
+            payload.program_id is None
+            and payload.package_id is None
+            and payload.room_id is not None
+        )
 
     async def create(self, payload: BookingCreate, user: User) -> Booking:
         if payload.check_out is None or payload.check_out <= payload.check_in:
