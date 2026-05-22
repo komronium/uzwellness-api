@@ -15,9 +15,11 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus
+from app.models.destination import Destination
 from app.models.exchange_rate import ExchangeRate
 from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
+from app.models.region import Region
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
@@ -46,6 +48,27 @@ CUSTOMERS = [
     {"email": "sardor@gmail.com",  "password": "User123!", "full_name": "Sardor Nazarov",  "phone": "+998901230000"},
     {"email": "dilnoza@gmail.com", "password": "User123!", "full_name": "Dilnoza Mirzayeva","phone": "+998909876543"},
 ]
+
+# Regions (14 viloyatlar) and destinations (6 marketing tiles) are seeded
+# by migration d4e8f1a6c2b3 — demo just maps existing sanatoriums to them
+# by slug. To add a new demo sanatorium, append entries to both maps below.
+
+# Map sanatorium slug → administrative viloyat slug (matches `regions.slug`).
+SANATORIUM_TO_REGION: dict[str, str] = {
+    "charvak-oromgohi": "toshkent",       # Toshkent viloyati (Bostanlyk)
+    "nur-samarqand":    "samarqand",      # Samarqand viloyati
+    "buxoro-ziloli":    "buxoro",         # Buxoro viloyati
+    "namangan-bogi":    "namangan",       # Namangan viloyati
+}
+
+# Map sanatorium slug → marketing destination tile slug (matches
+# `destinations.slug`). Bukhara has no FE tile, so it stays NULL.
+SANATORIUM_TO_DESTINATION: dict[str, str | None] = {
+    "charvak-oromgohi": "chimgan-mountains",
+    "nur-samarqand":    "samarkand",
+    "buxoro-ziloli":    None,
+    "namangan-bogi":    "fergana-valley",
+}
 
 SANATORIUMS = [
     {
@@ -393,17 +416,27 @@ async def get_or_create_user(db, *, email, password, role, full_name, phone=None
     return user, True
 
 
-async def get_or_create_sanatorium(db, data, admin_id):
+async def get_or_create_sanatorium(
+    db, data, admin_id, region_id, destination_id
+):
     existing = (
         await db.execute(select(Sanatorium).where(Sanatorium.slug == data["slug"]))
     ).scalar_one_or_none()
     if existing:
+        # Sync FKs to the demo maps so the homepage tiles aggregate the way
+        # the FE design expects.
+        if region_id is not None and existing.region_id != region_id:
+            existing.region_id = region_id
+        if existing.destination_id != destination_id:
+            existing.destination_id = destination_id
         return existing, False
     san = Sanatorium(
         name=data["name"],
         slug=data["slug"],
         description=data["description"],
         city=data["city"],
+        region_id=region_id,
+        destination_id=destination_id,
         address=data["address"],
         lat=data.get("lat"),
         lng=data.get("lng"),
@@ -575,12 +608,34 @@ async def main() -> None:
 
         await db.flush()
 
+        # 4.5 Regions + destinations (seeded by migration; just look up by slug)
+        region_by_slug = {
+            r.slug: r
+            for r in (await db.execute(select(Region))).scalars().all()
+        }
+        destination_by_slug = {
+            d.slug: d
+            for d in (await db.execute(select(Destination))).scalars().all()
+        }
+        print(
+            f"- regions catalog: {len(region_by_slug)} viloyatlar, "
+            f"destinations catalog: {len(destination_by_slug)} tiles"
+        )
+
         # 5. Sanatoriums + rooms + availability
         today = date.today()
         all_rooms: list[Room] = []
 
         for i, san_data in enumerate(SANATORIUMS):
-            san, san_created = await get_or_create_sanatorium(db, san_data, admin_users[i].id)
+            region_slug = SANATORIUM_TO_REGION.get(san_data["slug"])
+            region_id = region_by_slug[region_slug].id if region_slug else None
+            dest_slug = SANATORIUM_TO_DESTINATION.get(san_data["slug"])
+            destination_id = (
+                destination_by_slug[dest_slug].id if dest_slug else None
+            )
+            san, san_created = await get_or_create_sanatorium(
+                db, san_data, admin_users[i].id, region_id, destination_id
+            )
             print(f"{'✓' if san_created else '-'} sanatorium: {san_data['name']['uz']}")
 
             for tmpl in ROOM_TEMPLATES[i]:

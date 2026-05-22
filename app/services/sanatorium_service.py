@@ -76,7 +76,8 @@ class SanatoriumService:
             slug=slug,
             description=payload.description.model_dump(),
             city=payload.city,
-            region=payload.region,
+            region_id=payload.region_id,
+            destination_id=payload.destination_id,
             address=payload.address.model_dump(),
             lat=payload.lat,
             lng=payload.lng,
@@ -192,7 +193,8 @@ class SanatoriumService:
         limit: int,
         offset: int,
         city: str | None = None,
-        region: str | None = None,
+        region_id: uuid.UUID | None = None,
+        destination_id: uuid.UUID | None = None,
         status_filter: SanatoriumStatus | None = None,
         stars: int | None = None,
         min_rating: Decimal | None = None,
@@ -213,8 +215,10 @@ class SanatoriumService:
             base = base.where(Sanatorium.wellness_category == wellness_category)
         if city is not None:
             base = base.where(Sanatorium.city == city)
-        if region is not None:
-            base = base.where(Sanatorium.region == region)
+        if region_id is not None:
+            base = base.where(Sanatorium.region_id == region_id)
+        if destination_id is not None:
+            base = base.where(Sanatorium.destination_id == destination_id)
         if status_filter is not None:
             base = base.where(Sanatorium.status == status_filter)
         if stars is not None:

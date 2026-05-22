@@ -8,6 +8,8 @@ from app.core.utils import pick_locale
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.destination import DestinationAdminRead, DestinationRead
+from app.schemas.region import RegionAdminRead, RegionRead
 
 
 class AgentDiscountTier(BaseModel):
@@ -47,7 +49,8 @@ class SanatoriumCreate(BaseModel):
     name: TranslationsCreate
     description: TranslationsCreate
     city: str = Field(min_length=1, max_length=120)
-    region: str | None = Field(default=None, max_length=120)
+    region_id: uuid.UUID | None = None
+    destination_id: uuid.UUID | None = None
     address: TranslationsCreate
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
@@ -83,7 +86,8 @@ class SanatoriumUpdate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)
     description: Translations | None = None
     city: str | None = Field(default=None, min_length=1, max_length=120)
-    region: str | None = Field(default=None, max_length=120)
+    region_id: uuid.UUID | None = None
+    destination_id: uuid.UUID | None = None
     address: Translations | None = None
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
@@ -121,7 +125,8 @@ class _SanatoriumReadCommon(BaseModel):
     id: uuid.UUID
     slug: str
     city: str
-    region: str | None
+    region_id: uuid.UUID | None
+    destination_id: uuid.UUID | None
     lat: Decimal | None
     lng: Decimal | None
     phones: list[str]
@@ -154,6 +159,8 @@ class SanatoriumRead(_SanatoriumReadCommon):
     address: str
     house_rules: str
     cancellation_policy: str
+    region: RegionRead | None = None
+    destination: DestinationRead | None = None
     amenities: list[AmenityRead] = Field(default_factory=list)
 
     @classmethod
@@ -164,7 +171,16 @@ class SanatoriumRead(_SanatoriumReadCommon):
             name=pick_locale(obj.name, locale),
             description=pick_locale(obj.description, locale),
             city=obj.city,
-            region=obj.region,
+            region_id=obj.region_id,
+            region=(
+                RegionRead.from_obj(obj.region, locale) if obj.region else None
+            ),
+            destination_id=obj.destination_id,
+            destination=(
+                DestinationRead.from_obj(obj.destination, locale)
+                if obj.destination
+                else None
+            ),
             address=pick_locale(obj.address, locale),
             lat=obj.lat,
             lng=obj.lng,
@@ -206,6 +222,8 @@ class SanatoriumAdminRead(_SanatoriumReadCommon):
     address: dict
     house_rules: dict
     cancellation_policy: dict
+    region: RegionAdminRead | None = None
+    destination: DestinationAdminRead | None = None
     amenities: list[AmenityAdminRead] = Field(default_factory=list)
 
 

@@ -28,6 +28,8 @@ from app.models.amenity import sanatorium_amenities
 
 if TYPE_CHECKING:
     from app.models.amenity import Amenity
+    from app.models.destination import Destination
+    from app.models.region import Region
     from app.models.review import SanatoriumReview
 
 
@@ -63,7 +65,16 @@ class Sanatorium(Base):
     description: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     city: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    region: Mapped[str | None] = mapped_column(String(120), index=True)
+    region_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        index=True,
+    )
+    destination_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("destinations.id", ondelete="SET NULL"),
+        index=True,
+    )
     address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
@@ -155,6 +166,10 @@ class Sanatorium(Base):
         nullable=False,
     )
 
+    region: Mapped["Region | None"] = relationship(lazy="selectin")
+    destination: Mapped["Destination | None"] = relationship(
+        back_populates="sanatoriums", lazy="selectin"
+    )
     images: Mapped[list["SanatoriumImage"]] = relationship(
         back_populates="sanatorium",
         cascade="all, delete-orphan",

@@ -7,12 +7,14 @@ from app.api.routers import (
     availability,
     b2b,
     bookings,
+    destinations,
     exchange_rates,
     extra_beds,
     health,
     packages,
     payments,
     programs,
+    regions,
     reviews,
     rooms,
     sanatoriums,
@@ -40,3 +42,5 @@ api_router.include_router(admin.router)
 api_router.include_router(b2b.router)
 api_router.include_router(visa_requests.router)
 api_router.include_router(transfers.router)
+api_router.include_router(regions.router)
+api_router.include_router(destinations.router)
