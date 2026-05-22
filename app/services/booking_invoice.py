@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,11 +17,7 @@ class BookingInvoiceBuilder:
     async def build(self, booking: Booking) -> dict:
         sanatorium_name = await sanatorium_name_for_booking(self.db, booking) or ""
         user = (
-            (
-                await self.db.execute(select(User).where(User.id == booking.user_id))
-            ).scalar_one_or_none()
-            if booking.user_id
-            else None
+            await self.db.get(User, booking.user_id) if booking.user_id else None
         )
         nights = max((booking.check_out - booking.check_in).days, 1)
         total = booking.final_price

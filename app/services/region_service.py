@@ -34,9 +34,7 @@ class RegionService:
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def get_by_id(self, region_id: uuid.UUID) -> Region | None:
-        return (
-            await self.db.execute(select(Region).where(Region.id == region_id))
-        ).scalar_one_or_none()
+        return await self.db.get(Region, region_id)
 
     async def get_by_slug(self, slug: str) -> Region | None:
         return (

@@ -1,7 +1,6 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sanatorium import Sanatorium
@@ -39,9 +38,7 @@ async def assert_sanatorium_access(
     *,
     action: str = "manage this sanatorium",
 ) -> Sanatorium:
-    sanatorium = (
-        await db.execute(select(Sanatorium).where(Sanatorium.id == sanatorium_id))
-    ).scalar_one_or_none()
+    sanatorium = await db.get(Sanatorium, sanatorium_id)
     if sanatorium is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"

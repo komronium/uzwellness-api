@@ -49,8 +49,7 @@ class ReviewService:
         return rows, total
 
     async def get_by_id(self, review_id: uuid.UUID) -> SanatoriumReview | None:
-        stmt = select(SanatoriumReview).where(SanatoriumReview.id == review_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.get(SanatoriumReview, review_id)
 
     async def create(
         self, sanatorium_id: uuid.UUID, payload: ReviewCreate, user: User

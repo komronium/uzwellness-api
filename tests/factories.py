@@ -1,10 +1,14 @@
 import struct
 import uuid
 import zlib
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.models.exchange_rate import ExchangeRate
+from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 
@@ -73,6 +77,50 @@ async def make_sanatorium(
     await db.commit()
     await db.refresh(sanatorium)
     return sanatorium
+
+
+async def make_room(
+    db: AsyncSession,
+    *,
+    sanatorium: Sanatorium,
+    name: str = "Standard",
+    capacity: int = 2,
+    inventory_count: int = 5,
+    base_price: str = "100.00",
+    base_currency: str = "USD",
+    min_nights: int = 1,
+    markup_percent: str = "0",
+    is_active: bool = True,
+) -> Room:
+    room = Room(
+        sanatorium_id=sanatorium.id,
+        name={"en": name},
+        capacity=capacity,
+        inventory_count=inventory_count,
+        base_price=Decimal(base_price),
+        base_currency=base_currency,
+        min_nights=min_nights,
+        markup_percent=Decimal(markup_percent),
+        is_active=is_active,
+    )
+    db.add(room)
+    await db.commit()
+    await db.refresh(room)
+    return room
+
+
+async def make_exchange_rate(
+    db: AsyncSession, *, pair: str = "USD_UZS", rate: str = "12500"
+) -> ExchangeRate:
+    er = ExchangeRate(
+        pair=pair,
+        rate=Decimal(rate),
+        valid_from=datetime.now(tz=timezone.utc),
+    )
+    db.add(er)
+    await db.commit()
+    await db.refresh(er)
+    return er
 
 
 class InMemoryStorage:

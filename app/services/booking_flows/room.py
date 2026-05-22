@@ -146,11 +146,7 @@ class RoomBookingFlow:
         return room
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -243,11 +239,7 @@ class RoomBookingFlow:
         records: list[BookingExtraBed] = []
         rate: ExchangeRate | None | object = _UNFETCHED
         for item in payload.extra_beds:
-            config = (
-                await self.db.execute(
-                    select(ExtraBedConfig).where(ExtraBedConfig.id == item.config_id)
-                )
-            ).scalar_one_or_none()
+            config = await self.db.get(ExtraBedConfig, item.config_id)
             if config is None or not config.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,

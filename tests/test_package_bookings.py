@@ -13,8 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.package import Package
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import UserRole
-from tests.factories import make_sanatorium, make_user
-from tests.test_availability import make_room
+from tests.factories import make_room, make_sanatorium, make_user
 
 _FUTURE = (date.today() + timedelta(days=30)).isoformat()
 _FUTURE_DATE = date.today() + timedelta(days=30)

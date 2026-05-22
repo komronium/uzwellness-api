@@ -121,11 +121,7 @@ class PackageBookingFlow:
     # ── helpers ────────────────────────────────────────────────────────────
 
     async def _load_package(self, package_id) -> Package:
-        package = (
-            await self.db.execute(
-                select(Package).where(Package.id == package_id)
-            )
-        ).scalar_one_or_none()
+        package = await self.db.get(Package, package_id)
         if package is None or not package.is_active:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
@@ -133,11 +129,7 @@ class PackageBookingFlow:
         return package
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

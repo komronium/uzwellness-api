@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.discount_tiers import best_tier_discount_percent, next_tier
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.models.booking import Booking, BookingStatus
+from app.models.package import Package
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
@@ -77,11 +78,7 @@ class B2BService:
         }
 
     async def discount_status(self, agent: User, sanatorium_id: uuid.UUID) -> dict:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -156,8 +153,6 @@ class B2BService:
 
     @staticmethod
     def _booking_belongs_to_sanatorium(sanatorium_id: uuid.UUID):
-        from app.models.package import Package
-
         room_sub = (
             select(Room.id).where(Room.sanatorium_id == sanatorium_id).scalar_subquery()
         )

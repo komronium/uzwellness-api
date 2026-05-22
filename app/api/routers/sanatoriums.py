@@ -23,6 +23,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.pagination import Pagination
+from app.core.policies import SanatoriumPolicy
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import (
@@ -51,15 +52,12 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-def _ensure_can_edit(sanatorium_owner_id: uuid.UUID | None, user: User) -> None:
-    if user.role == UserRole.SUPER_ADMIN:
-        return
-    if user.role == UserRole.ADMIN and sanatorium_owner_id == user.id:
-        return
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Not allowed to modify this sanatorium",
-    )
+def _ensure_can_edit(sanatorium, user: User) -> None:
+    if not SanatoriumPolicy.can_edit(sanatorium, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to modify this sanatorium",
+        )
 
 
 SortField = Literal[
@@ -164,7 +162,7 @@ async def update_sanatorium(
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("Sanatorium not found")
-    _ensure_can_edit(sanatorium.admin_user_id, current_user)
+    _ensure_can_edit(sanatorium, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
     return SanatoriumAdminRead.model_validate(updated)
 
@@ -220,7 +218,7 @@ async def upload_image(
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("Sanatorium not found")
-    _ensure_can_edit(sanatorium.admin_user_id, current_user)
+    _ensure_can_edit(sanatorium, current_user)
 
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     content = await file.read(max_bytes + 1)
@@ -272,7 +270,7 @@ async def update_image(
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("Sanatorium not found")
-    _ensure_can_edit(sanatorium.admin_user_id, current_user)
+    _ensure_can_edit(sanatorium, current_user)
     updated = await images.update(
         image,
         is_primary=payload.is_primary,
@@ -300,5 +298,5 @@ async def delete_image(
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("Sanatorium not found")
-    _ensure_can_edit(sanatorium.admin_user_id, current_user)
+    _ensure_can_edit(sanatorium, current_user)
     await images.delete(image, storage)

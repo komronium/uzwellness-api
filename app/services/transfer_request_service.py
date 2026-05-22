@@ -26,11 +26,7 @@ class TransferRequestService:
     async def get_by_id(
         self, transfer_id: uuid.UUID
     ) -> TransferRequest | None:
-        return (
-            await self.db.execute(
-                select(TransferRequest).where(TransferRequest.id == transfer_id)
-            )
-        ).scalar_one_or_none()
+        return await self.db.get(TransferRequest, transfer_id)
 
     async def get_visible(
         self, transfer_id: uuid.UUID, user: User
@@ -69,11 +65,7 @@ class TransferRequestService:
         # owner must already match the actor.
         owner_id = user.id
         if payload.booking_id is not None:
-            booking = (
-                await self.db.execute(
-                    select(Booking).where(Booking.id == payload.booking_id)
-                )
-            ).scalar_one_or_none()
+            booking = await self.db.get(Booking, payload.booking_id)
             if booking is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

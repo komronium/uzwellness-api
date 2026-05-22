@@ -21,11 +21,7 @@ class VisaRequestService:
         self.db = db
 
     async def get_by_id(self, visa_id: uuid.UUID) -> VisaRequest | None:
-        return (
-            await self.db.execute(
-                select(VisaRequest).where(VisaRequest.id == visa_id)
-            )
-        ).scalar_one_or_none()
+        return await self.db.get(VisaRequest, visa_id)
 
     async def get_visible(
         self, visa_id: uuid.UUID, user: User
@@ -60,11 +56,7 @@ class VisaRequestService:
         # resulting visa row should belong to the customer, not the actor.
         owner_id = user.id
         if payload.booking_id is not None:
-            booking = (
-                await self.db.execute(
-                    select(Booking).where(Booking.id == payload.booking_id)
-                )
-            ).scalar_one_or_none()
+            booking = await self.db.get(Booking, payload.booking_id)
             if booking is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

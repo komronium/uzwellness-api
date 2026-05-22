@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import Depends
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,8 +16,7 @@ class SanatoriumImageService:
         self.db = db
 
     async def get(self, image_id: uuid.UUID) -> SanatoriumImage | None:
-        stmt = select(SanatoriumImage).where(SanatoriumImage.id == image_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.get(SanatoriumImage, image_id)
 
     async def add(
         self,

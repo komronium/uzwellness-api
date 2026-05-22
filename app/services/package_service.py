@@ -140,8 +140,7 @@ class PackageService:
     # ---- Items ----------------------------------------------------------------
 
     async def get_item(self, item_id: uuid.UUID) -> PackageItem | None:
-        stmt = select(PackageItem).where(PackageItem.id == item_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.get(PackageItem, item_id)
 
     async def add_item(
         self, package: Package, payload: PackageItemCreate
@@ -176,9 +175,7 @@ class PackageService:
         sanatorium_id: uuid.UUID,
         currency: str,
     ) -> None:
-        room = (
-            await self.db.execute(select(Room).where(Room.id == room_id))
-        ).scalar_one_or_none()
+        room = await self.db.get(Room, room_id)
         if room is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

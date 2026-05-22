@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.availability import RoomAvailability
 from app.models.sanatorium import SanatoriumStatus
-from tests.factories import make_sanatorium
-from tests.test_availability import make_room
+from tests.factories import make_room, make_sanatorium
 
 
 class TestAvailabilityUpsert:

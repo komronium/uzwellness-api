@@ -172,11 +172,7 @@ class UserService:
     async def _assign_sanatorium(
         self, sanatorium_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

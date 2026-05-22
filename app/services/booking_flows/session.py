@@ -38,13 +38,7 @@ class SessionBookingFlow:
         return payload.program_id is not None
 
     async def create(self, payload: BookingCreate, user: User) -> Booking:
-        program = (
-            await self.db.execute(
-                select(TreatmentProgram).where(
-                    TreatmentProgram.id == payload.program_id
-                )
-            )
-        ).scalar_one_or_none()
+        program = await self.db.get(TreatmentProgram, payload.program_id)
         if program is None or not program.is_active:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Program not found"
@@ -114,11 +108,7 @@ class SessionBookingFlow:
         return await self._load(booking.id)
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

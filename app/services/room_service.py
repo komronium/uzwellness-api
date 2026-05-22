@@ -1,3 +1,4 @@
+import math
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -53,8 +54,7 @@ class RoomService:
         self.rates = rates
 
     async def get_by_id(self, room_id: uuid.UUID) -> Room | None:
-        stmt = select(Room).where(Room.id == room_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.get(Room, room_id)
 
     async def list_for_sanatorium(
         self,
@@ -346,8 +346,6 @@ class RoomService:
         Multi-unit aware: a room is "available" if it has enough units to
         cover ceil(guests / capacity) on every night in the range.
         """
-        import math
-
         nights = (check_out - check_in).days
         if nights <= 0:
             return []

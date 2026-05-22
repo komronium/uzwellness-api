@@ -25,8 +25,7 @@ class AmenityService:
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def get_by_id(self, amenity_id: uuid.UUID) -> Amenity | None:
-        stmt = select(Amenity).where(Amenity.id == amenity_id)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.get(Amenity, amenity_id)
 
     async def create(self, payload: AmenityCreate) -> Amenity:
         amenity = Amenity(

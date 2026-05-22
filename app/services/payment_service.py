@@ -30,9 +30,7 @@ class PaymentService:
     async def initiate(
         self, booking_id: uuid.UUID, method: PaymentMethod, user: User
     ) -> tuple[Payment, str | None]:
-        booking = (
-            await self.db.execute(select(Booking).where(Booking.id == booking_id))
-        ).scalar_one_or_none()
+        booking = await self.db.get(Booking, booking_id)
         if booking is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"

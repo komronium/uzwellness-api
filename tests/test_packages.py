@@ -4,8 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_sanatorium
-from tests.test_availability import make_room
+from tests.factories import make_room, make_sanatorium
 
 
 @pytest.fixture
