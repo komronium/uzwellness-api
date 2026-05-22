@@ -1,9 +1,11 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.user import UserRole
 from tests.factories import make_user
 
@@ -282,3 +284,38 @@ async def test_update_unknown_transfer_returns_404(
         headers=super_admin_headers,
     )
     assert resp.status_code == 404
+
+
+# ── super_admin attaches to customer's booking → user_id = customer ───────
+
+
+async def test_super_admin_attach_to_customer_booking_assigns_customer(
+    client: AsyncClient,
+    db: AsyncSession,
+    customer_user,
+    super_admin_headers,
+) -> None:
+    # ck_bookings_type_links_consistent allows status='cancelled' with all
+    # link FKs NULL — that's enough to test the user_id propagation logic.
+    booking = Booking(
+        user_id=customer_user.id,
+        booking_type=BookingType.ROOM,
+        check_in=date.today() + timedelta(days=10),
+        check_out=date.today() + timedelta(days=12),
+        guests=1,
+        rooms_count=1,
+        status=BookingStatus.CANCELLED,
+        final_price=Decimal("100.00"),
+        currency="USD",
+    )
+    db.add(booking)
+    await db.commit()
+
+    payload = _arrival_payload(booking_id=str(booking.id))
+    resp = await client.post(
+        "/api/transfers", json=payload, headers=super_admin_headers
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    # user_id should point to the booking's customer, not the super_admin.
+    assert body["user_id"] == str(customer_user.id)

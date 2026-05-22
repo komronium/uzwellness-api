@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import CurrentUser, require_roles
+from app.api.deps import CurrentUser, not_found, require_roles
+from app.core.pagination import Pagination
 from app.models.transfer_request import TransferStatus
 from app.models.user import UserRole
 from app.schemas.transfer_request import (
@@ -24,19 +25,21 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 @router.get("", response_model=TransferRequestList)
 async def list_transfers(
     current_user: CurrentUser,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    page: Pagination,
     status_filter: TransferStatus | None = Query(default=None, alias="status"),
     transfers: TransferRequestService = Depends(get_transfer_request_service),
 ) -> TransferRequestList:
     items, total = await transfers.list_for_user(
-        current_user, limit=limit, offset=offset, status_filter=status_filter
+        current_user,
+        limit=page.limit,
+        offset=page.offset,
+        status_filter=status_filter,
     )
     return TransferRequestList(
         items=[TransferRequestRead.model_validate(t) for t in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -48,10 +51,7 @@ async def get_transfer(
 ) -> TransferRequestRead:
     transfer = await transfers.get_visible(transfer_id, current_user)
     if transfer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transfer request not found",
-        )
+        raise not_found("Transfer request not found")
     return TransferRequestRead.model_validate(transfer)
 
 
@@ -82,10 +82,7 @@ async def update_transfer(
 ) -> TransferRequestRead:
     transfer = await transfers.get_by_id(transfer_id)
     if transfer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transfer request not found",
-        )
+        raise not_found("Transfer request not found")
     return TransferRequestRead.model_validate(
         await transfers.update(transfer, payload)
     )
@@ -99,10 +96,7 @@ async def cancel_transfer(
 ) -> TransferRequestRead:
     transfer = await transfers.get_visible(transfer_id, current_user)
     if transfer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transfer request not found",
-        )
+        raise not_found("Transfer request not found")
     return TransferRequestRead.model_validate(
         await transfers.cancel(transfer, current_user)
     )

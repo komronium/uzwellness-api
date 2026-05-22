@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.db_utils import assert_fk
 from app.core.pagination import paginated
 from app.core.slug import slugify as _slugify
 from app.core.utils import merge_translation_fields, pick_locale
@@ -79,7 +80,7 @@ class PackageService:
         slug_seed = payload.slug or pick_locale(title_dict)
         slug = await self._resolve_slug(_slug(slug_seed))
 
-        await self._require_sanatorium(payload.sanatorium_id)
+        await assert_fk(self.db, Sanatorium, payload.sanatorium_id, "sanatorium_id")
         await self._require_room(
             payload.room_id, payload.sanatorium_id, payload.currency
         )
@@ -115,11 +116,16 @@ class PackageService:
                 _slug(pick_locale(data["title"])), exclude_id=package.id
             )
 
-        if "room_id" in data and data["room_id"] is not None:
+        # Re-validate the room↔currency invariant whenever either side
+        # changes. If only `currency` is patched (no `room_id`), we must
+        # still check the existing room still matches the new currency,
+        # or every future booking through this package mis-records its
+        # `booking.currency`.
+        new_room_id = data.get("room_id", package.room_id)
+        new_currency = data.get("currency", package.currency)
+        if "room_id" in data or "currency" in data:
             await self._require_room(
-                data["room_id"],
-                package.sanatorium_id,
-                data.get("currency", package.currency),
+                new_room_id, package.sanatorium_id, new_currency
             )
 
         for field, value in data.items():
@@ -164,18 +170,6 @@ class PackageService:
 
     # ---- helpers --------------------------------------------------------------
 
-    async def _require_sanatorium(self, sanatorium_id: uuid.UUID) -> None:
-        exists = (
-            await self.db.execute(
-                select(Sanatorium.id).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
-        if exists is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="sanatorium_id not found",
-            )
-
     async def _require_room(
         self,
         room_id: uuid.UUID,
@@ -194,6 +188,11 @@ class PackageService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="room_id does not belong to the package's sanatorium",
+            )
+        if not room.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_id refers to an inactive room",
             )
         if room.base_currency != currency:
             raise HTTPException(

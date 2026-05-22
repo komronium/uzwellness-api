@@ -184,6 +184,27 @@ async def test_room_currency_mismatch_rejected(
     assert resp.status_code == 400
 
 
+async def test_inactive_room_rejected_on_create(
+    client: AsyncClient,
+    db: AsyncSession,
+    package_sanatorium,
+    super_admin_headers,
+) -> None:
+    inactive_room = await make_room(
+        db,
+        sanatorium=package_sanatorium,
+        base_currency="USD",
+        is_active=False,
+    )
+    resp = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, inactive_room.id),
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "inactive" in resp.json()["detail"].lower()
+
+
 async def test_create_requires_all_three_locales(
     client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
 ) -> None:
@@ -342,6 +363,30 @@ async def test_patch_room_swap_validates(
     resp = await client.patch(
         f"/api/packages/{pid}",
         json={"room_id": str(foreign.id)},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 400
+
+
+async def test_patch_currency_alone_must_match_room(
+    client: AsyncClient,
+    db: AsyncSession,
+    package_sanatorium,
+    usd_room,
+    super_admin_headers,
+) -> None:
+    # Package was created USD/USD-room. Switching currency to UZS without
+    # also swapping to a UZS room must be rejected — otherwise the booking
+    # records the wrong currency snapshot.
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"currency": "UZS", "base_price": "1000000.00"},
         headers=super_admin_headers,
     )
     assert resp.status_code == 400

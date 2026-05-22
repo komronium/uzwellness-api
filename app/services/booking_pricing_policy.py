@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -105,28 +106,10 @@ class BookingPricingPolicy:
         return payload.b2b_client_price
 
 
+@dataclass(slots=True)
 class BookingPricing:
-    """Output of BookingPricingPolicy.apply()."""
-
-    __slots__ = (
-        "final_price",
-        "agent_discount_percent",
-        "b2b_client_price",
-        "commission_percent",
-        "commission_amount",
-    )
-
-    def __init__(
-        self,
-        *,
-        final_price: Decimal,
-        agent_discount_percent: Decimal,
-        b2b_client_price: Decimal | None,
-        commission_percent: Decimal,
-        commission_amount: Decimal,
-    ) -> None:
-        self.final_price = final_price
-        self.agent_discount_percent = agent_discount_percent
-        self.b2b_client_price = b2b_client_price
-        self.commission_percent = commission_percent
-        self.commission_amount = commission_amount
+    final_price: Decimal
+    agent_discount_percent: Decimal
+    b2b_client_price: Decimal | None
+    commission_percent: Decimal
+    commission_amount: Decimal

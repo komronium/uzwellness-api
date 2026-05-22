@@ -1,8 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import CurrentUser, IncludeTranslationsDep, LocaleDep, require_roles
+from app.api.deps import (
+    CurrentUser,
+    IncludeTranslationsDep,
+    LocaleDep,
+    not_found,
+    require_roles,
+)
+from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.extra_bed import (
     ExtraBedConfigAdminList,
@@ -23,26 +30,25 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 async def list_extra_beds(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
     extra_beds: ExtraBedService = Depends(get_extra_bed_service),
 ) -> ExtraBedConfigList | ExtraBedConfigAdminList:
     items, total = await extra_beds.list_for_sanatorium(
-        sanatorium_id, limit=limit, offset=offset
+        sanatorium_id, limit=page.limit, offset=page.offset
     )
     if include_translations:
         return ExtraBedConfigAdminList(
             items=[ExtraBedConfigAdminRead.model_validate(c) for c in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return ExtraBedConfigList(
         items=[ExtraBedConfigRead.from_obj(c, locale) for c in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -55,10 +61,7 @@ async def get_extra_bed(
 ) -> ExtraBedConfigRead | ExtraBedConfigAdminRead:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Extra bed config not found",
-        )
+        raise not_found("Extra bed config not found")
     if include_translations:
         return ExtraBedConfigAdminRead.model_validate(config)
     return ExtraBedConfigRead.from_obj(config, locale)
@@ -92,10 +95,7 @@ async def update_extra_bed(
 ) -> ExtraBedConfigAdminRead:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Extra bed config not found",
-        )
+        raise not_found("Extra bed config not found")
     updated = await extra_beds.update(config, payload, current_user)
     return ExtraBedConfigAdminRead.model_validate(updated)
 
@@ -112,8 +112,5 @@ async def delete_extra_bed(
 ) -> None:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Extra bed config not found",
-        )
+        raise not_found("Extra bed config not found")
     await extra_beds.delete(config, current_user)

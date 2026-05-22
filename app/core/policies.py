@@ -36,19 +36,27 @@ class SanatoriumPolicy:
 
 class BookingPolicy:
     @staticmethod
-    def can_cancel(booking: Booking, user: User) -> bool:
+    def can_cancel(
+        booking: Booking, user: User, *, admin_owns_target: bool = False
+    ) -> bool:
         if booking.status not in _CANCELLABLE:
             return False
-        if user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
+        if user.role == UserRole.SUPER_ADMIN:
             return True
+        if user.role == UserRole.ADMIN:
+            return admin_owns_target
         return booking.user_id == user.id
 
     @staticmethod
-    def cancel_block_reason(booking: Booking, user: User) -> str | None:
+    def cancel_block_reason(
+        booking: Booking, user: User, *, admin_owns_target: bool = False
+    ) -> str | None:
         if booking.status not in _CANCELLABLE:
             return f"Booking cannot be cancelled (status: {booking.status})"
-        if user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
+        if user.role == UserRole.SUPER_ADMIN:
             return None
+        if user.role == UserRole.ADMIN:
+            return None if admin_owns_target else "Not allowed to cancel this booking"
         if booking.user_id != user.id:
             return "Not allowed to cancel this booking"
         return None

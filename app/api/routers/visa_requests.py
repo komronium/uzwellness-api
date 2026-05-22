@@ -10,8 +10,9 @@ from fastapi import (
     status,
 )
 
-from app.api.deps import CurrentUser, require_roles
+from app.api.deps import CurrentUser, not_found, require_roles
 from app.core.config import settings
+from app.core.pagination import Pagination
 from app.core.storage import StorageBackend, detect_document_mime, get_storage
 from app.models.user import UserRole
 from app.models.visa_request import VisaStatus
@@ -34,19 +35,21 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 @router.get("", response_model=VisaRequestList)
 async def list_visa_requests(
     current_user: CurrentUser,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    page: Pagination,
     status_filter: VisaStatus | None = Query(default=None, alias="status"),
     visas: VisaRequestService = Depends(get_visa_request_service),
 ) -> VisaRequestList:
     items, total = await visas.list_for_user(
-        current_user, limit=limit, offset=offset, status_filter=status_filter
+        current_user,
+        limit=page.limit,
+        offset=page.offset,
+        status_filter=status_filter,
     )
     return VisaRequestList(
         items=[VisaRequestRead.model_validate(v) for v in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -58,9 +61,7 @@ async def get_visa_request(
 ) -> VisaRequestRead:
     visa = await visas.get_visible(visa_id, current_user)
     if visa is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Visa request not found"
-        )
+        raise not_found("Visa request not found")
     return VisaRequestRead.model_validate(visa)
 
 
@@ -89,9 +90,7 @@ async def update_status(
 ) -> VisaRequestRead:
     visa = await visas.get_by_id(visa_id)
     if visa is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Visa request not found"
-        )
+        raise not_found("Visa request not found")
     return VisaRequestRead.model_validate(await visas.update_status(visa, payload))
 
 
@@ -108,9 +107,7 @@ async def upload_passport_scan(
 ) -> VisaRequestRead:
     visa = await visas.get_visible(visa_id, current_user)
     if visa is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Visa request not found"
-        )
+        raise not_found("Visa request not found")
     content, mime = await _read_document(file)
     updated = await visas.attach_passport_scan(
         visa, content=content, content_type=mime, storage=storage
@@ -131,9 +128,7 @@ async def upload_issued_document(
 ) -> VisaRequestRead:
     visa = await visas.get_by_id(visa_id)
     if visa is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Visa request not found"
-        )
+        raise not_found("Visa request not found")
     content, mime = await _read_document(file)
     updated = await visas.attach_issued_document(
         visa, content=content, content_type=mime, storage=storage

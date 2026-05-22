@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, require_roles
+from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.core.pagination import LargePagination
 from app.models.user import UserRole
 from app.schemas.region import (
     RegionAdminList,
@@ -23,26 +24,25 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 async def list_regions(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    page: LargePagination,
     active_only: bool = Query(default=False),
     regions: RegionService = Depends(get_region_service),
 ) -> RegionList | RegionAdminList:
     items, total = await regions.list_all(
-        limit=limit, offset=offset, active_only=active_only
+        limit=page.limit, offset=page.offset, active_only=active_only
     )
     if include_translations:
         return RegionAdminList(
             items=[RegionAdminRead.model_validate(r) for r in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return RegionList(
         items=[RegionRead.from_obj(r, locale) for r in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -61,9 +61,7 @@ async def get_region(
     else:
         region = await regions.get_by_id(region_uuid)
     if region is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Region not found"
-        )
+        raise not_found("Region not found")
     if include_translations:
         return RegionAdminRead.model_validate(region)
     return RegionRead.from_obj(region, locale)
@@ -94,9 +92,7 @@ async def update_region(
 ) -> RegionAdminRead:
     region = await regions.get_by_id(region_id)
     if region is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Region not found"
-        )
+        raise not_found("Region not found")
     return RegionAdminRead.model_validate(await regions.update(region, payload))
 
 
@@ -111,7 +107,5 @@ async def delete_region(
 ) -> None:
     region = await regions.get_by_id(region_id)
     if region is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Region not found"
-        )
+        raise not_found("Region not found")
     await regions.delete(region)

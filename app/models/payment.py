@@ -23,6 +23,8 @@ class PaymentStatus(StrEnum):
     PAID = "paid"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    REFUND_PENDING = "refund_pending"
+    REFUNDED = "refunded"
 
 
 class Payment(Base):

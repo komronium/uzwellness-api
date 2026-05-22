@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import case, func, select
+from sqlalchemy import Numeric, case, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -41,23 +41,30 @@ class DestinationService:
     ) -> list[tuple[Destination, int, Decimal | None]]:
         """Return (destination, sanatoriums_count, min_price_usd) for active tiles.
 
-        Joins through sanatoriums.destination_id (approved only) into rooms
-        (active only) and computes COUNT(DISTINCT sanatorium) and MIN price
-        normalized to USD. UZS is converted using the provided rate; other
-        currencies fall out of the min when no rate is configured.
+        Computes the **customer-facing** weekday price per room:
+        `base_price * (1 + markup_percent/100) * (1 - coalesce(discount, 0)/100)`
+        — same formula as `calculate_night_price` for non-weekend nights.
+        UZS rooms are normalized to USD via `usd_uzs_rate` if configured;
+        otherwise they drop out of the MIN. Seasonal period overrides
+        (`room_price_periods`) are intentionally skipped — tile prices
+        reflect the year-round default, not a snapshot of any single date.
         """
+        markup_factor = literal(1) + Room.markup_percent / literal(100)
+        discount_factor = literal(1) - func.coalesce(
+            Room.discount_percent, literal(0)
+        ) / literal(100)
+        customer_price = Room.base_price * markup_factor * discount_factor
+
         if usd_uzs_rate and usd_uzs_rate > 0:
+            rate_expr = cast(literal(usd_uzs_rate), Numeric(18, 6))
             usd_expr = case(
-                (Room.base_currency == "USD", Room.base_price),
-                (
-                    Room.base_currency == "UZS",
-                    Room.base_price / float(usd_uzs_rate),
-                ),
+                (Room.base_currency == "USD", customer_price),
+                (Room.base_currency == "UZS", customer_price / rate_expr),
                 else_=None,
             )
         else:
             usd_expr = case(
-                (Room.base_currency == "USD", Room.base_price),
+                (Room.base_currency == "USD", customer_price),
                 else_=None,
             )
 

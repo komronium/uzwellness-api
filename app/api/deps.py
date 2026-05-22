@@ -121,6 +121,10 @@ LocaleDep = Annotated[Locale, Depends(get_locale)]
 IncludeTranslationsDep = Annotated[bool, Depends(get_include_translations)]
 
 
+def not_found(detail: str = "Not found") -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
 def require_roles(
     *roles: UserRole,
 ) -> Callable[[User], Coroutine[Any, Any, User]]:

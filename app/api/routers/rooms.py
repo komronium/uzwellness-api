@@ -8,8 +8,10 @@ from app.api.deps import (
     IncludeTranslationsDep,
     LocaleDep,
     OptionalUser,
+    not_found,
     require_roles,
 )
+from app.core.pagination import Pagination
 from app.core.pricing import enrich_room
 from app.models.room import Room
 from app.models.user import UserRole
@@ -64,20 +66,19 @@ async def list_rooms(
     current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
     is_active: bool | None = Query(
         default=None,
         description="Filter rooms by active status (staff only; ignored for guests).",
     ),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomList | RoomAdminList:
     items, total = await rooms.list_for_sanatorium(
         sanatorium_id,
         user=current_user,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
         is_active=is_active,
     )
     rate = await rooms.rates.get_usd_uzs()
@@ -93,8 +94,8 @@ async def list_rooms(
                 for r in items
             ],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return RoomList(
         items=[
@@ -107,8 +108,8 @@ async def list_rooms(
             for r in items
         ],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -160,7 +161,7 @@ async def get_room(
 ) -> RoomRead | RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     pricing = await rooms.enrich(room)
     if include_translations:
         return _admin_room(room, pricing)
@@ -195,7 +196,7 @@ async def update_room(
 ) -> RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     updated = await rooms.update(room, payload, current_user)
     return _admin_room(updated, await rooms.enrich(updated))
 
@@ -212,7 +213,7 @@ async def delete_room(
 ) -> None:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     await rooms.delete(room, current_user)
 
 
@@ -225,7 +226,7 @@ async def get_room_availability(
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     rows = await rooms.get_availability(room, date_from, date_to)
     return [
         AvailabilityRead(
@@ -253,7 +254,7 @@ async def block_availability_range(
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     rows = await rooms.block_range(room, payload, current_user)
     return [
         AvailabilityRead(
@@ -281,7 +282,7 @@ async def upsert_room_availability(
 ) -> AvailabilityRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        raise not_found("Room not found")
     row = await rooms.set_blocked_for_date(
         room, target_date, payload.units_blocked, current_user
     )

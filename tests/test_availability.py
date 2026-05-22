@@ -172,6 +172,40 @@ class TestRoomCRUD:
         )
         assert resp.status_code == 403
 
+    async def test_currency_change_blocked_when_packages_link(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        admin_user: User,
+        super_admin_headers,
+    ):
+        from decimal import Decimal
+
+        from app.models.package import Package
+
+        san = await make_sanatorium(db, admin_user_id=admin_user.id)
+        room = await make_room(db, sanatorium=san, base_currency="USD")
+        pkg = Package(
+            slug="pkg-locked",
+            title={"uz": "P", "ru": "P", "en": "P"},
+            description={"uz": "d", "ru": "d", "en": "d"},
+            duration_nights=3,
+            base_price=Decimal("100.00"),
+            currency="USD",
+            sanatorium_id=san.id,
+            room_id=room.id,
+        )
+        db.add(pkg)
+        await db.commit()
+
+        resp = await client.patch(
+            f"/api/rooms/{room.id}",
+            json={"base_currency": "UZS"},
+            headers=super_admin_headers,
+        )
+        assert resp.status_code == 409
+        assert "package" in resp.json()["detail"].lower()
+
 
 # ── Availability (lazy materialization) ────────────────────────────────────
 

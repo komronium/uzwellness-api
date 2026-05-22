@@ -100,6 +100,32 @@ async def test_create_invalid_stars_returns_422(
     assert resp.status_code == 422
 
 
+async def test_create_with_unknown_region_id_returns_400(
+    client: AsyncClient, super_admin_headers
+) -> None:
+    bogus = str(uuid.uuid4())
+    resp = await client.post(
+        "/api/sanatoriums",
+        json={**CREATE_PAYLOAD, "region_id": bogus},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "region_id" in resp.json()["detail"]
+
+
+async def test_create_with_unknown_destination_id_returns_400(
+    client: AsyncClient, super_admin_headers
+) -> None:
+    bogus = str(uuid.uuid4())
+    resp = await client.post(
+        "/api/sanatoriums",
+        json={**CREATE_PAYLOAD, "destination_id": bogus},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "destination_id" in resp.json()["detail"]
+
+
 # ---------- patch ----------
 
 

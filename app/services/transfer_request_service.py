@@ -62,6 +62,12 @@ class TransferRequestService:
     async def create(
         self, payload: TransferRequestCreate, user: User
     ) -> TransferRequest:
+        # When super_admin creates a transfer on behalf of a customer
+        # (via booking_id), the resulting row's user_id should be the
+        # booking's owner — otherwise the customer can't see it in their
+        # "my transfers" list. For non-super_admin actors, the booking
+        # owner must already match the actor.
+        owner_id = user.id
         if payload.booking_id is not None:
             booking = (
                 await self.db.execute(
@@ -73,20 +79,20 @@ class TransferRequestService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Booking not found",
                 )
-            if (
-                user.role != UserRole.SUPER_ADMIN
-                and booking.user_id != user.id
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Cannot attach a transfer request to someone else's "
-                        "booking"
-                    ),
-                )
+            if user.role != UserRole.SUPER_ADMIN:
+                if booking.user_id != user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            "Cannot attach a transfer request to someone else's "
+                            "booking"
+                        ),
+                    )
+            elif booking.user_id is not None:
+                owner_id = booking.user_id
 
         transfer = TransferRequest(
-            user_id=user.id,
+            user_id=owner_id,
             booking_id=payload.booking_id,
             direction=payload.direction,
             pickup_location=payload.pickup_location,

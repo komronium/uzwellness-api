@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import not_found
 from app.core.database import get_db
 from app.models.availability import RoomAvailability
 from app.models.room import Room
@@ -46,10 +47,7 @@ async def get_availability(
         )
     ).scalar_one_or_none()
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
 
     # Total inventory across active rooms of the sanatorium.
     total_inventory = (

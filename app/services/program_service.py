@@ -13,7 +13,7 @@ from app.core.utils import merge_translation_fields
 from app.models.amenity import Amenity
 from app.models.program import TreatmentProgram
 from app.models.user import User
-from app.schemas.amenity import TreatmentProgramCreate, TreatmentProgramUpdate
+from app.schemas.program import TreatmentProgramCreate, TreatmentProgramUpdate
 
 _TRANSLATION_FIELDS = ("name", "description", "instructor_bio", "what_to_bring")
 _ACTION = "manage this sanatorium's programs"
@@ -95,6 +95,17 @@ class ProgramService:
             data.get("min_nights", program.min_nights),
             data.get("max_nights", program.max_nights),
         )
+
+        # price and currency must move together — same invariant as create.
+        # Check against the post-merge values to catch partial PATCHes that
+        # would leave one set and the other NULL.
+        final_price = data.get("price", program.price)
+        final_currency = data.get("currency", program.currency)
+        if (final_price is None) != (final_currency is None):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="price and currency must be set together",
+            )
 
         for field, value in data.items():
             setattr(program, field, value)

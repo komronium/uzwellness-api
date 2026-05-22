@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import CurrentUser
+from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.b2b import (
     B2BDashboard,
@@ -47,15 +48,16 @@ async def get_discount_status(
 @router.get("/orders", response_model=B2BOrdersList)
 async def list_orders(
     current_user: CurrentUser,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    page: Pagination,
     b2b: B2BService = Depends(get_b2b_service),
 ) -> B2BOrdersList:
     _require_b2b(current_user)
-    items, total = await b2b.orders(current_user, limit=limit, offset=offset)
+    items, total = await b2b.orders(
+        current_user, limit=page.limit, offset=page.offset
+    )
     return B2BOrdersList(
         items=[B2BOrderItem(**item) for item in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )

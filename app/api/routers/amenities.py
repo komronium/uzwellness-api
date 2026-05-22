@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, require_roles
+from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.core.pagination import LargePagination
 from app.models.user import UserRole
 from app.schemas.amenity import (
     AmenityAdminList,
@@ -23,23 +24,22 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 async def list_amenities(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    page: LargePagination,
     amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityList | AmenityAdminList:
-    items, total = await amenities.list_all(limit=limit, offset=offset)
+    items, total = await amenities.list_all(limit=page.limit, offset=page.offset)
     if include_translations:
         return AmenityAdminList(
             items=[AmenityAdminRead.model_validate(a) for a in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return AmenityList(
         items=[AmenityRead.from_obj(a, locale) for a in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -52,9 +52,7 @@ async def get_amenity(
 ) -> AmenityRead | AmenityAdminRead:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
-        )
+        raise not_found("Amenity not found")
     if include_translations:
         return AmenityAdminRead.model_validate(amenity)
     return AmenityRead.from_obj(amenity, locale)
@@ -85,9 +83,7 @@ async def update_amenity(
 ) -> AmenityAdminRead:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
-        )
+        raise not_found("Amenity not found")
     return AmenityAdminRead.model_validate(await amenities.update(amenity, payload))
 
 
@@ -102,7 +98,5 @@ async def delete_amenity(
 ) -> None:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Amenity not found"
-        )
+        raise not_found("Amenity not found")
     await amenities.delete(amenity)

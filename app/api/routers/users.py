@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import CurrentUser, require_roles
+from app.api.deps import CurrentUser, not_found, require_roles
+from app.core.pagination import LargePagination
 from app.models.user import User, UserRole
 from app.schemas.user import UserAdminCreate, UserList, UserRead, UserUpdate
 from app.services.user_service import UserService, get_user_service
@@ -36,18 +37,19 @@ async def create_user(
 
 @router.get("", response_model=UserList)
 async def list_users(
+    page: LargePagination,
     _: User = Depends(require_super_admin),
     users: UserService = Depends(get_user_service),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
     role: UserRole | None = Query(default=None),
 ) -> UserList:
-    items, total = await users.list_users(limit=limit, offset=offset, role=role)
+    items, total = await users.list_users(
+        limit=page.limit, offset=page.offset, role=role
+    )
     return UserList(
         items=await users.to_read_bulk(items),
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -59,10 +61,7 @@ async def get_user(
 ) -> UserRead:
     user = await users.get_by_id(user_id)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        raise not_found("User not found")
     return await users.to_read(user)
 
 
@@ -75,9 +74,6 @@ async def update_user(
 ) -> UserRead:
     user = await users.get_by_id(user_id)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        raise not_found("User not found")
     updated = await users.update(user, payload)
     return await users.to_read(updated)

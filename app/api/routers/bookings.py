@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, not_found
+from app.core.pagination import Pagination
 from app.core.rate_limit import booking_rate_limit
 from app.models.booking import Booking
 from app.models.user import User, UserRole
@@ -49,24 +50,23 @@ async def create_booking(
 @router.get("", response_model=BookingList)
 async def list_bookings(
     current_user: CurrentUser,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    page: Pagination,
     is_b2b: bool | None = Query(default=None),
     agent_id: uuid.UUID | None = Query(default=None),
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingList:
     items, total = await bookings.list_for_user(
         current_user,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
         is_b2b=is_b2b,
         agent_id=agent_id,
     )
     return BookingList(
         items=[_to_read(b, current_user) for b in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -78,9 +78,7 @@ async def get_booking(
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-        )
+        raise not_found("Booking not found")
     return _to_read(booking, current_user)
 
 
@@ -93,9 +91,7 @@ async def get_booking_invoice(
 ) -> InvoiceRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-        )
+        raise not_found("Booking not found")
     data = await invoices.build(booking)
     return InvoiceRead(**data)
 
@@ -108,8 +104,6 @@ async def cancel_booking(
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-        )
+        raise not_found("Booking not found")
     cancelled = await bookings.cancel(booking, current_user)
     return _to_read(cancelled, current_user)

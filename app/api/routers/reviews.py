@@ -2,7 +2,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, OptionalUser, require_roles
+from app.api.deps import CurrentUser, OptionalUser, not_found, require_roles
+from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.review import ReviewCreate, ReviewList, ReviewRead, ReviewUpdate
 from app.services.review_service import ReviewService, get_review_service
@@ -14,10 +15,9 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 @router.get("", response_model=ReviewList)
 async def list_reviews(
+    page: Pagination,
     sanatorium_id: uuid.UUID | None = Query(default=None),
     is_visible: bool | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
     current_user: OptionalUser = None,
     reviews: ReviewService = Depends(get_review_service),
 ) -> ReviewList:
@@ -34,14 +34,14 @@ async def list_reviews(
         sanatorium_id=sanatorium_id,
         is_visible=is_visible if is_admin else None,
         visible_only=not is_admin,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
     return ReviewList(
         items=[ReviewRead.model_validate(r) for r in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -73,9 +73,7 @@ async def update_review_visibility(
 ) -> ReviewRead:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
-        )
+        raise not_found("Review not found")
     updated = await reviews.update_visibility(review, payload, current_user)
     return ReviewRead.model_validate(updated)
 
@@ -88,7 +86,5 @@ async def delete_review(
 ) -> None:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
-        )
+        raise not_found("Review not found")
     await reviews.delete(review, current_user)

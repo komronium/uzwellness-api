@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.db_utils import assert_fk
 from app.core.permissions import (
     SANATORIUM_SUPER_ADMIN_ONLY_FIELDS,
     assert_super_admin_only_fields,
@@ -16,6 +17,8 @@ from app.core.policies import SanatoriumPolicy
 from app.core.slug import slugify as _slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.amenity import Amenity
+from app.models.destination import Destination
+from app.models.region import Region
 from app.models.sanatorium import (
     PropertyType,
     Sanatorium,
@@ -69,6 +72,8 @@ class SanatoriumService:
         base_slug = slugify(slug_seed)
         slug = await self._resolve_slug(base_slug)
 
+        await assert_fk(self.db, Region, payload.region_id, "region_id")
+        await assert_fk(self.db, Destination, payload.destination_id, "destination_id")
         amenities = await self._fetch_amenities(payload.amenity_ids)
 
         sanatorium = Sanatorium(
@@ -123,6 +128,13 @@ class SanatoriumService:
 
         amenity_ids = data.pop("amenity_ids", None)
         tiers = data.pop("agent_discount_tiers", _MISSING)
+
+        if "region_id" in data:
+            await assert_fk(self.db, Region, data["region_id"], "region_id")
+        if "destination_id" in data:
+            await assert_fk(
+                self.db, Destination, data["destination_id"], "destination_id"
+            )
 
         merge_translation_fields(
             sanatorium,

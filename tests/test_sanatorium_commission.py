@@ -87,6 +87,19 @@ class TestSuperAdminOnlyFields:
         )
         assert resp.status_code == 403
 
+    async def test_admin_cannot_set_destination_id(
+        self, client: AsyncClient, db: AsyncSession, admin_user, admin_headers
+    ):
+        # Pinning a sanatorium to a homepage marketing tile is super_admin-only.
+        s = await make_sanatorium(db, slug="dest-adm", admin_user_id=admin_user.id)
+        resp = await client.patch(
+            f"/api/sanatoriums/{s.id}",
+            json={"destination_id": "00000000-0000-0000-0000-000000000000"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 403
+        assert "super_admin" in resp.json()["detail"]
+
     async def test_admin_can_still_edit_normal_fields(
         self, client: AsyncClient, db: AsyncSession, admin_user, admin_headers
     ):

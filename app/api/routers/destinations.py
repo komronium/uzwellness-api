@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, require_roles
+from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.core.pagination import LargePagination
 from app.models.user import UserRole
 from app.schemas.destination import (
     DestinationAdminList,
@@ -32,26 +33,25 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 async def list_destinations(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    page: LargePagination,
     active_only: bool = Query(default=False),
     destinations: DestinationService = Depends(get_destination_service),
 ) -> DestinationList | DestinationAdminList:
     items, total = await destinations.list_all(
-        limit=limit, offset=offset, active_only=active_only
+        limit=page.limit, offset=page.offset, active_only=active_only
     )
     if include_translations:
         return DestinationAdminList(
             items=[DestinationAdminRead.model_validate(d) for d in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return DestinationList(
         items=[DestinationRead.from_obj(d, locale) for d in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -98,9 +98,7 @@ async def get_destination(
     else:
         destination = await destinations.get_by_id(dest_uuid)
     if destination is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found"
-        )
+        raise not_found("Destination not found")
     if include_translations:
         return DestinationAdminRead.model_validate(destination)
     return DestinationRead.from_obj(destination, locale)
@@ -133,9 +131,7 @@ async def update_destination(
 ) -> DestinationAdminRead:
     destination = await destinations.get_by_id(destination_id)
     if destination is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found"
-        )
+        raise not_found("Destination not found")
     return DestinationAdminRead.model_validate(
         await destinations.update(destination, payload)
     )
@@ -152,7 +148,5 @@ async def delete_destination(
 ) -> None:
     destination = await destinations.get_by_id(destination_id)
     if destination is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found"
-        )
+        raise not_found("Destination not found")
     await destinations.delete(destination)

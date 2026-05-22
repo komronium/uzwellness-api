@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,11 +15,11 @@ from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.package import Package
+from app.models.payment import Payment, PaymentStatus
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
-from app.repositories import BookingRepository, get_booking_repository
 from app.schemas.booking import BookingCreate
 from app.services.booking_flows import (
     BookingFlow,
@@ -31,6 +31,13 @@ from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext
 
 
+_LOAD_OPTIONS = (
+    selectinload(Booking.extra_beds),
+    selectinload(Booking.user),
+    selectinload(Booking.payments),
+)
+
+
 class BookingService:
     """Routes booking requests to a matching flow; handles cancel/list/visibility."""
 
@@ -39,12 +46,10 @@ class BookingService:
         db: AsyncSession,
         notifier: BookingNotifier,
         flows: Sequence[BookingFlow],
-        repository: BookingRepository,
     ) -> None:
         self.db = db
         self.notifier = notifier
         self.flows = flows
-        self.repo = repository
 
     async def create(self, payload: BookingCreate, user: User) -> Booking:
         if payload.check_in < today_tashkent():
@@ -74,18 +79,34 @@ class BookingService:
             filters.append(Booking.is_b2b.is_(is_b2b))
         if agent_id is not None and user.role == UserRole.SUPER_ADMIN:
             filters.append(Booking.user_id == agent_id)
-        return await self.repo.list_filtered(
-            base_filters=filters, limit=limit, offset=offset
+
+        base = select(Booking)
+        for clause in filters:
+            base = base.where(clause)
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        stmt = (
+            base.options(*_LOAD_OPTIONS)
+            .order_by(Booking.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
+        rows = (await self.db.execute(stmt)).scalars().all()
+        return rows, total
 
     async def get_visible(self, booking_id: uuid.UUID, user: User) -> Booking | None:
-        return await self.repo.find_one_filtered(
-            booking_id=booking_id,
-            base_filters=self._visibility_clauses(user),
+        stmt = (
+            select(Booking)
+            .options(*_LOAD_OPTIONS)
+            .where(Booking.id == booking_id)
         )
+        for clause in self._visibility_clauses(user):
+            stmt = stmt.where(clause)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def cancel(self, booking: Booking, user: User) -> Booking:
-        self._assert_can_cancel(booking, user)
+        await self._assert_can_cancel(booking, user)
 
         if (
             booking.booking_type in (BookingType.ROOM, BookingType.PACKAGE)
@@ -108,6 +129,10 @@ class BookingService:
                 row.units_booked = max(row.units_booked - booking.rooms_count, 0)
 
         booking.status = BookingStatus.CANCELLED
+        # Flip payments into refund-pending / cancelled. Actual refund
+        # processing is gateway-specific and out of scope here — this just
+        # gives finance a queryable list of money to return.
+        await self._mark_payments_for_refund(booking.id)
         self.db.add(
             Notification(
                 booking_id=booking.id, type="booking_cancelled", channel="email"
@@ -149,8 +174,13 @@ class BookingService:
             ]
         return [Booking.user_id == user.id]
 
-    def _assert_can_cancel(self, booking: Booking, user: User) -> None:
-        reason = BookingPolicy.cancel_block_reason(booking, user)
+    async def _assert_can_cancel(self, booking: Booking, user: User) -> None:
+        admin_owns = False
+        if user.role == UserRole.ADMIN:
+            admin_owns = await self._admin_owns_booking_sanatorium(booking, user)
+        reason = BookingPolicy.cancel_block_reason(
+            booking, user, admin_owns_target=admin_owns
+        )
         if reason is None:
             return
         status_code = (
@@ -160,15 +190,68 @@ class BookingService:
         )
         raise HTTPException(status_code=status_code, detail=reason)
 
+    async def _admin_owns_booking_sanatorium(
+        self, booking: Booking, user: User
+    ) -> bool:
+        """Does the admin actor own the sanatorium this booking belongs to?
+
+        Resolves the booking's sanatorium via whichever link is set
+        (room/program/package). Returns False if no link survives — a
+        cancelled-and-detached booking can't be re-cancelled by an admin
+        whose ownership can't be traced.
+        """
+        sanatorium_id: uuid.UUID | None = None
+        if booking.room_id is not None:
+            sanatorium_id = (
+                await self.db.execute(
+                    select(Room.sanatorium_id).where(Room.id == booking.room_id)
+                )
+            ).scalar_one_or_none()
+        elif booking.program_id is not None:
+            sanatorium_id = (
+                await self.db.execute(
+                    select(TreatmentProgram.sanatorium_id).where(
+                        TreatmentProgram.id == booking.program_id
+                    )
+                )
+            ).scalar_one_or_none()
+        elif booking.package_id is not None:
+            sanatorium_id = (
+                await self.db.execute(
+                    select(Package.sanatorium_id).where(
+                        Package.id == booking.package_id
+                    )
+                )
+            ).scalar_one_or_none()
+
+        if sanatorium_id is None:
+            return False
+        admin_id = (
+            await self.db.execute(
+                select(Sanatorium.admin_user_id).where(
+                    Sanatorium.id == sanatorium_id
+                )
+            )
+        ).scalar_one_or_none()
+        return admin_id == user.id
+
+    async def _mark_payments_for_refund(self, booking_id: uuid.UUID) -> None:
+        payments = list(
+            (
+                await self.db.execute(
+                    select(Payment).where(Payment.booking_id == booking_id)
+                )
+            ).scalars()
+        )
+        for p in payments:
+            if p.status == PaymentStatus.PAID:
+                p.status = PaymentStatus.REFUND_PENDING
+            elif p.status == PaymentStatus.PENDING:
+                p.status = PaymentStatus.CANCELLED
+
     async def _load(self, booking_id: uuid.UUID) -> Booking | None:
         stmt = (
-            select(Booking)
-            .options(
-                selectinload(Booking.extra_beds),
-                selectinload(Booking.user),
-                selectinload(Booking.payments),
-            )
-            .where(Booking.id == booking_id)
+            select(Booking).options(*_LOAD_OPTIONS).where(Booking.id == booking_id)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
@@ -192,7 +275,6 @@ class BookingService:
 def get_booking_service(
     db: AsyncSession = Depends(get_db),
     notifier: BookingNotifier = Depends(get_booking_notifier),
-    repository: BookingRepository = Depends(get_booking_repository),
 ) -> BookingService:
     pricing = BookingPricingPolicy(db)
     flows: list[BookingFlow] = [
@@ -200,4 +282,4 @@ def get_booking_service(
         PackageBookingFlow(db, pricing, notifier),
         RoomBookingFlow(db, pricing, notifier),
     ]
-    return BookingService(db, notifier, flows, repository)
+    return BookingService(db, notifier, flows)

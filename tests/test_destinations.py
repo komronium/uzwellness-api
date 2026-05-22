@@ -191,6 +191,33 @@ async def test_tiles_count_and_min_price(
     assert tiles["d2"]["min_price_usd"] is None
 
 
+async def test_tiles_min_price_applies_markup_and_discount(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    # Customer price = base * (1 + markup/100) * (1 - discount/100)
+    # 100 * 1.10 * 0.90 = 99.00 — that's what the tile must show.
+    d = await _make_destination(db, slug="dp", name_en="DP")
+    s = await _make_sanatorium(db, slug="sp", destination_id=d.id)
+    room = Room(
+        sanatorium_id=s.id,
+        name={"en": "R"},
+        capacity=2,
+        inventory_count=1,
+        base_price=Decimal("100.00"),
+        base_currency="USD",
+        markup_percent=Decimal("10"),
+        discount_percent=Decimal("10"),
+        min_nights=1,
+        is_active=True,
+    )
+    db.add(room)
+    await db.commit()
+
+    resp = await client.get("/api/destinations/tiles")
+    tile = resp.json()["items"][0]
+    assert Decimal(tile["min_price_usd"]).quantize(Decimal("0.01")) == Decimal("99.00")
+
+
 async def test_tiles_excludes_pending_sanatoriums(
     client: AsyncClient, db: AsyncSession
 ) -> None:

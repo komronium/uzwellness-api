@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date
 
 from fastapi import Depends, HTTPException, status
@@ -12,6 +13,7 @@ from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
 from app.core.utils import date_range, merge_translation_fields
 from app.models.availability import RoomAvailability
+from app.models.package import Package
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
@@ -22,57 +24,27 @@ from app.services.exchange_rate_service import (
 )
 
 
+@dataclass(slots=True)
 class RoomAvailabilityView:
-    """Plain-data view of an availability row, with computed units_available."""
+    date: date
+    inventory_count: int
+    units_blocked: int
+    units_booked: int
+    units_available: int = field(init=False)
 
-    __slots__ = (
-        "date",
-        "inventory_count",
-        "units_blocked",
-        "units_booked",
-        "units_available",
-    )
-
-    def __init__(
-        self,
-        *,
-        d: date,
-        inventory_count: int,
-        units_blocked: int,
-        units_booked: int,
-    ) -> None:
-        self.date = d
-        self.inventory_count = inventory_count
-        self.units_blocked = units_blocked
-        self.units_booked = units_booked
-        self.units_available = max(inventory_count - units_blocked - units_booked, 0)
+    def __post_init__(self) -> None:
+        self.units_available = max(
+            self.inventory_count - self.units_blocked - self.units_booked, 0
+        )
 
 
+@dataclass(slots=True)
 class RoomSearchHit:
-    """Search hit: a room plus its availability verdict for the queried range."""
-
-    __slots__ = (
-        "room",
-        "pricing",
-        "rooms_count_needed",
-        "available",
-        "unavailable_reason",
-    )
-
-    def __init__(
-        self,
-        *,
-        room: Room,
-        pricing: dict,
-        rooms_count_needed: int,
-        available: bool,
-        unavailable_reason: str | None,
-    ) -> None:
-        self.room = room
-        self.pricing = pricing
-        self.rooms_count_needed = rooms_count_needed
-        self.available = available
-        self.unavailable_reason = unavailable_reason
+    room: Room
+    pricing: dict
+    rooms_count_needed: int
+    available: bool
+    unavailable_reason: str | None
 
 
 class RoomService:
@@ -159,10 +131,12 @@ class RoomService:
             )
         if "inventory_count" in data and data["inventory_count"] is not None:
             await self._assert_inventory_safe(room.id, data["inventory_count"])
+        if "base_currency" in data and data["base_currency"] != room.base_currency:
+            await self._assert_currency_change_safe(room.id, data["base_currency"])
         merge_translation_fields(room, data, ("name", "description"))
 
-        for field, value in data.items():
-            setattr(room, field, value)
+        for key, value in data.items():
+            setattr(room, key, value)
         await self.db.commit()
         await self.db.refresh(room)
         return room
@@ -236,7 +210,7 @@ class RoomService:
                 row.units_blocked = payload.units_blocked
             result.append(
                 RoomAvailabilityView(
-                    d=d,
+                    date=d,
                     inventory_count=room.inventory_count,
                     units_blocked=payload.units_blocked,
                     units_booked=booked,
@@ -296,7 +270,7 @@ class RoomService:
             booked = row.units_booked
         await self.db.commit()
         return RoomAvailabilityView(
-            d=target,
+            date=target,
             inventory_count=room.inventory_count,
             units_blocked=units_blocked,
             units_booked=booked,
@@ -343,7 +317,7 @@ class RoomService:
             row = rows.get(d)
             result.append(
                 RoomAvailabilityView(
-                    d=d,
+                    date=d,
                     inventory_count=room.inventory_count,
                     units_blocked=row.units_blocked if row else 0,
                     units_booked=row.units_booked if row else 0,
@@ -469,6 +443,32 @@ class RoomService:
                 detail=(
                     f"Cannot lower inventory_count to {new_count}: at least one "
                     f"date already has {max_used} units in use (blocked + booked)"
+                ),
+            )
+
+    async def _assert_currency_change_safe(
+        self, room_id: uuid.UUID, new_currency: str
+    ) -> None:
+        # If any active package links to this room with a different currency,
+        # changing room.base_currency would silently break the package's
+        # currency invariant (enforced at package create/update time). Reject
+        # the change here and force the admin to either reprice packages or
+        # unlink them first.
+        mismatched = (
+            await self.db.execute(
+                select(func.count(Package.id)).where(
+                    Package.room_id == room_id,
+                    Package.currency != new_currency,
+                )
+            )
+        ).scalar_one()
+        if mismatched:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot change room currency to {new_currency}: "
+                    f"{mismatched} linked package(s) use a different currency. "
+                    "Update or unlink them first."
                 ),
             )
 

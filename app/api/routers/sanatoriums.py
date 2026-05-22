@@ -18,9 +18,11 @@ from app.api.deps import (
     IncludeTranslationsDep,
     LocaleDep,
     OptionalUser,
+    not_found,
     require_roles,
 )
 from app.core.config import settings
+from app.core.pagination import Pagination
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import (
@@ -70,9 +72,8 @@ async def list_sanatoriums(
     current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    page: Pagination,
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
     city: str | None = Query(default=None, max_length=120),
     region_id: uuid.UUID | None = Query(default=None),
     destination_id: uuid.UUID | None = Query(default=None),
@@ -88,8 +89,8 @@ async def list_sanatoriums(
 ) -> SanatoriumList | SanatoriumAdminList:
     items, total = await sanatoriums.list_for_user(
         user=current_user,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
         city=city,
         region_id=region_id,
         destination_id=destination_id,
@@ -108,14 +109,14 @@ async def list_sanatoriums(
         return SanatoriumAdminList(
             items=[SanatoriumAdminRead.model_validate(s) for s in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return SanatoriumList(
         items=[SanatoriumRead.from_obj(s, locale) for s in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -129,10 +130,7 @@ async def get_sanatorium(
 ) -> SanatoriumRead | SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_visible(sanatorium_id, current_user)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     if include_translations:
         return SanatoriumAdminRead.model_validate(sanatorium)
     return SanatoriumRead.from_obj(sanatorium, locale)
@@ -165,10 +163,7 @@ async def update_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium.admin_user_id, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
     return SanatoriumAdminRead.model_validate(updated)
@@ -185,10 +180,7 @@ async def approve_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     approved = await sanatoriums.approve(sanatorium)
     return SanatoriumAdminRead.model_validate(approved)
 
@@ -204,10 +196,7 @@ async def reject_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     rejected = await sanatoriums.reject(sanatorium)
     return SanatoriumAdminRead.model_validate(rejected)
 
@@ -230,10 +219,7 @@ async def upload_image(
 ) -> SanatoriumImageRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium.admin_user_id, current_user)
 
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -282,16 +268,10 @@ async def update_image(
 ) -> SanatoriumImageRead:
     image = await images.get(image_id)
     if image is None or image.sanatorium_id != sanatorium_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Image not found",
-        )
+        raise not_found("Image not found")
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium.admin_user_id, current_user)
     updated = await images.update(
         image,
@@ -316,15 +296,9 @@ async def delete_image(
 ) -> None:
     image = await images.get(image_id)
     if image is None or image.sanatorium_id != sanatorium_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Image not found",
-        )
+        raise not_found("Image not found")
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sanatorium not found",
-        )
+        raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium.admin_user_id, current_user)
     await images.delete(image, storage)

@@ -1,9 +1,10 @@
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, require_roles
+from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.package import (
     PackageAdminList,
@@ -27,8 +28,7 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 async def list_packages(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    page: Pagination,
     active_only: bool = Query(default=True),
     sanatorium_id: uuid.UUID | None = Query(default=None),
     duration_min: int | None = Query(default=None, ge=1),
@@ -38,8 +38,8 @@ async def list_packages(
     packages: PackageService = Depends(get_package_service),
 ) -> PackageList | PackageAdminList:
     items, total = await packages.list_packages(
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
         active_only=active_only,
         sanatorium_id=sanatorium_id,
         duration_min=duration_min,
@@ -51,14 +51,14 @@ async def list_packages(
         return PackageAdminList(
             items=[PackageAdminRead.model_validate(p) for p in items],
             total=total,
-            limit=limit,
-            offset=offset,
+            limit=page.limit,
+            offset=page.offset,
         )
     return PackageList(
         items=[PackageRead.from_obj(p, locale) for p in items],
         total=total,
-        limit=limit,
-        offset=offset,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 
@@ -79,9 +79,7 @@ async def get_package(
     if package is None:
         package = await packages.get_by_slug(package_id_or_slug)
     if package is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
-        )
+        raise not_found("Package not found")
     if include_translations:
         return PackageAdminRead.model_validate(package)
     return PackageRead.from_obj(package, locale)
@@ -112,9 +110,7 @@ async def update_package(
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
-        )
+        raise not_found("Package not found")
     return PackageAdminRead.model_validate(await packages.update(package, payload))
 
 
@@ -129,9 +125,7 @@ async def delete_package(
 ) -> None:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
-        )
+        raise not_found("Package not found")
     await packages.delete(package)
 
 
@@ -151,9 +145,7 @@ async def add_package_item(
 ) -> PackageItemAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
-        )
+        raise not_found("Package not found")
     return PackageItemAdminRead.model_validate(await packages.add_item(package, payload))
 
 
@@ -170,9 +162,7 @@ async def update_package_item(
 ) -> PackageItemAdminRead:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package item not found"
-        )
+        raise not_found("Package item not found")
     return PackageItemAdminRead.model_validate(await packages.update_item(item, payload))
 
 
@@ -188,7 +178,5 @@ async def delete_package_item(
 ) -> None:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Package item not found"
-        )
+        raise not_found("Package item not found")
     await packages.delete_item(item)

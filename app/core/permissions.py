@@ -13,6 +13,7 @@ SANATORIUM_SUPER_ADMIN_ONLY_FIELDS = frozenset(
         "b2b_commission_percent",
         "agent_discount_tiers",
         "admin_user_id",
+        "destination_id",
     }
 )
 

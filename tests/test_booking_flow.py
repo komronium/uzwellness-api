@@ -476,6 +476,70 @@ class TestCancellation:
         assert all(r["units_booked"] == 0 for r in avail2.json())
         assert all(r["units_available"] == 1 for r in avail2.json())
 
+    async def test_cancel_flips_paid_payments_to_refund_pending(
+        self, client, db, admin_user, admin_headers, customer_headers
+    ):
+        from decimal import Decimal
+        from uuid import UUID
+
+        from sqlalchemy import select as _select
+
+        from app.models.payment import Payment, PaymentMethod, PaymentStatus
+
+        san, room = await _setup_room_with_availability(
+            db, client, admin_user, admin_headers
+        )
+        b = (
+            await client.post(
+                "/api/bookings",
+                json={
+                    "room_id": str(room.id),
+                    "check_in": _CHECK_IN,
+                    "check_out": _CHECK_OUT,
+                    "guests": 1,
+                },
+                headers=customer_headers,
+            )
+        ).json()
+        booking_id = UUID(b["id"])
+
+        # Simulate a successful card payment + a stale pending payment.
+        db.add(
+            Payment(
+                booking_id=booking_id,
+                method=PaymentMethod.PAYME,
+                status=PaymentStatus.PAID,
+                amount=Decimal("100.00"),
+                currency="USD",
+            )
+        )
+        db.add(
+            Payment(
+                booking_id=booking_id,
+                method=PaymentMethod.CLICK,
+                status=PaymentStatus.PENDING,
+                amount=Decimal("100.00"),
+                currency="USD",
+            )
+        )
+        await db.commit()
+
+        cancel = await client.patch(
+            f"/api/bookings/{booking_id}/cancel", headers=customer_headers
+        )
+        assert cancel.status_code == 200
+
+        rows = list(
+            (
+                await db.execute(
+                    _select(Payment).where(Payment.booking_id == booking_id)
+                )
+            ).scalars()
+        )
+        statuses = {r.method: r.status for r in rows}
+        assert statuses[PaymentMethod.PAYME] == PaymentStatus.REFUND_PENDING
+        assert statuses[PaymentMethod.CLICK] == PaymentStatus.CANCELLED
+
 
 # ── concurrency: two requests racing for the last unit ────────────────────
 
