@@ -32,20 +32,18 @@ class PackageService:
         self.db = db
 
     async def get_by_id(self, package_id: uuid.UUID) -> Package | None:
-        stmt = (
+        return await self.db.scalar(
             select(Package)
             .options(selectinload(Package.items))
             .where(Package.id == package_id)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def get_by_slug(self, slug: str) -> Package | None:
-        stmt = (
+        return await self.db.scalar(
             select(Package)
             .options(selectinload(Package.items))
             .where(Package.slug == slug)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_packages(
         self,
@@ -217,9 +215,9 @@ class PackageService:
         candidate = base
         suffix = 2
         while True:
-            existing = (
-                await self.db.execute(select(Package).where(Package.slug == candidate))
-            ).scalar_one_or_none()
+            existing = await self.db.scalar(
+                select(Package).where(Package.slug == candidate)
+            )
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"

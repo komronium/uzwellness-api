@@ -4,16 +4,15 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
-    HTTPException,
     Query,
     UploadFile,
     status,
 )
 
 from app.api.deps import CurrentUser, not_found, require_roles
-from app.core.config import settings
 from app.core.pagination import Pagination
 from app.core.storage import StorageBackend, detect_document_mime, get_storage
+from app.core.uploads import read_upload
 from app.models.user import UserRole
 from app.models.visa_request import VisaStatus
 from app.schemas.visa_request import (
@@ -108,7 +107,9 @@ async def upload_passport_scan(
     visa = await visas.get_visible(visa_id, current_user)
     if visa is None:
         raise not_found("Visa request not found")
-    content, mime = await _read_document(file)
+    content, mime = await read_upload(
+        file, detect_mime=detect_document_mime, allowed_label="JPEG, PNG, WebP, PDF"
+    )
     updated = await visas.attach_passport_scan(
         visa, content=content, content_type=mime, storage=storage
     )
@@ -129,29 +130,12 @@ async def upload_issued_document(
     visa = await visas.get_by_id(visa_id)
     if visa is None:
         raise not_found("Visa request not found")
-    content, mime = await _read_document(file)
+    content, mime = await read_upload(
+        file, detect_mime=detect_document_mime, allowed_label="JPEG, PNG, WebP, PDF"
+    )
     updated = await visas.attach_issued_document(
         visa, content=content, content_type=mime, storage=storage
     )
     return VisaRequestRead.model_validate(updated)
 
 
-async def _read_document(file: UploadFile) -> tuple[bytes, str]:
-    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    content = await file.read(max_bytes + 1)
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB} MB limit",
-        )
-    if len(content) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file"
-        )
-    mime = detect_document_mime(content)
-    if mime is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported file type (allowed: JPEG, PNG, WebP, PDF)",
-        )
-    return content, mime

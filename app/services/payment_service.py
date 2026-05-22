@@ -132,13 +132,11 @@ class PaymentService:
             await self.db.commit()
 
     async def _find_by_trans_id(self, merchant_trans_id: str) -> Payment | None:
-        return (
-            await self.db.execute(
-                select(Payment).where(
-                    Payment.merchant_trans_id == str(merchant_trans_id)
-                )
+        return await self.db.scalar(
+            select(Payment).where(
+                Payment.merchant_trans_id == str(merchant_trans_id)
             )
-        ).scalar_one_or_none()
+        )
 
     async def _mark_paid(
         self,

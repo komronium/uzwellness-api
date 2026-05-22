@@ -54,11 +54,7 @@ class ReviewService:
     async def create(
         self, sanatorium_id: uuid.UUID, payload: ReviewCreate, user: User
     ) -> SanatoriumReview:
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
@@ -96,11 +92,7 @@ class ReviewService:
         sanatorium_id = review.sanatorium_id
         await self.db.delete(review)
         await self.db.flush()
-        sanatorium = (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is not None:
             await self._recompute_rating(sanatorium)
         await self.db.commit()
@@ -122,11 +114,7 @@ class ReviewService:
             )
 
     async def _review_sanatorium(self, review: SanatoriumReview) -> Sanatorium | None:
-        return (
-            await self.db.execute(
-                select(Sanatorium).where(Sanatorium.id == review.sanatorium_id)
-            )
-        ).scalar_one_or_none()
+        return await self.db.get(Sanatorium, review.sanatorium_id)
 
     async def _recompute_rating(self, sanatorium: Sanatorium) -> None:
         count, avg = (

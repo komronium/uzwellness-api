@@ -21,9 +21,9 @@ from app.api.deps import (
     not_found,
     require_roles,
 )
-from app.core.config import settings
 from app.core.pagination import Pagination
 from app.core.policies import SanatoriumPolicy
+from app.core.uploads import read_upload
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
 from app.schemas.sanatorium import (
@@ -220,25 +220,9 @@ async def upload_image(
         raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium, current_user)
 
-    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    content = await file.read(max_bytes + 1)
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB} MB limit",
-        )
-    if len(content) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Empty file",
-        )
-
-    mime = detect_image_mime(content)
-    if mime is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported file type (allowed: JPEG, PNG, WebP)",
-        )
+    content, mime = await read_upload(
+        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
+    )
 
     image = await images.add(
         sanatorium=sanatorium,

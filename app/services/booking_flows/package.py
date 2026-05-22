@@ -138,11 +138,9 @@ class PackageBookingFlow:
         return sanatorium
 
     async def _lock_room(self, room_id) -> Room:
-        room = (
-            await self.db.execute(
-                select(Room).where(Room.id == room_id).with_for_update(of=Room)
-            )
-        ).scalar_one_or_none()
+        room = await self.db.scalar(
+            select(Room).where(Room.id == room_id).with_for_update(of=Room)
+        )
         if room is None or not room.is_active:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

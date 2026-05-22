@@ -17,8 +17,9 @@ class UserService:
         self.db = db
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.db.execute(select(User).where(User.email == email.lower()))
-        return result.scalar_one_or_none()
+        return await self.db.scalar(
+            select(User).where(User.email == email.lower())
+        )
 
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         return await self.db.get(User, user_id)
@@ -106,14 +107,12 @@ class UserService:
         return user
 
     async def primary_sanatorium_id(self, user_id: uuid.UUID) -> uuid.UUID | None:
-        return (
-            await self.db.execute(
-                select(Sanatorium.id)
-                .where(Sanatorium.admin_user_id == user_id)
-                .order_by(Sanatorium.created_at.asc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
+        return await self.db.scalar(
+            select(Sanatorium.id)
+            .where(Sanatorium.admin_user_id == user_id)
+            .order_by(Sanatorium.created_at.asc())
+            .limit(1)
+        )
 
     async def to_read(self, user: User) -> UserRead:
         sanatorium_id: uuid.UUID | None = None

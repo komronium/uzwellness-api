@@ -37,9 +37,9 @@ class RegionService:
         return await self.db.get(Region, region_id)
 
     async def get_by_slug(self, slug: str) -> Region | None:
-        return (
-            await self.db.execute(select(Region).where(Region.slug == slug))
-        ).scalar_one_or_none()
+        return await self.db.scalar(
+            select(Region).where(Region.slug == slug)
+        )
 
     async def _resolve_slug(
         self, base: str, exclude_id: uuid.UUID | None = None
@@ -47,11 +47,9 @@ class RegionService:
         candidate = base
         suffix = 2
         while True:
-            existing = (
-                await self.db.execute(
-                    select(Region).where(Region.slug == candidate)
-                )
-            ).scalar_one_or_none()
+            existing = await self.db.scalar(
+                select(Region).where(Region.slug == candidate)
+            )
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"

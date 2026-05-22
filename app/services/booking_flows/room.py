@@ -131,14 +131,12 @@ class RoomBookingFlow:
         return await self._load(booking.id)
 
     async def _lock_room(self, room_id) -> Room:
-        room = (
-            await self.db.execute(
-                select(Room)
-                .where(Room.id == room_id)
-                .options(selectinload(Room.price_periods))
-                .with_for_update(of=Room)
-            )
-        ).scalar_one_or_none()
+        room = await self.db.scalar(
+            select(Room)
+            .where(Room.id == room_id)
+            .options(selectinload(Room.price_periods))
+            .with_for_update(of=Room)
+        )
         if room is None or not room.is_active:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
@@ -260,11 +258,9 @@ class RoomBookingFlow:
                 price_per_night = config.price_per_night
             else:
                 if rate is _UNFETCHED:
-                    rate = (
-                        await self.db.execute(
-                            select(ExchangeRate).where(ExchangeRate.pair == USD_UZS)
-                        )
-                    ).scalar_one_or_none()
+                    rate = await self.db.scalar(
+                        select(ExchangeRate).where(ExchangeRate.pair == USD_UZS)
+                    )
                 converter = (
                     convert_to_usd if room_currency == "USD" else convert_to_uzs
                 )

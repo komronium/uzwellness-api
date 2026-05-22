@@ -99,16 +99,12 @@ class DestinationService:
         ]
 
     async def get_by_id(self, destination_id: uuid.UUID) -> Destination | None:
-        return (
-            await self.db.execute(
-                select(Destination).where(Destination.id == destination_id)
-            )
-        ).scalar_one_or_none()
+        return await self.db.get(Destination, destination_id)
 
     async def get_by_slug(self, slug: str) -> Destination | None:
-        return (
-            await self.db.execute(select(Destination).where(Destination.slug == slug))
-        ).scalar_one_or_none()
+        return await self.db.scalar(
+            select(Destination).where(Destination.slug == slug)
+        )
 
     async def _resolve_slug(
         self, base: str, exclude_id: uuid.UUID | None = None
@@ -116,11 +112,9 @@ class DestinationService:
         candidate = base
         suffix = 2
         while True:
-            existing = (
-                await self.db.execute(
-                    select(Destination).where(Destination.slug == candidate)
-                )
-            ).scalar_one_or_none()
+            existing = await self.db.scalar(
+                select(Destination).where(Destination.slug == candidate)
+            )
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"

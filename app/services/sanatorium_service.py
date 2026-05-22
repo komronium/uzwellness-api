@@ -41,8 +41,9 @@ class SanatoriumService:
         return await self._reload(sanatorium_id)
 
     async def get_by_slug(self, slug: str) -> Sanatorium | None:
-        stmt = select(Sanatorium).where(Sanatorium.slug == slug)
-        obj = (await self.db.execute(stmt)).scalar_one_or_none()
+        obj = await self.db.scalar(
+            select(Sanatorium).where(Sanatorium.slug == slug)
+        )
         return await self._reload(obj.id) if obj else None
 
     async def _resolve_slug(
@@ -51,11 +52,9 @@ class SanatoriumService:
         candidate = base
         suffix = 2
         while True:
-            existing = (
-                await self.db.execute(
-                    select(Sanatorium).where(Sanatorium.slug == candidate)
-                )
-            ).scalar_one_or_none()
+            existing = await self.db.scalar(
+                select(Sanatorium).where(Sanatorium.slug == candidate)
+            )
             if existing is None or existing.id == exclude_id:
                 return candidate
             candidate = f"{base}-{suffix}"
@@ -278,7 +277,7 @@ class SanatoriumService:
         return result
 
     async def _reload(self, sanatorium_id: uuid.UUID) -> Sanatorium | None:
-        stmt = (
+        return await self.db.scalar(
             select(Sanatorium)
             .where(Sanatorium.id == sanatorium_id)
             .options(
@@ -286,7 +285,6 @@ class SanatoriumService:
                 selectinload(Sanatorium.amenities),
             )
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
         if not amenity_ids:

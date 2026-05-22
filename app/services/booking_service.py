@@ -103,7 +103,7 @@ class BookingService:
         )
         for clause in self._visibility_clauses(user):
             stmt = stmt.where(clause)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.scalar(stmt)
 
     async def cancel(self, booking: Booking, user: User) -> Booking:
         await self._assert_can_cancel(booking, user)
@@ -202,37 +202,27 @@ class BookingService:
         """
         sanatorium_id: uuid.UUID | None = None
         if booking.room_id is not None:
-            sanatorium_id = (
-                await self.db.execute(
-                    select(Room.sanatorium_id).where(Room.id == booking.room_id)
-                )
-            ).scalar_one_or_none()
+            sanatorium_id = await self.db.scalar(
+                select(Room.sanatorium_id).where(Room.id == booking.room_id)
+            )
         elif booking.program_id is not None:
-            sanatorium_id = (
-                await self.db.execute(
-                    select(TreatmentProgram.sanatorium_id).where(
-                        TreatmentProgram.id == booking.program_id
-                    )
+            sanatorium_id = await self.db.scalar(
+                select(TreatmentProgram.sanatorium_id).where(
+                    TreatmentProgram.id == booking.program_id
                 )
-            ).scalar_one_or_none()
+            )
         elif booking.package_id is not None:
-            sanatorium_id = (
-                await self.db.execute(
-                    select(Package.sanatorium_id).where(
-                        Package.id == booking.package_id
-                    )
+            sanatorium_id = await self.db.scalar(
+                select(Package.sanatorium_id).where(
+                    Package.id == booking.package_id
                 )
-            ).scalar_one_or_none()
+            )
 
         if sanatorium_id is None:
             return False
-        admin_id = (
-            await self.db.execute(
-                select(Sanatorium.admin_user_id).where(
-                    Sanatorium.id == sanatorium_id
-                )
-            )
-        ).scalar_one_or_none()
+        admin_id = await self.db.scalar(
+            select(Sanatorium.admin_user_id).where(Sanatorium.id == sanatorium_id)
+        )
         return admin_id == user.id
 
     async def _mark_payments_for_refund(self, booking_id: uuid.UUID) -> None:
@@ -250,10 +240,9 @@ class BookingService:
                 p.status = PaymentStatus.CANCELLED
 
     async def _load(self, booking_id: uuid.UUID) -> Booking | None:
-        stmt = (
+        return await self.db.scalar(
             select(Booking).options(*_LOAD_OPTIONS).where(Booking.id == booking_id)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def _notify_cancelled(
         self, booking: Booking, user: User, sanatorium_name: str

@@ -74,13 +74,13 @@ class RoomService:
         owns_target = False
         if user is not None and user.role == UserRole.ADMIN:
             owns_target = (
-                await self.db.execute(
+                await self.db.scalar(
                     select(Sanatorium.id).where(
                         Sanatorium.id == sanatorium_id,
                         Sanatorium.admin_user_id == user.id,
                     )
                 )
-            ).scalar_one_or_none() is not None
+            ) is not None
         is_privileged = user is not None and (
             user.role == UserRole.SUPER_ADMIN or owns_target
         )
@@ -237,16 +237,14 @@ class RoomService:
                     f"({room.inventory_count})"
                 ),
             )
-        row = (
-            await self.db.execute(
-                select(RoomAvailability)
-                .where(
-                    RoomAvailability.room_id == room.id,
-                    RoomAvailability.date == target,
-                )
-                .with_for_update()
+        row = await self.db.scalar(
+            select(RoomAvailability)
+            .where(
+                RoomAvailability.room_id == room.id,
+                RoomAvailability.date == target,
             )
-        ).scalar_one_or_none()
+            .with_for_update()
+        )
         if row is None:
             row = RoomAvailability(
                 room_id=room.id,
@@ -426,15 +424,13 @@ class RoomService:
 
     async def _assert_inventory_safe(self, room_id: uuid.UUID, new_count: int) -> None:
         """Block lowering inventory_count below any date's (blocked+booked)."""
-        max_used = (
-            await self.db.execute(
-                select(
-                    func.max(
-                        RoomAvailability.units_blocked + RoomAvailability.units_booked
-                    )
-                ).where(RoomAvailability.room_id == room_id)
-            )
-        ).scalar_one_or_none()
+        max_used = await self.db.scalar(
+            select(
+                func.max(
+                    RoomAvailability.units_blocked + RoomAvailability.units_booked
+                )
+            ).where(RoomAvailability.room_id == room_id)
+        )
         if max_used is not None and max_used > new_count:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

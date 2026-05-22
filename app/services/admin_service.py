@@ -77,11 +77,9 @@ class AdminService:
         }
 
     async def _usd_uzs_rate(self) -> Decimal:
-        rate = (
-            await self.db.execute(
-                select(ExchangeRate.rate).where(ExchangeRate.pair == _USD_UZS)
-            )
-        ).scalar_one_or_none()
+        rate = await self.db.scalar(
+            select(ExchangeRate.rate).where(ExchangeRate.pair == _USD_UZS)
+        )
         return rate if rate and rate > 0 else Decimal("1")
 
     @staticmethod

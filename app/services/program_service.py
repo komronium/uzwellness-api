@@ -24,12 +24,11 @@ class ProgramService:
         self.db = db
 
     async def get_by_id(self, program_id: uuid.UUID) -> TreatmentProgram | None:
-        stmt = (
+        return await self.db.scalar(
             select(TreatmentProgram)
             .options(selectinload(TreatmentProgram.amenities))
             .where(TreatmentProgram.id == program_id)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_for_sanatorium(
         self, sanatorium_id: uuid.UUID, *, limit: int, offset: int

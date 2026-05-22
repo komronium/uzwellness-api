@@ -14,12 +14,15 @@ class ExchangeRateService:
         self.db = db
 
     async def list_all(self) -> list[ExchangeRate]:
-        stmt = select(ExchangeRate).order_by(ExchangeRate.pair.asc())
-        return list((await self.db.execute(stmt)).scalars().all())
+        rows = await self.db.scalars(
+            select(ExchangeRate).order_by(ExchangeRate.pair.asc())
+        )
+        return list(rows.all())
 
     async def get(self, pair: str) -> ExchangeRate | None:
-        stmt = select(ExchangeRate).where(ExchangeRate.pair == pair)
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return await self.db.scalar(
+            select(ExchangeRate).where(ExchangeRate.pair == pair)
+        )
 
     async def get_usd_uzs(self) -> ExchangeRate | None:
         return await self.get(USD_UZS)
