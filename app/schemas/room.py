@@ -11,7 +11,7 @@ from app.schemas.common import Translations, TranslationsCreate
 class RoomCreate(BaseModel):
     sanatorium_id: uuid.UUID
     name: TranslationsCreate
-    description: TranslationsCreate
+    description: Translations = Field(default_factory=Translations)
     room_amenities: list[str] = Field(default_factory=list)
     capacity: int = Field(ge=1)
     inventory_count: int = Field(default=1, ge=1)

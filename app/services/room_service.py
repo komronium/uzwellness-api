@@ -132,7 +132,7 @@ class RoomService:
         room = Room(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(),
-            description=payload.description.model_dump(),
+            description=payload.description.model_dump(exclude_none=True),
             room_amenities=payload.room_amenities,
             capacity=payload.capacity,
             inventory_count=payload.inventory_count,
