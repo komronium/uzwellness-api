@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -33,7 +34,7 @@ async def get_redis() -> Any | None:
             str(settings.REDIS_URL), encoding="utf-8", decode_responses=True
         )
         await _client.ping()
-    except Exception as exc:  # noqa: BLE001 - any failure → fall back
+    except Exception as exc:
         logger.warning("Redis unavailable, rate-limit will use in-memory: %s", exc)
         _client = None
     return _client
@@ -42,8 +43,6 @@ async def get_redis() -> Any | None:
 async def close_redis() -> None:
     global _client
     if _client is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _client.close()
-        except Exception:  # noqa: BLE001
-            pass
         _client = None

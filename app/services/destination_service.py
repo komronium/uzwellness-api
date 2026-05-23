@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.pagination import paginated
-from app.core.slug import slugify as _slugify
+from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.destination import Destination
 from app.models.room import Room
@@ -16,8 +16,8 @@ from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.schemas.destination import DestinationCreate, DestinationUpdate
 
 
-def slugify(text: str) -> str:
-    return _slugify(text, fallback="destination")
+def _slug(text: str) -> str:
+    return slugify(text, fallback="destination")
 
 
 class DestinationService:
@@ -106,20 +106,6 @@ class DestinationService:
             select(Destination).where(Destination.slug == slug)
         )
 
-    async def _resolve_slug(
-        self, base: str, exclude_id: uuid.UUID | None = None
-    ) -> str:
-        candidate = base
-        suffix = 2
-        while True:
-            existing = await self.db.scalar(
-                select(Destination).where(Destination.slug == candidate)
-            )
-            if existing is None or existing.id == exclude_id:
-                return candidate
-            candidate = f"{base}-{suffix}"
-            suffix += 1
-
     async def create(self, payload: DestinationCreate) -> Destination:
         name_dict = payload.name.model_dump()
         slug_seed = payload.slug or pick_locale(name_dict)
@@ -128,7 +114,7 @@ class DestinationService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="name must contain at least one locale",
             )
-        slug = await self._resolve_slug(slugify(slug_seed))
+        slug = await resolve_unique_slug(self.db, Destination, _slug(slug_seed))
 
         destination = Destination(
             slug=slug,
@@ -153,12 +139,15 @@ class DestinationService:
         merge_translation_fields(destination, data, ("name", "tagline", "description"))
 
         if "slug" in data and data["slug"] is not None:
-            data["slug"] = await self._resolve_slug(
-                slugify(data["slug"]), exclude_id=destination.id
+            data["slug"] = await resolve_unique_slug(
+                self.db, Destination, _slug(data["slug"]), exclude_id=destination.id
             )
         elif "name" in data and "slug" not in data:
-            data["slug"] = await self._resolve_slug(
-                slugify(pick_locale(data["name"])), exclude_id=destination.id
+            data["slug"] = await resolve_unique_slug(
+                self.db,
+                Destination,
+                _slug(pick_locale(data["name"])),
+                exclude_id=destination.id,
             )
 
         for field, value in data.items():

@@ -14,16 +14,16 @@ class CashGateway:
     def build_checkout_url(
         self,
         *,
-        amount: Decimal,  # noqa: ARG002
-        currency: str,  # noqa: ARG002
-        merchant_trans_id: str,  # noqa: ARG002
+        amount: Decimal,
+        currency: str,
+        merchant_trans_id: str,
     ) -> str | None:
         return None
 
     def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]  # noqa: ARG002
+        self, *, payload: dict, headers: Mapping[str, str]
     ) -> bool:
         return False
 
-    def parse_webhook(self, *, payload: dict) -> WebhookResult:  # noqa: ARG002
+    def parse_webhook(self, *, payload: dict) -> WebhookResult:
         raise NotImplementedError("Cash gateway has no webhook")

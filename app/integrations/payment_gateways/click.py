@@ -19,7 +19,7 @@ class ClickGateway:
         self,
         *,
         amount: Decimal,
-        currency: str,  # noqa: ARG002
+        currency: str,
         merchant_trans_id: str,
     ) -> str:
         if not settings.CLICK_SERVICE_ID:
@@ -35,7 +35,7 @@ class ClickGateway:
         return f"{settings.CLICK_CHECKOUT_URL}?{query}"
 
     def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]  # noqa: ARG002
+        self, *, payload: dict, headers: Mapping[str, str]
     ) -> bool:
         secret = settings.CLICK_SECRET_KEY
         sign_string = payload.get("sign_string")

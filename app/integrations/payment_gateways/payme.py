@@ -20,7 +20,7 @@ class PaymeGateway:
         self,
         *,
         amount: Decimal,
-        currency: str,  # noqa: ARG002 — Payme expects merchant currency
+        currency: str,
         merchant_trans_id: str,
     ) -> str:
         if not settings.PAYME_MERCHANT_ID:
@@ -35,7 +35,7 @@ class PaymeGateway:
         return f"{settings.PAYME_CHECKOUT_URL}{encoded}"
 
     def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]  # noqa: ARG002
+        self, *, payload: dict, headers: Mapping[str, str]
     ) -> bool:
         secret = settings.PAYME_MERCHANT_KEY
         if not secret:

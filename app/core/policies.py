@@ -39,13 +39,12 @@ class BookingPolicy:
     def can_cancel(
         booking: Booking, user: User, *, admin_owns_target: bool = False
     ) -> bool:
-        if booking.status not in _CANCELLABLE:
-            return False
-        if user.role == UserRole.SUPER_ADMIN:
-            return True
-        if user.role == UserRole.ADMIN:
-            return admin_owns_target
-        return booking.user_id == user.id
+        return (
+            BookingPolicy.cancel_block_reason(
+                booking, user, admin_owns_target=admin_owns_target
+            )
+            is None
+        )
 
     @staticmethod
     def cancel_block_reason(

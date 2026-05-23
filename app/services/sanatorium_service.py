@@ -14,7 +14,7 @@ from app.core.permissions import (
     assert_super_admin_only_fields,
 )
 from app.core.policies import SanatoriumPolicy
-from app.core.slug import slugify as _slugify
+from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.amenity import Amenity
 from app.models.destination import Destination
@@ -29,8 +29,8 @@ from app.models.user import User, UserRole
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
 
 
-def slugify(text: str) -> str:
-    return _slugify(text, fallback="sanatorium")
+def _slug(text: str) -> str:
+    return slugify(text, fallback="sanatorium")
 
 
 class SanatoriumService:
@@ -46,20 +46,6 @@ class SanatoriumService:
         )
         return await self._reload(obj.id) if obj else None
 
-    async def _resolve_slug(
-        self, base: str, exclude_id: uuid.UUID | None = None
-    ) -> str:
-        candidate = base
-        suffix = 2
-        while True:
-            existing = await self.db.scalar(
-                select(Sanatorium).where(Sanatorium.slug == candidate)
-            )
-            if existing is None or existing.id == exclude_id:
-                return candidate
-            candidate = f"{base}-{suffix}"
-            suffix += 1
-
     async def create(self, payload: SanatoriumCreate) -> Sanatorium:
         name_dict = payload.name.model_dump()
         slug_seed = payload.slug or pick_locale(name_dict)
@@ -68,8 +54,7 @@ class SanatoriumService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="name must contain at least one locale",
             )
-        base_slug = slugify(slug_seed)
-        slug = await self._resolve_slug(base_slug)
+        slug = await resolve_unique_slug(self.db, Sanatorium, _slug(slug_seed))
 
         await assert_fk(self.db, Region, payload.region_id, "region_id")
         await assert_fk(self.db, Destination, payload.destination_id, "destination_id")
@@ -142,11 +127,16 @@ class SanatoriumService:
         )
 
         if "slug" in data and data["slug"] is not None:
-            base_slug = slugify(data["slug"])
-            data["slug"] = await self._resolve_slug(base_slug, exclude_id=sanatorium.id)
+            data["slug"] = await resolve_unique_slug(
+                self.db, Sanatorium, _slug(data["slug"]), exclude_id=sanatorium.id
+            )
         elif "name" in data and "slug" not in data:
-            base_slug = slugify(pick_locale(data["name"]))
-            data["slug"] = await self._resolve_slug(base_slug, exclude_id=sanatorium.id)
+            data["slug"] = await resolve_unique_slug(
+                self.db,
+                Sanatorium,
+                _slug(pick_locale(data["name"])),
+                exclude_id=sanatorium.id,
+            )
 
         for field, value in data.items():
             setattr(sanatorium, field, value)

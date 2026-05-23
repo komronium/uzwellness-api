@@ -23,6 +23,7 @@ from app.api.deps import (
 )
 from app.core.pagination import Pagination
 from app.core.policies import SanatoriumPolicy
+from app.core.storage import StorageBackend, detect_image_mime, get_storage
 from app.core.uploads import read_upload
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
@@ -44,7 +45,6 @@ from app.services.sanatorium_service import (
     SanatoriumService,
     get_sanatorium_service,
 )
-from app.core.storage import StorageBackend, detect_image_mime, get_storage
 
 router = APIRouter(prefix="/sanatoriums", tags=["sanatoriums"])
 

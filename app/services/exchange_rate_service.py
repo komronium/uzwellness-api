@@ -17,7 +17,7 @@ class ExchangeRateService:
         rows = await self.db.scalars(
             select(ExchangeRate).order_by(ExchangeRate.pair.asc())
         )
-        return list(rows.all())
+        return list(rows)
 
     async def get(self, pair: str) -> ExchangeRate | None:
         return await self.db.scalar(

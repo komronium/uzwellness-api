@@ -90,7 +90,7 @@ class RateLimiter:
             await client.set(key, 0, ex=self.window_seconds, nx=True)
             count = await client.incr(key)
             return int(count)
-        except Exception:  # noqa: BLE001 - fall back if Redis blows up
+        except Exception:
             return await _incr_memory(key, self.window_seconds)
 
 

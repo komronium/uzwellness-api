@@ -30,7 +30,6 @@ from app.services.booking_flows import (
 from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext
 
-
 _LOAD_OPTIONS = (
     selectinload(Booking.extra_beds),
     selectinload(Booking.user),

@@ -15,7 +15,6 @@ from app.schemas.transfer_request import (
     TransferRequestUpdate,
 )
 
-
 _CANCELLABLE_STATUSES = {TransferStatus.REQUESTED, TransferStatus.CONFIRMED}
 
 

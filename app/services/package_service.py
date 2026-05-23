@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.db_utils import assert_fk
 from app.core.pagination import paginated
-from app.core.slug import slugify as _slugify
+from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.package import Package, PackageItem
 from app.models.room import Room
@@ -24,7 +24,7 @@ from app.schemas.package import (
 
 
 def _slug(text: str) -> str:
-    return _slugify(text, fallback="package")
+    return slugify(text, fallback="package")
 
 
 class PackageService:
@@ -76,7 +76,7 @@ class PackageService:
     async def create(self, payload: PackageCreate) -> Package:
         title_dict = payload.title.model_dump()
         slug_seed = payload.slug or pick_locale(title_dict)
-        slug = await self._resolve_slug(_slug(slug_seed))
+        slug = await resolve_unique_slug(self.db, Package, _slug(slug_seed))
 
         await assert_fk(self.db, Sanatorium, payload.sanatorium_id, "sanatorium_id")
         await self._require_room(
@@ -106,12 +106,15 @@ class PackageService:
         merge_translation_fields(package, data, ("title", "description"))
 
         if "slug" in data and data["slug"] is not None:
-            data["slug"] = await self._resolve_slug(
-                _slug(data["slug"]), exclude_id=package.id
+            data["slug"] = await resolve_unique_slug(
+                self.db, Package, _slug(data["slug"]), exclude_id=package.id
             )
         elif "title" in data and "slug" not in data:
-            data["slug"] = await self._resolve_slug(
-                _slug(pick_locale(data["title"])), exclude_id=package.id
+            data["slug"] = await resolve_unique_slug(
+                self.db,
+                Package,
+                _slug(pick_locale(data["title"])),
+                exclude_id=package.id,
             )
 
         # Re-validate the room↔currency invariant whenever either side
@@ -208,20 +211,6 @@ class PackageService:
             extra_price=payload.extra_price,
             display_order=payload.display_order,
         )
-
-    async def _resolve_slug(
-        self, base: str, exclude_id: uuid.UUID | None = None
-    ) -> str:
-        candidate = base
-        suffix = 2
-        while True:
-            existing = await self.db.scalar(
-                select(Package).where(Package.slug == candidate)
-            )
-            if existing is None or existing.id == exclude_id:
-                return candidate
-            candidate = f"{base}-{suffix}"
-            suffix += 1
 
     async def _reload_required(self, package_id: uuid.UUID) -> Package:
         package = await self.get_by_id(package_id)
