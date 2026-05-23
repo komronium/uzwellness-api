@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.notifier import BookingNotifier, get_booking_notifier
 from app.core.policies import BookingPolicy
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.core.utils import today_tashkent
@@ -28,7 +27,7 @@ from app.services.booking_flows import (
     SessionBookingFlow,
 )
 from app.services.booking_pricing_policy import BookingPricingPolicy
-from app.services.email_service import BookingEmailContext
+from app.services.email_service import BookingEmailContext, send_booking_cancelled
 
 _LOAD_OPTIONS = (
     selectinload(Booking.extra_beds),
@@ -43,11 +42,9 @@ class BookingService:
     def __init__(
         self,
         db: AsyncSession,
-        notifier: BookingNotifier,
         flows: Sequence[BookingFlow],
     ) -> None:
         self.db = db
-        self.notifier = notifier
         self.flows = flows
 
     async def create(self, payload: BookingCreate, user: User) -> Booking:
@@ -139,7 +136,7 @@ class BookingService:
 
         sanatorium_name = await sanatorium_name_for_booking(self.db, booking)
         if sanatorium_name is not None:
-            await self._notify_cancelled(booking, user, sanatorium_name)
+            self._notify_cancelled(booking, user, sanatorium_name)
         return await self._load(booking.id)  # type: ignore[return-value]
 
     def _visibility_clauses(self, user: User) -> list:
@@ -239,31 +236,33 @@ class BookingService:
             select(Booking).options(*_LOAD_OPTIONS).where(Booking.id == booking_id)
         )
 
-    async def _notify_cancelled(
-        self, booking: Booking, user: User, sanatorium_name: str
+    @staticmethod
+    def _notify_cancelled(
+        booking: Booking, user: User, sanatorium_name: str
     ) -> None:
         if not user.email:
             return
-        ctx = BookingEmailContext(
-            booking_code=booking.code,
-            sanatorium_name=sanatorium_name,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            guest_name=user.full_name or user.email,
-            total_price=booking.final_price,
-            currency=booking.currency,
+        send_booking_cancelled(
+            to=user.email,
+            ctx=BookingEmailContext(
+                booking_code=booking.code,
+                sanatorium_name=sanatorium_name,
+                check_in=booking.check_in,
+                check_out=booking.check_out,
+                guest_name=user.full_name or user.email,
+                total_price=booking.final_price,
+                currency=booking.currency,
+            ),
         )
-        self.notifier.booking_cancelled(to=user.email, ctx=ctx)
 
 
 def get_booking_service(
     db: AsyncSession = Depends(get_db),
-    notifier: BookingNotifier = Depends(get_booking_notifier),
 ) -> BookingService:
     pricing = BookingPricingPolicy(db)
     flows: list[BookingFlow] = [
-        SessionBookingFlow(db, pricing, notifier),
-        PackageBookingFlow(db, pricing, notifier),
-        RoomBookingFlow(db, pricing, notifier),
+        SessionBookingFlow(db, pricing),
+        PackageBookingFlow(db, pricing),
+        RoomBookingFlow(db, pricing),
     ]
-    return BookingService(db, notifier, flows)
+    return BookingService(db, flows)

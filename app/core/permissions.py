@@ -18,12 +18,12 @@ SANATORIUM_SUPER_ADMIN_ONLY_FIELDS = frozenset(
 
 
 def assert_super_admin_only_fields(
-    data: dict, actor: User | None, *, allowed_fields: frozenset[str]
+    data: dict, actor: User | None, *, restricted_fields: frozenset[str]
 ) -> None:
     """Reject the request if a non-super_admin tried to touch privileged fields."""
     if actor is None or actor.role == UserRole.SUPER_ADMIN:
         return
-    for field in allowed_fields:
+    for field in restricted_fields:
         if field in data:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

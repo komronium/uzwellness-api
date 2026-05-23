@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.notifier import BookingNotifier, get_booking_notifier
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.integrations.payment_gateways import (
     WebhookResult,
@@ -17,15 +16,14 @@ from app.integrations.payment_gateways import (
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.user import User, UserRole
-from app.services.email_service import BookingEmailContext
+from app.services.email_service import BookingEmailContext, send_booking_confirmed
 
 logger = logging.getLogger(__name__)
 
 
 class PaymentService:
-    def __init__(self, db: AsyncSession, notifier: BookingNotifier) -> None:
+    def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.notifier = notifier
 
     async def initiate(
         self, booking_id: uuid.UUID, method: PaymentMethod, user: User
@@ -169,20 +167,21 @@ class PaymentService:
         sanatorium_name = await sanatorium_name_for_booking(self.db, booking)
         if sanatorium_name is None:
             return
-        ctx = BookingEmailContext(
-            booking_code=booking.code,
-            sanatorium_name=sanatorium_name,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            guest_name=user.full_name or user.email,
-            total_price=booking.final_price,
-            currency=booking.currency,
+        send_booking_confirmed(
+            to=user.email,
+            ctx=BookingEmailContext(
+                booking_code=booking.code,
+                sanatorium_name=sanatorium_name,
+                check_in=booking.check_in,
+                check_out=booking.check_out,
+                guest_name=user.full_name or user.email,
+                total_price=booking.final_price,
+                currency=booking.currency,
+            ),
         )
-        self.notifier.booking_confirmed(to=user.email, ctx=ctx)
 
 
 def get_payment_service(
     db: AsyncSession = Depends(get_db),
-    notifier: BookingNotifier = Depends(get_booking_notifier),
 ) -> PaymentService:
-    return PaymentService(db, notifier)
+    return PaymentService(db)

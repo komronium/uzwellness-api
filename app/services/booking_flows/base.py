@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.notifier import BookingNotifier
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking
 from app.models.room import Room
@@ -16,7 +15,7 @@ from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 from app.schemas.booking import BookingCreate
 from app.services.booking_pricing_policy import BookingPricingPolicy
-from app.services.email_service import BookingEmailContext
+from app.services.email_service import BookingEmailContext, send_booking_received
 
 
 class BookingFlow(Protocol):
@@ -36,11 +35,9 @@ class BookingFlowBase:
         self,
         db: AsyncSession,
         pricing: BookingPricingPolicy,
-        notifier: BookingNotifier,
     ) -> None:
         self.db = db
         self.pricing = pricing
-        self.notifier = notifier
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
         sanatorium = await self.db.get(Sanatorium, sanatorium_id)
@@ -111,12 +108,13 @@ class BookingFlowBase:
                 )
             row.units_booked += rooms_count
 
+    @staticmethod
     def _send_received_email(
-        self, booking: Booking, user: User, sanatorium_name: str
+        booking: Booking, user: User, sanatorium_name: str
     ) -> None:
         if not user.email:
             return
-        self.notifier.booking_received(
+        send_booking_received(
             to=user.email,
             ctx=BookingEmailContext(
                 booking_code=booking.code,

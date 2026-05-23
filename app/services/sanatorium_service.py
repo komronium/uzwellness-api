@@ -107,7 +107,7 @@ class SanatoriumService:
         data = payload.model_dump(exclude_unset=True)
 
         assert_super_admin_only_fields(
-            data, actor, allowed_fields=SANATORIUM_SUPER_ADMIN_ONLY_FIELDS
+            data, actor, restricted_fields=SANATORIUM_SUPER_ADMIN_ONLY_FIELDS
         )
 
         amenity_ids = data.pop("amenity_ids", None)

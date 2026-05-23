@@ -1,8 +1,10 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, not_found
+from app.core.database import get_db
 from app.core.pagination import Pagination
 from app.core.rate_limit import booking_rate_limit
 from app.models.booking import Booking
@@ -14,10 +16,7 @@ from app.schemas.booking import (
     BookingRead,
     InvoiceRead,
 )
-from app.services.booking_invoice import (
-    BookingInvoiceBuilder,
-    get_booking_invoice_builder,
-)
+from app.services.booking_invoice import build_invoice
 from app.services.booking_service import BookingService, get_booking_service
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
@@ -87,12 +86,12 @@ async def get_booking_invoice(
     booking_id: uuid.UUID,
     current_user: CurrentUser,
     bookings: BookingService = Depends(get_booking_service),
-    invoices: BookingInvoiceBuilder = Depends(get_booking_invoice_builder),
+    db: AsyncSession = Depends(get_db),
 ) -> InvoiceRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
-    data = await invoices.build(booking)
+    data = await build_invoice(db, booking)
     return InvoiceRead(**data)
 
 
