@@ -34,8 +34,6 @@ LargePagination = Annotated[PaginationParams, Depends(large_pagination_params)]
 async def paginated(
     db: AsyncSession, stmt: Select, *, limit: int, offset: int
 ) -> tuple[Sequence[Any], int]:
-    total = (
-        await db.execute(select(func.count()).select_from(stmt.subquery()))
-    ).scalar_one()
-    rows = (await db.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    return rows, total
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = (await db.scalars(stmt.limit(limit).offset(offset))).all()
+    return rows, total or 0

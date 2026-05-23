@@ -18,9 +18,7 @@ async def assert_fk(
 ) -> None:
     if value is None:
         return
-    found = (
-        await db.execute(select(model.id).where(model.id == value))
-    ).scalar_one_or_none()
+    found = await db.scalar(select(model.id).where(model.id == value))
     if found is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

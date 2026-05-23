@@ -83,17 +83,17 @@ class BookingService:
         base = select(Booking)
         for clause in filters:
             base = base.where(clause)
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
+        total = await self.db.scalar(
+            select(func.count()).select_from(base.subquery())
+        )
         stmt = (
             base.options(*_LOAD_OPTIONS)
             .order_by(Booking.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        rows = (await self.db.scalars(stmt)).all()
+        return rows, total or 0
 
     async def get_visible(self, booking_id: uuid.UUID, user: User) -> Booking | None:
         stmt = (
@@ -112,19 +112,17 @@ class BookingService:
             booking.booking_type in (BookingType.ROOM, BookingType.PACKAGE)
             and booking.room_id is not None
         ):
-            avail_rows = list(
-                (
-                    await self.db.execute(
-                        select(RoomAvailability)
-                        .where(
-                            RoomAvailability.room_id == booking.room_id,
-                            RoomAvailability.date >= booking.check_in,
-                            RoomAvailability.date < booking.check_out,
-                        )
-                        .with_for_update()
+            avail_rows = (
+                await self.db.scalars(
+                    select(RoomAvailability)
+                    .where(
+                        RoomAvailability.room_id == booking.room_id,
+                        RoomAvailability.date >= booking.check_in,
+                        RoomAvailability.date < booking.check_out,
                     )
-                ).scalars()
-            )
+                    .with_for_update()
+                )
+            ).all()
             for row in avail_rows:
                 row.units_booked = max(row.units_booked - booking.rooms_count, 0)
 
@@ -226,13 +224,11 @@ class BookingService:
         return admin_id == user.id
 
     async def _mark_payments_for_refund(self, booking_id: uuid.UUID) -> None:
-        payments = list(
-            (
-                await self.db.execute(
-                    select(Payment).where(Payment.booking_id == booking_id)
-                )
-            ).scalars()
-        )
+        payments = (
+            await self.db.scalars(
+                select(Payment).where(Payment.booking_id == booking_id)
+            )
+        ).all()
         for p in payments:
             if p.status == PaymentStatus.PAID:
                 p.status = PaymentStatus.REFUND_PENDING

@@ -255,8 +255,9 @@ class SanatoriumService:
                 )
                 base = base.where(Sanatorium.id.in_(sub))
 
-        total_stmt = select(func.count()).select_from(base.subquery())
-        total = (await self.db.execute(total_stmt)).scalar_one()
+        total = await self.db.scalar(
+            select(func.count()).select_from(base.subquery())
+        )
 
         stmt = (
             base.options(
@@ -267,8 +268,8 @@ class SanatoriumService:
             .limit(limit)
             .offset(offset)
         )
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        rows = (await self.db.scalars(stmt)).all()
+        return rows, total or 0
 
     async def _reload_required(self, sanatorium_id: uuid.UUID) -> Sanatorium:
         result = await self._reload(sanatorium_id)
@@ -290,10 +291,8 @@ class SanatoriumService:
         if not amenity_ids:
             return []
         rows = (
-            (await self.db.execute(select(Amenity).where(Amenity.id.in_(amenity_ids))))
-            .scalars()
-            .all()
-        )
+            await self.db.scalars(select(Amenity).where(Amenity.id.in_(amenity_ids)))
+        ).all()
         if len(rows) != len(amenity_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

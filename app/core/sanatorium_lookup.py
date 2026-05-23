@@ -17,24 +17,20 @@ async def sanatorium_name_for_booking(db: AsyncSession, booking: Booking) -> str
     """
     name_dict: dict | None = None
     if booking.room_id is not None:
-        name_dict = (
-            await db.execute(
-                select(Sanatorium.name)
-                .join(Room, Room.sanatorium_id == Sanatorium.id)
-                .where(Room.id == booking.room_id)
-            )
-        ).scalar_one_or_none()
+        name_dict = await db.scalar(
+            select(Sanatorium.name)
+            .join(Room, Room.sanatorium_id == Sanatorium.id)
+            .where(Room.id == booking.room_id)
+        )
     elif booking.program_id is not None:
-        name_dict = (
-            await db.execute(
-                select(Sanatorium.name)
-                .join(
-                    TreatmentProgram,
-                    TreatmentProgram.sanatorium_id == Sanatorium.id,
-                )
-                .where(TreatmentProgram.id == booking.program_id)
+        name_dict = await db.scalar(
+            select(Sanatorium.name)
+            .join(
+                TreatmentProgram,
+                TreatmentProgram.sanatorium_id == Sanatorium.id,
             )
-        ).scalar_one_or_none()
+            .where(TreatmentProgram.id == booking.program_id)
+        )
     elif booking.package_id is not None:
         row = (
             await db.execute(

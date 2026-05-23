@@ -38,26 +38,21 @@ async def get_availability(
 ) -> dict:
     first, last = _parse_month(month)
 
-    sanatorium = (
-        await db.execute(
-            select(Sanatorium).where(
-                Sanatorium.id == sanatorium_id,
-                Sanatorium.status == SanatoriumStatus.APPROVED,
-            )
+    sanatorium = await db.scalar(
+        select(Sanatorium).where(
+            Sanatorium.id == sanatorium_id,
+            Sanatorium.status == SanatoriumStatus.APPROVED,
         )
-    ).scalar_one_or_none()
+    )
     if sanatorium is None:
         raise not_found("Sanatorium not found")
 
-    # Total inventory across active rooms of the sanatorium.
-    total_inventory = (
-        await db.execute(
-            select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
-                Room.sanatorium_id == sanatorium_id,
-                Room.is_active.is_(True),
-            )
+    total_inventory = await db.scalar(
+        select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
+            Room.sanatorium_id == sanatorium_id,
+            Room.is_active.is_(True),
         )
-    ).scalar_one()
+    )
 
     # Per-day blocked + booked across active rooms.
     stmt = (

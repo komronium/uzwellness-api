@@ -28,37 +28,31 @@ class AdminService:
 
         active_status = Booking.status != BookingStatus.CANCELLED
 
-        total_bookings = (
-            await self.db.execute(select(func.count(Booking.id)).where(active_status))
-        ).scalar_one()
-        bookings_this_month = (
-            await self.db.execute(
-                select(func.count(Booking.id)).where(
-                    active_status, Booking.created_at >= month_start
-                )
+        total_bookings = await self.db.scalar(
+            select(func.count(Booking.id)).where(active_status)
+        )
+        bookings_this_month = await self.db.scalar(
+            select(func.count(Booking.id)).where(
+                active_status, Booking.created_at >= month_start
             )
-        ).scalar_one()
+        )
 
         total_revenue_usd = await self._revenue_usd(rate, since=None)
         revenue_this_month_usd = await self._revenue_usd(rate, since=month_start)
 
-        total_users = (await self.db.execute(select(func.count(User.id)))).scalar_one()
-        new_users_this_month = (
-            await self.db.execute(
-                select(func.count(User.id)).where(User.created_at >= month_start)
-            )
-        ).scalar_one()
+        total_users = await self.db.scalar(select(func.count(User.id)))
+        new_users_this_month = await self.db.scalar(
+            select(func.count(User.id)).where(User.created_at >= month_start)
+        )
 
-        total_sanatoriums = (
-            await self.db.execute(select(func.count(Sanatorium.id)))
-        ).scalar_one()
-        pending_sanatoriums = (
-            await self.db.execute(
-                select(func.count(Sanatorium.id)).where(
-                    Sanatorium.status == SanatoriumStatus.PENDING
-                )
+        total_sanatoriums = await self.db.scalar(
+            select(func.count(Sanatorium.id))
+        )
+        pending_sanatoriums = await self.db.scalar(
+            select(func.count(Sanatorium.id)).where(
+                Sanatorium.status == SanatoriumStatus.PENDING
             )
-        ).scalar_one()
+        )
 
         top_sanatoriums = await self._top_sanatoriums(rate, limit=5)
         monthly_revenue = await self._monthly_revenue(rate)
@@ -95,7 +89,7 @@ class AdminService:
         )
         if since is not None:
             stmt = stmt.where(Booking.created_at >= since)
-        value = (await self.db.execute(stmt)).scalar_one()
+        value = await self.db.scalar(stmt) or 0
         return Decimal(value).quantize(Decimal("0.01"))
 
     async def _top_sanatoriums(self, rate: Decimal, *, limit: int) -> list[dict]:

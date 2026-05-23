@@ -76,16 +76,14 @@ class BookingPricingPolicy:
         if not sanatorium.agent_discount_tiers:
             return _ZERO
         year_start = datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC)
-        count = (
-            await self.db.execute(
-                select(func.count(Booking.id)).where(
-                    Booking.user_id == user.id,
-                    Booking.is_b2b.is_(True),
-                    Booking.status != BookingStatus.CANCELLED,
-                    Booking.created_at >= year_start,
-                )
+        count = await self.db.scalar(
+            select(func.count(Booking.id)).where(
+                Booking.user_id == user.id,
+                Booking.is_b2b.is_(True),
+                Booking.status != BookingStatus.CANCELLED,
+                Booking.created_at >= year_start,
             )
-        ).scalar_one()
+        )
         return best_tier_discount_percent(
             sanatorium.agent_discount_tiers, int(count or 0)
         )

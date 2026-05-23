@@ -162,18 +162,14 @@ class RoomService:
         all_dates = date_range(payload.date_from, payload.date_to)
         existing = {
             row.date: row
-            for row in (
-                await self.db.execute(
-                    select(RoomAvailability)
-                    .where(
-                        RoomAvailability.room_id == room.id,
-                        RoomAvailability.date.in_(all_dates),
-                    )
-                    .with_for_update()
+            for row in await self.db.scalars(
+                select(RoomAvailability)
+                .where(
+                    RoomAvailability.room_id == room.id,
+                    RoomAvailability.date.in_(all_dates),
                 )
+                .with_for_update()
             )
-            .scalars()
-            .all()
         }
 
         if payload.units_blocked > room.inventory_count:
@@ -298,17 +294,13 @@ class RoomService:
         """Return per-day view for `[date_from, date_to)`, filling missing dates."""
         rows = {
             row.date: row
-            for row in (
-                await self.db.execute(
-                    select(RoomAvailability).where(
-                        RoomAvailability.room_id == room.id,
-                        RoomAvailability.date >= date_from,
-                        RoomAvailability.date < date_to,
-                    )
+            for row in await self.db.scalars(
+                select(RoomAvailability).where(
+                    RoomAvailability.room_id == room.id,
+                    RoomAvailability.date >= date_from,
+                    RoomAvailability.date < date_to,
                 )
             )
-            .scalars()
-            .all()
         }
         result: list[RoomAvailabilityView] = []
         for d in date_range(date_from, date_to):
@@ -362,7 +354,7 @@ class RoomService:
         )
         if sanatorium_id is not None:
             stmt = stmt.where(Room.sanatorium_id == sanatorium_id)
-        rooms = list((await self.db.execute(stmt)).scalars().all())
+        rooms = list((await self.db.scalars(stmt)).all())
         if not rooms:
             return []
 
@@ -448,14 +440,12 @@ class RoomService:
         # currency invariant (enforced at package create/update time). Reject
         # the change here and force the admin to either reprice packages or
         # unlink them first.
-        mismatched = (
-            await self.db.execute(
-                select(func.count(Package.id)).where(
-                    Package.room_id == room_id,
-                    Package.currency != new_currency,
-                )
+        mismatched = await self.db.scalar(
+            select(func.count(Package.id)).where(
+                Package.room_id == room_id,
+                Package.currency != new_currency,
             )
-        ).scalar_one()
+        )
         if mismatched:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

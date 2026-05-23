@@ -37,16 +37,16 @@ class ReviewService:
         elif visible_only:
             base = base.where(SanatoriumReview.is_visible.is_(True))
 
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
+        total = await self.db.scalar(
+            select(func.count()).select_from(base.subquery())
+        )
         stmt = (
             base.order_by(SanatoriumReview.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        rows = (await self.db.scalars(stmt)).all()
+        return rows, total or 0
 
     async def get_by_id(self, review_id: uuid.UUID) -> SanatoriumReview | None:
         return await self.db.get(SanatoriumReview, review_id)

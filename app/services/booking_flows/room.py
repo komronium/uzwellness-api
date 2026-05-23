@@ -191,16 +191,14 @@ class RoomBookingFlow:
             )
         existing = {
             row.date: row
-            for row in (
-                await self.db.execute(
-                    select(RoomAvailability)
-                    .where(
-                        RoomAvailability.room_id == room.id,
-                        RoomAvailability.date.in_(dates),
-                    )
-                    .with_for_update()
+            for row in await self.db.scalars(
+                select(RoomAvailability)
+                .where(
+                    RoomAvailability.room_id == room.id,
+                    RoomAvailability.date.in_(dates),
                 )
-            ).scalars()
+                .with_for_update()
+            )
         }
         for d in dates:
             row = existing.get(d)
@@ -293,7 +291,7 @@ class RoomBookingFlow:
         return records
 
     async def _load(self, booking_id) -> Booking:
-        stmt = (
+        return await self.db.scalar(
             select(Booking)
             .options(
                 selectinload(Booking.extra_beds),
@@ -302,7 +300,6 @@ class RoomBookingFlow:
             )
             .where(Booking.id == booking_id)
         )
-        return (await self.db.execute(stmt)).scalar_one()
 
     async def _send_received_email(
         self, booking: Booking, user: User, sanatorium_name: str

@@ -48,26 +48,22 @@ class B2BService:
             )
         ).one()
 
-        total_paid = (
-            await self.db.execute(
-                select(
-                    func.coalesce(
-                        func.sum(Booking.final_price).filter(owned, not_cancelled), 0
-                    )
+        total_paid = await self.db.scalar(
+            select(
+                func.coalesce(
+                    func.sum(Booking.final_price).filter(owned, not_cancelled), 0
                 )
             )
-        ).scalar_one()
+        )
 
-        current_year_bookings = (
-            await self.db.execute(
-                select(func.count(Booking.id)).where(
-                    owned,
-                    Booking.is_b2b.is_(True),
-                    not_cancelled,
-                    Booking.created_at >= year_start,
-                )
+        current_year_bookings = await self.db.scalar(
+            select(func.count(Booking.id)).where(
+                owned,
+                Booking.is_b2b.is_(True),
+                not_cancelled,
+                Booking.created_at >= year_start,
             )
-        ).scalar_one()
+        )
 
         return {
             "total_bookings": total_bookings or 0,
@@ -86,17 +82,15 @@ class B2BService:
             )
 
         year_start = _year_start(datetime.now(UTC))
-        count = (
-            await self.db.execute(
-                select(func.count(Booking.id)).where(
-                    Booking.user_id == agent.id,
-                    Booking.is_b2b.is_(True),
-                    Booking.status != BookingStatus.CANCELLED,
-                    Booking.created_at >= year_start,
-                    self._booking_belongs_to_sanatorium(sanatorium_id),
-                )
+        count = await self.db.scalar(
+            select(func.count(Booking.id)).where(
+                Booking.user_id == agent.id,
+                Booking.is_b2b.is_(True),
+                Booking.status != BookingStatus.CANCELLED,
+                Booking.created_at >= year_start,
+                self._booking_belongs_to_sanatorium(sanatorium_id),
             )
-        ).scalar_one()
+        )
         current = int(count or 0)
 
         tiers = sanatorium.agent_discount_tiers or []
@@ -112,23 +106,19 @@ class B2BService:
     ) -> tuple[list[dict], int]:
         owned = Booking.user_id == agent.id
 
-        total = (
-            await self.db.execute(select(func.count(Booking.id)).where(owned))
-        ).scalar_one()
+        total = await self.db.scalar(
+            select(func.count(Booking.id)).where(owned)
+        )
 
         rows = (
-            (
-                await self.db.execute(
-                    select(Booking)
-                    .where(owned)
-                    .order_by(Booking.created_at.desc())
-                    .limit(limit)
-                    .offset(offset)
-                )
+            await self.db.scalars(
+                select(Booking)
+                .where(owned)
+                .order_by(Booking.created_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
 
         items: list[dict] = []
         for booking in rows:

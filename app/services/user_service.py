@@ -83,12 +83,12 @@ class UserService:
         if role is not None:
             base = base.where(User.role == role)
 
-        total_stmt = select(func.count()).select_from(base.subquery())
-        total = (await self.db.execute(total_stmt)).scalar_one()
-
+        total = await self.db.scalar(
+            select(func.count()).select_from(base.subquery())
+        )
         stmt = base.order_by(User.created_at.desc()).limit(limit).offset(offset)
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return rows, total
+        rows = (await self.db.scalars(stmt)).all()
+        return rows, total or 0
 
     async def update(self, user: User, payload: UserUpdate) -> User:
         data = payload.model_dump(exclude_unset=True)
@@ -181,14 +181,10 @@ class UserService:
 
     async def _unassign_sanatoriums(self, user_id: uuid.UUID) -> None:
         rows = (
-            (
-                await self.db.execute(
-                    select(Sanatorium).where(Sanatorium.admin_user_id == user_id)
-                )
+            await self.db.scalars(
+                select(Sanatorium).where(Sanatorium.admin_user_id == user_id)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
         for s in rows:
             s.admin_user_id = None
 

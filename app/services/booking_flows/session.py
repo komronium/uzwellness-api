@@ -117,7 +117,7 @@ class SessionBookingFlow:
         return sanatorium
 
     async def _load(self, booking_id) -> Booking:
-        stmt = (
+        return await self.db.scalar(
             select(Booking)
             .options(
                 selectinload(Booking.extra_beds),
@@ -126,7 +126,6 @@ class SessionBookingFlow:
             )
             .where(Booking.id == booking_id)
         )
-        return (await self.db.execute(stmt)).scalar_one()
 
     async def _send_received_email(
         self, booking: Booking, user: User, sanatorium_name: str
