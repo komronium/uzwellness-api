@@ -1,31 +1,24 @@
 from __future__ import annotations
 
-import math
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.core.notifier import BookingNotifier
 from app.core.utils import date_range, pick_locale
-from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.package import Package
 from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
-from app.services.booking_pricing_policy import BookingPricingPolicy
-from app.services.email_service import BookingEmailContext
+from app.services.booking_flows.base import BookingFlowBase, rooms_needed_for
 
 _CENTS = Decimal("0.01")
 
 
-class PackageBookingFlow:
+class PackageBookingFlow(BookingFlowBase):
     """Package booking — the room is fixed at package-creation time.
 
     The customer just picks a package and a check-in date. The flow:
@@ -38,16 +31,6 @@ class PackageBookingFlow:
 
     booking_type = BookingType.PACKAGE
 
-    def __init__(
-        self,
-        db: AsyncSession,
-        pricing: BookingPricingPolicy,
-        notifier: BookingNotifier,
-    ) -> None:
-        self.db = db
-        self.pricing = pricing
-        self.notifier = notifier
-
     def matches(self, payload: BookingCreate) -> bool:
         return payload.package_id is not None
 
@@ -55,10 +38,8 @@ class PackageBookingFlow:
         package = await self._load_package(payload.package_id)
         sanatorium = await self._approved_sanatorium(package.sanatorium_id)
 
-        check_out = payload.check_out or (
-            payload.check_in + timedelta(days=package.duration_nights)
-        )
         expected_out = payload.check_in + timedelta(days=package.duration_nights)
+        check_out = payload.check_out or expected_out
         if check_out != expected_out:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,10 +96,8 @@ class PackageBookingFlow:
         )
         await self.db.commit()
 
-        await self._send_received_email(booking, user, pick_locale(sanatorium.name))
+        self._send_received_email(booking, user, pick_locale(sanatorium.name))
         return await self._load(booking.id)
-
-    # ── helpers ────────────────────────────────────────────────────────────
 
     async def _load_package(self, package_id) -> Package:
         package = await self.db.get(Package, package_id)
@@ -127,15 +106,6 @@ class PackageBookingFlow:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
             )
         return package
-
-    async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
-        if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sanatorium is not available for booking",
-            )
-        return sanatorium
 
     async def _lock_room(self, room_id) -> Room:
         room = await self.db.scalar(
@@ -155,7 +125,7 @@ class PackageBookingFlow:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Room has no capacity",
             )
-        rooms_count = math.ceil(guests / room.capacity)
+        rooms_count = rooms_needed_for(guests, room.capacity)
         if rooms_count > room.inventory_count:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -165,74 +135,3 @@ class PackageBookingFlow:
                 ),
             )
         return rooms_count
-
-    async def _reserve_units(
-        self, room: Room, dates: list, rooms_count: int
-    ) -> None:
-        if room.inventory_count < 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Room has no inventory",
-            )
-        existing = {
-            row.date: row
-            for row in await self.db.scalars(
-                select(RoomAvailability)
-                .where(
-                    RoomAvailability.room_id == room.id,
-                    RoomAvailability.date.in_(dates),
-                )
-                .with_for_update()
-            )
-        }
-        for d in dates:
-            row = existing.get(d)
-            if row is None:
-                row = RoomAvailability(
-                    room_id=room.id,
-                    date=d,
-                    units_blocked=0,
-                    units_booked=rooms_count,
-                )
-                self.db.add(row)
-                continue
-            if (
-                row.units_blocked + row.units_booked + rooms_count
-                > room.inventory_count
-            ):
-                free = room.inventory_count - row.units_blocked - row.units_booked
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Only {max(free, 0)} unit(s) free on {d}, "
-                        f"need {rooms_count}"
-                    ),
-                )
-            row.units_booked += rooms_count
-
-    async def _load(self, booking_id) -> Booking:
-        return await self.db.scalar(
-            select(Booking)
-            .options(
-                selectinload(Booking.extra_beds),
-                selectinload(Booking.user),
-                selectinload(Booking.payments),
-            )
-            .where(Booking.id == booking_id)
-        )
-
-    async def _send_received_email(
-        self, booking: Booking, user: User, display_name: str
-    ) -> None:
-        if not user.email:
-            return
-        ctx = BookingEmailContext(
-            booking_code=booking.code,
-            sanatorium_name=display_name,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            guest_name=user.full_name or user.email,
-            total_price=booking.final_price,
-            currency=booking.currency,
-        )
-        self.notifier.booking_received(to=user.email, ctx=ctx)

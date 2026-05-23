@@ -3,36 +3,20 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.core.notifier import BookingNotifier
 from app.core.utils import pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.program import TreatmentProgram
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
-from app.services.booking_pricing_policy import BookingPricingPolicy
-from app.services.email_service import BookingEmailContext
+from app.services.booking_flows.base import BookingFlowBase
 
 _CENTS = Decimal("0.01")
 
 
-class SessionBookingFlow:
+class SessionBookingFlow(BookingFlowBase):
     booking_type = BookingType.SESSION
-
-    def __init__(
-        self,
-        db: AsyncSession,
-        pricing: BookingPricingPolicy,
-        notifier: BookingNotifier,
-    ) -> None:
-        self.db = db
-        self.pricing = pricing
-        self.notifier = notifier
 
     def matches(self, payload: BookingCreate) -> bool:
         return payload.program_id is not None
@@ -104,41 +88,5 @@ class SessionBookingFlow:
             )
         )
         await self.db.commit()
-        await self._send_received_email(booking, user, pick_locale(sanatorium.name))
+        self._send_received_email(booking, user, pick_locale(sanatorium.name))
         return await self._load(booking.id)
-
-    async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
-        if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sanatorium is not available for booking",
-            )
-        return sanatorium
-
-    async def _load(self, booking_id) -> Booking:
-        return await self.db.scalar(
-            select(Booking)
-            .options(
-                selectinload(Booking.extra_beds),
-                selectinload(Booking.user),
-                selectinload(Booking.payments),
-            )
-            .where(Booking.id == booking_id)
-        )
-
-    async def _send_received_email(
-        self, booking: Booking, user: User, sanatorium_name: str
-    ) -> None:
-        if not user.email:
-            return
-        ctx = BookingEmailContext(
-            booking_code=booking.code,
-            sanatorium_name=sanatorium_name,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            guest_name=user.full_name or user.email,
-            total_price=booking.final_price,
-            currency=booking.currency,
-        )
-        self.notifier.booking_received(to=user.email, ctx=ctx)

@@ -1,56 +1,33 @@
 from __future__ import annotations
 
-import math
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.notifier import BookingNotifier
 from app.core.pricing import (
     calculate_stay_total,
     convert_to_usd,
     convert_to_uzs,
 )
 from app.core.utils import date_range, pick_locale
-from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
 from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
-from app.services.exchange_rate_service import USD_UZS
 from app.schemas.booking import BookingCreate
-from app.services.booking_pricing_policy import BookingPricingPolicy
-from app.services.email_service import BookingEmailContext
+from app.services.booking_flows.base import BookingFlowBase, rooms_needed_for
+from app.services.exchange_rate_service import USD_UZS
 
 _CENTS = Decimal("0.01")
 _UNFETCHED: object = object()
 
 
-def rooms_needed_for(guests: int, capacity: int) -> int:
-    """How many same-type rooms fit `guests`, given per-room `capacity`."""
-    if capacity < 1:
-        return 0
-    return math.ceil(guests / capacity)
-
-
-class RoomBookingFlow:
+class RoomBookingFlow(BookingFlowBase):
     booking_type = BookingType.ROOM
-
-    def __init__(
-        self,
-        db: AsyncSession,
-        pricing: BookingPricingPolicy,
-        notifier: BookingNotifier,
-    ) -> None:
-        self.db = db
-        self.pricing = pricing
-        self.notifier = notifier
 
     def matches(self, payload: BookingCreate) -> bool:
         return (
@@ -127,7 +104,7 @@ class RoomBookingFlow:
         )
         await self.db.commit()
 
-        await self._send_received_email(booking, user, pick_locale(sanatorium.name))
+        self._send_received_email(booking, user, pick_locale(sanatorium.name))
         return await self._load(booking.id)
 
     async def _lock_room(self, room_id) -> Room:
@@ -142,15 +119,6 @@ class RoomBookingFlow:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
             )
         return room
-
-    async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
-        if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sanatorium is not available for booking",
-            )
-        return sanatorium
 
     @staticmethod
     def _validate_and_compute_rooms(
@@ -176,54 +144,6 @@ class RoomBookingFlow:
                 ),
             )
         return rooms_count
-
-    async def _reserve_units(
-        self, room: Room, dates: list, rooms_count: int
-    ) -> None:
-        """Lazy-materialize rows and increment units_booked by `rooms_count`.
-
-        409 if any night has fewer than `rooms_count` free units.
-        """
-        if room.inventory_count < 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Room has no inventory",
-            )
-        existing = {
-            row.date: row
-            for row in await self.db.scalars(
-                select(RoomAvailability)
-                .where(
-                    RoomAvailability.room_id == room.id,
-                    RoomAvailability.date.in_(dates),
-                )
-                .with_for_update()
-            )
-        }
-        for d in dates:
-            row = existing.get(d)
-            if row is None:
-                row = RoomAvailability(
-                    room_id=room.id,
-                    date=d,
-                    units_blocked=0,
-                    units_booked=rooms_count,
-                )
-                self.db.add(row)
-                continue
-            if (
-                row.units_blocked + row.units_booked + rooms_count
-                > room.inventory_count
-            ):
-                free = room.inventory_count - row.units_blocked - row.units_booked
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Only {max(free, 0)} unit(s) free on {d}, "
-                        f"need {rooms_count}"
-                    ),
-                )
-            row.units_booked += rooms_count
 
     async def _build_extra_beds(
         self,
@@ -289,30 +209,3 @@ class RoomBookingFlow:
                 )
             )
         return records
-
-    async def _load(self, booking_id) -> Booking:
-        return await self.db.scalar(
-            select(Booking)
-            .options(
-                selectinload(Booking.extra_beds),
-                selectinload(Booking.user),
-                selectinload(Booking.payments),
-            )
-            .where(Booking.id == booking_id)
-        )
-
-    async def _send_received_email(
-        self, booking: Booking, user: User, sanatorium_name: str
-    ) -> None:
-        if not user.email:
-            return
-        ctx = BookingEmailContext(
-            booking_code=booking.code,
-            sanatorium_name=sanatorium_name,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            guest_name=user.full_name or user.email,
-            total_price=booking.final_price,
-            currency=booking.currency,
-        )
-        self.notifier.booking_received(to=user.email, ctx=ctx)
