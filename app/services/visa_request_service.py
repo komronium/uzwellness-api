@@ -6,11 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.booking_attachment import resolve_owner_for_booking
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.ids import uuid7
 from app.core.pagination import paginated
-from app.core.storage import MIME_EXTENSIONS, StorageBackend
+from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.models.user import User, UserRole
 from app.models.visa_request import VisaRequest, VisaStatus
 from app.schemas.visa_request import VisaRequestCreate, VisaStatusUpdate
@@ -147,9 +146,7 @@ class VisaRequestService:
 
     @staticmethod
     async def _delete_url(url: str, storage: StorageBackend) -> None:
-        prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
-        key = url[len(prefix):] if url.startswith(prefix) else url
-        await storage.delete(key=key)
+        await storage.delete(key=url_to_key(url))
 
 
 def get_visa_request_service(

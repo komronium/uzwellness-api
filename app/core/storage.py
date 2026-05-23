@@ -13,6 +13,17 @@ class StorageBackend(Protocol):
     async def delete(self, *, key: str) -> None: ...
 
 
+def url_to_key(url: str) -> str:
+    """Convert a saved file URL back to its storage key.
+
+    Storage backends save with `key` and return a URL like
+    `{prefix}/{key}`. We need the key back to delete. If the URL doesn't
+    start with our prefix (e.g. an externally-hosted file), return it as-is.
+    """
+    prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
+    return url[len(prefix):] if url.startswith(prefix) else url
+
+
 def _validate_key(key: str) -> None:
     if not key:
         raise HTTPException(

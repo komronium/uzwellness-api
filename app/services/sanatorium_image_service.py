@@ -4,10 +4,9 @@ from fastapi import Depends
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.ids import uuid7
-from app.core.storage import MIME_EXTENSIONS, StorageBackend
+from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.models.sanatorium import Sanatorium, SanatoriumImage
 
 
@@ -72,9 +71,7 @@ class SanatoriumImageService:
         return image
 
     async def delete(self, image: SanatoriumImage, storage: StorageBackend) -> None:
-        prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
-        key = image.url[len(prefix) :] if image.url.startswith(prefix) else image.url
-        await storage.delete(key=key)
+        await storage.delete(key=url_to_key(image.url))
         await self.db.delete(image)
         await self.db.commit()
 
