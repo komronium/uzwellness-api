@@ -13,7 +13,7 @@ from app.models.package import Package
 from app.models.room import Room
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
-from app.services.booking_flows.base import BookingFlowBase, rooms_needed_for
+from app.services.booking_flows.base import BookingFlowBase, rooms_count_for_guests
 
 _CENTS = Decimal("0.01")
 
@@ -51,7 +51,7 @@ class PackageBookingFlow(BookingFlowBase):
         all_dates = list(date_range(payload.check_in, check_out))
 
         room = await self._lock_room(package.room_id)
-        rooms_count = self._validate_and_compute_rooms(room, payload.guests)
+        rooms_count = rooms_count_for_guests(room, payload.guests)
         await self._reserve_units(room, all_dates, rooms_count)
 
         is_b2b = user.role == UserRole.AGENT
@@ -118,20 +118,3 @@ class PackageBookingFlow(BookingFlowBase):
             )
         return room
 
-    @staticmethod
-    def _validate_and_compute_rooms(room: Room, guests: int) -> int:
-        if room.capacity < 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Room has no capacity",
-            )
-        rooms_count = rooms_needed_for(guests, room.capacity)
-        if rooms_count > room.inventory_count:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Need {rooms_count} room(s) for {guests} guest(s) "
-                    f"but only {room.inventory_count} exist"
-                ),
-            )
-        return rooms_count

@@ -133,3 +133,22 @@ def rooms_needed_for(guests: int, capacity: int) -> int:
     if capacity < 1:
         return 0
     return math.ceil(guests / capacity)
+
+
+def rooms_count_for_guests(room: Room, guests: int) -> int:
+    """Validate room has usable capacity and return how many units `guests` need."""
+    if room.capacity < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Room has no capacity",
+        )
+    rooms_count = rooms_needed_for(guests, room.capacity)
+    if rooms_count > room.inventory_count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Need {rooms_count} room(s) for {guests} guest(s) "
+                f"but only {room.inventory_count} exist"
+            ),
+        )
+    return rooms_count

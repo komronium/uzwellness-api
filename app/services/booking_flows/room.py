@@ -19,7 +19,7 @@ from app.models.notification import Notification
 from app.models.room import Room
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
-from app.services.booking_flows.base import BookingFlowBase, rooms_needed_for
+from app.services.booking_flows.base import BookingFlowBase, rooms_count_for_guests
 from app.services.exchange_rate_service import USD_UZS
 
 _CENTS = Decimal("0.01")
@@ -129,21 +129,7 @@ class RoomBookingFlow(BookingFlowBase):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Minimum stay is {room.min_nights} night(s)",
             )
-        if room.capacity < 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Room has no capacity",
-            )
-        rooms_count = rooms_needed_for(payload.guests, room.capacity)
-        if rooms_count > room.inventory_count:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Need {rooms_count} room(s) for {payload.guests} guest(s) "
-                    f"but only {room.inventory_count} exist"
-                ),
-            )
-        return rooms_count
+        return rooms_count_for_guests(room, payload.guests)
 
     async def _build_extra_beds(
         self,
