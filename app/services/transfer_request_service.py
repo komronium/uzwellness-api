@@ -5,9 +5,9 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.booking_attachment import resolve_owner_for_booking
 from app.core.database import get_db
 from app.core.pagination import paginated
-from app.models.booking import Booking
 from app.models.transfer_request import TransferRequest, TransferStatus
 from app.models.user import User, UserRole
 from app.schemas.transfer_request import (
@@ -57,31 +57,12 @@ class TransferRequestService:
     async def create(
         self, payload: TransferRequestCreate, user: User
     ) -> TransferRequest:
-        # When super_admin creates a transfer on behalf of a customer
-        # (via booking_id), the resulting row's user_id should be the
-        # booking's owner — otherwise the customer can't see it in their
-        # "my transfers" list. For non-super_admin actors, the booking
-        # owner must already match the actor.
-        owner_id = user.id
-        if payload.booking_id is not None:
-            booking = await self.db.get(Booking, payload.booking_id)
-            if booking is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Booking not found",
-                )
-            if user.role != UserRole.SUPER_ADMIN:
-                if booking.user_id != user.id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            "Cannot attach a transfer request to someone else's "
-                            "booking"
-                        ),
-                    )
-            elif booking.user_id is not None:
-                owner_id = booking.user_id
-
+        owner_id = await resolve_owner_for_booking(
+            self.db,
+            booking_id=payload.booking_id,
+            actor=user,
+            resource_label="transfer request",
+        )
         transfer = TransferRequest(
             user_id=owner_id,
             booking_id=payload.booking_id,

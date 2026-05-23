@@ -1,16 +1,16 @@
 import uuid
 from collections.abc import Sequence
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.booking_attachment import resolve_owner_for_booking
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.ids import uuid7
 from app.core.pagination import paginated
 from app.core.storage import MIME_EXTENSIONS, StorageBackend
-from app.models.booking import Booking
 from app.models.user import User, UserRole
 from app.models.visa_request import VisaRequest, VisaStatus
 from app.schemas.visa_request import VisaRequestCreate, VisaStatusUpdate
@@ -51,26 +51,12 @@ class VisaRequestService:
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def create(self, payload: VisaRequestCreate, user: User) -> VisaRequest:
-        # See transfer_request_service.create for the same pattern: when
-        # super_admin creates on behalf of a booking's customer, the
-        # resulting visa row should belong to the customer, not the actor.
-        owner_id = user.id
-        if payload.booking_id is not None:
-            booking = await self.db.get(Booking, payload.booking_id)
-            if booking is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Booking not found",
-                )
-            if user.role != UserRole.SUPER_ADMIN:
-                if booking.user_id != user.id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Cannot attach a visa request to someone else's booking",
-                    )
-            elif booking.user_id is not None:
-                owner_id = booking.user_id
-
+        owner_id = await resolve_owner_for_booking(
+            self.db,
+            booking_id=payload.booking_id,
+            actor=user,
+            resource_label="visa request",
+        )
         visa = VisaRequest(
             user_id=owner_id,
             booking_id=payload.booking_id,
