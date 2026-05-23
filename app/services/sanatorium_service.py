@@ -295,9 +295,6 @@ _STATIC_SORT_CLAUSES = {
     "-created_at": Sanatorium.created_at.desc(),
 }
 
-SORT_FIELDS: tuple[str, ...] = ("name", "-name", *_STATIC_SORT_CLAUSES.keys())
-
-
 def _name_locale_expr(locale: str):
     """Coalesce name across locales, preferring the request locale.
 
