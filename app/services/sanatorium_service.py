@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.db_utils import assert_fk
+from app.core.db_utils import assert_fk, fetch_by_ids
 from app.core.permissions import (
     SANATORIUM_SUPER_ADMIN_ONLY_FIELDS,
     assert_super_admin_only_fields,
@@ -58,7 +58,9 @@ class SanatoriumService:
 
         await assert_fk(self.db, Region, payload.region_id, "region_id")
         await assert_fk(self.db, Destination, payload.destination_id, "destination_id")
-        amenities = await self._fetch_amenities(payload.amenity_ids)
+        amenities = await fetch_by_ids(
+            self.db, Amenity, payload.amenity_ids, label="amenity"
+        )
 
         sanatorium = Sanatorium(
             name=name_dict,
@@ -154,7 +156,9 @@ class SanatoriumService:
             ]
 
         if amenity_ids is not None:
-            sanatorium.amenities = await self._fetch_amenities(amenity_ids)
+            sanatorium.amenities = await fetch_by_ids(
+                self.db, Amenity, amenity_ids, label="amenity"
+            )
 
         await self.db.commit()
         return await self._reload_required(sanatorium.id)
@@ -277,18 +281,6 @@ class SanatoriumService:
             )
         )
 
-    async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
-        if not amenity_ids:
-            return []
-        rows = (
-            await self.db.scalars(select(Amenity).where(Amenity.id.in_(amenity_ids)))
-        ).all()
-        if len(rows) != len(amenity_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more amenity IDs not found",
-            )
-        return list(rows)
 
 
 _MISSING: object = object()

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.db_utils import fetch_by_ids
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
 from app.core.utils import merge_translation_fields
@@ -54,7 +55,9 @@ class ProgramService:
                 detail="price and currency must be set together",
             )
 
-        amenities = await self._fetch_amenities(payload.amenity_ids)
+        amenities = await fetch_by_ids(
+            self.db, Amenity, payload.amenity_ids, label="amenity"
+        )
 
         program = TreatmentProgram(
             sanatorium_id=payload.sanatorium_id,
@@ -109,7 +112,9 @@ class ProgramService:
         for field, value in data.items():
             setattr(program, field, value)
         if amenity_ids is not None:
-            program.amenities = await self._fetch_amenities(amenity_ids)
+            program.amenities = await fetch_by_ids(
+                self.db, Amenity, amenity_ids, label="amenity"
+            )
 
         await self.db.commit()
         return await self.get_by_id(program.id)  # type: ignore[return-value]
@@ -120,19 +125,6 @@ class ProgramService:
         )
         await self.db.delete(program)
         await self.db.commit()
-
-    async def _fetch_amenities(self, amenity_ids: list[uuid.UUID]) -> list[Amenity]:
-        if not amenity_ids:
-            return []
-        rows = (
-            await self.db.scalars(select(Amenity).where(Amenity.id.in_(amenity_ids)))
-        ).all()
-        if len(rows) != len(amenity_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more amenity IDs not found",
-            )
-        return list(rows)
 
     @staticmethod
     def _validate_nights(min_nights: int | None, max_nights: int | None) -> None:
