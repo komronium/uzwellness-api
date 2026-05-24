@@ -106,9 +106,7 @@ class B2BService:
     ) -> tuple[list[dict], int]:
         owned = Booking.user_id == agent.id
 
-        total = await self.db.scalar(
-            select(func.count(Booking.id)).where(owned)
-        )
+        total = await self.db.scalar(select(func.count(Booking.id)).where(owned))
 
         rows = (
             await self.db.scalars(

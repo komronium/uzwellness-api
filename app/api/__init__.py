@@ -11,9 +11,11 @@ from app.api.routers import (
     exchange_rates,
     extra_beds,
     health,
+    meta,
     packages,
     payments,
     programs,
+    rate_plans,
     regions,
     reviews,
     rooms,
@@ -25,6 +27,7 @@ from app.api.routers import (
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(meta.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(sanatoriums.router)
@@ -33,6 +36,7 @@ api_router.include_router(exchange_rates.router)
 api_router.include_router(bookings.router)
 api_router.include_router(amenities.router)
 api_router.include_router(programs.router)
+api_router.include_router(rate_plans.router)
 api_router.include_router(packages.router)
 api_router.include_router(extra_beds.router)
 api_router.include_router(reviews.router)

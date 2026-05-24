@@ -1,4 +1,4 @@
-from app.models.amenity import Amenity
+from app.models.amenity import Amenity, AmenityCost, SanatoriumAmenity
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.destination import Destination
@@ -8,10 +8,16 @@ from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.program import TreatmentProgram
+from app.models.rate_plan import (
+    BoardType,
+    ConfirmationType,
+    PaymentTiming,
+    RatePlan,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.region import Region
 from app.models.review import SanatoriumReview
-from app.models.room import Room, RoomPricePeriod
+from app.models.room import Room, RoomImage, RoomPricePeriod, RoomView
 from app.models.sanatorium import (
     PropertyType,
     Sanatorium,
@@ -30,10 +36,13 @@ from app.models.visa_request import VisaPurpose, VisaRequest, VisaStatus
 
 __all__ = [
     "Amenity",
+    "AmenityCost",
+    "BoardType",
     "Booking",
     "BookingExtraBed",
     "BookingStatus",
     "BookingType",
+    "ConfirmationType",
     "Destination",
     "ExchangeRate",
     "ExtraBedConfig",
@@ -44,13 +53,18 @@ __all__ = [
     "Payment",
     "PaymentMethod",
     "PaymentStatus",
+    "PaymentTiming",
     "PropertyType",
+    "RatePlan",
     "RefreshToken",
     "Region",
     "Room",
     "RoomAvailability",
+    "RoomImage",
     "RoomPricePeriod",
+    "RoomView",
     "Sanatorium",
+    "SanatoriumAmenity",
     "SanatoriumImage",
     "SanatoriumReview",
     "SanatoriumStatus",

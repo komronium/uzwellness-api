@@ -17,9 +17,7 @@ class UserService:
         self.db = db
 
     async def get_by_email(self, email: str) -> User | None:
-        return await self.db.scalar(
-            select(User).where(User.email == email.lower())
-        )
+        return await self.db.scalar(select(User).where(User.email == email.lower()))
 
     async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         return await self.db.get(User, user_id)
@@ -83,9 +81,7 @@ class UserService:
         if role is not None:
             base = base.where(User.role == role)
 
-        total = await self.db.scalar(
-            select(func.count()).select_from(base.subquery())
-        )
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
         stmt = base.order_by(User.created_at.desc()).limit(limit).offset(offset)
         rows = (await self.db.scalars(stmt)).all()
         return rows, total or 0

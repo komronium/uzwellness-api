@@ -24,10 +24,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.ids import uuid7
-from app.models.amenity import sanatorium_amenities
 
 if TYPE_CHECKING:
-    from app.models.amenity import Amenity
+    from app.models.amenity import SanatoriumAmenity
     from app.models.destination import Destination
     from app.models.region import Region
     from app.models.review import SanatoriumReview
@@ -87,6 +86,12 @@ class Sanatorium(Base):
     check_in_time: Mapped[time | None] = mapped_column(Time)
     check_out_time: Mapped[time | None] = mapped_column(Time)
 
+    pets_allowed: Mapped[bool | None] = mapped_column(Boolean)
+    service_animals_allowed: Mapped[bool | None] = mapped_column(Boolean)
+    min_checkin_age: Mapped[int | None] = mapped_column(SmallInteger)
+    quiet_hours_from: Mapped[time | None] = mapped_column(Time)
+    quiet_hours_to: Mapped[time | None] = mapped_column(Time)
+
     payment_methods: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
@@ -124,6 +129,23 @@ class Sanatorium(Base):
     )
 
     treatment_focuses: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    year_opened: Mapped[int | None] = mapped_column(SmallInteger)
+    languages_spoken: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    highlights: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    surroundings: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    venues: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    meal_schedule: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     platform_commission_percent: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("0"), server_default="0"
@@ -175,8 +197,9 @@ class Sanatorium(Base):
         cascade="all, delete-orphan",
         order_by="SanatoriumImage.order",
     )
-    amenities: Mapped[list["Amenity"]] = relationship(
-        secondary=sanatorium_amenities, back_populates="sanatoriums"
+    amenity_links: Mapped[list["SanatoriumAmenity"]] = relationship(
+        back_populates="sanatorium",
+        cascade="all, delete-orphan",
     )
     reviews: Mapped[list["SanatoriumReview"]] = relationship(
         back_populates="sanatorium",

@@ -22,9 +22,7 @@ class TransferRequestService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_id(
-        self, transfer_id: uuid.UUID
-    ) -> TransferRequest | None:
+    async def get_by_id(self, transfer_id: uuid.UUID) -> TransferRequest | None:
         return await self.db.get(TransferRequest, transfer_id)
 
     async def get_visible(
@@ -102,13 +100,8 @@ class TransferRequestService:
         await self.db.refresh(transfer)
         return transfer
 
-    async def cancel(
-        self, transfer: TransferRequest, user: User
-    ) -> TransferRequest:
-        if (
-            user.role != UserRole.SUPER_ADMIN
-            and transfer.user_id != user.id
-        ):
+    async def cancel(self, transfer: TransferRequest, user: User) -> TransferRequest:
+        if user.role != UserRole.SUPER_ADMIN and transfer.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only cancel your own transfer requests",
@@ -117,8 +110,7 @@ class TransferRequestService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Transfer in status {transfer.status.value} cannot be "
-                    "cancelled"
+                    f"Transfer in status {transfer.status.value} cannot be cancelled"
                 ),
             )
         transfer.status = TransferStatus.CANCELLED

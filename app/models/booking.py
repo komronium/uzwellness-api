@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.ids import uuid7
+from app.models.rate_plan import BoardType, PaymentTiming
 
 if TYPE_CHECKING:
     from app.models.extra_bed import BookingExtraBed
@@ -71,6 +72,9 @@ class Booking(Base):
     )
     package_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("packages.id", ondelete="SET NULL"), index=True
+    )
+    rate_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("rate_plans.id", ondelete="SET NULL"), index=True
     )
 
     booking_type: Mapped["BookingType"] = mapped_column(
@@ -119,6 +123,31 @@ class Booking(Base):
     commission_percent_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     agent_discount_percent_snapshot: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2)
+    )
+
+    # Rate-plan terms frozen at booking time (room bookings only).
+    board: Mapped[BoardType | None] = mapped_column(
+        SQLEnum(
+            BoardType,
+            native_enum=False,
+            length=20,
+            values_callable=lambda e: [x.value for x in e],
+        )
+    )
+    refundable: Mapped[bool | None] = mapped_column(Boolean)
+    free_cancellation_days: Mapped[int | None] = mapped_column(Integer)
+    cancellation_penalty_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    cancellation_penalty_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    # Price before a time-boxed promo (strikethrough), when a promo applied.
+    original_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    promo_percent_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    payment_timing: Mapped[PaymentTiming | None] = mapped_column(
+        SQLEnum(
+            PaymentTiming,
+            native_enum=False,
+            length=20,
+            values_callable=lambda e: [x.value for x in e],
+        )
     )
 
     created_at: Mapped[datetime] = mapped_column(

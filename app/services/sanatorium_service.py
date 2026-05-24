@@ -16,7 +16,7 @@ from app.core.permissions import (
 from app.core.policies import SanatoriumPolicy
 from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
-from app.models.amenity import Amenity
+from app.models.amenity import Amenity, SanatoriumAmenity
 from app.models.destination import Destination
 from app.models.region import Region
 from app.models.sanatorium import (
@@ -58,9 +58,7 @@ class SanatoriumService:
 
         await assert_fk(self.db, Region, payload.region_id, "region_id")
         await assert_fk(self.db, Destination, payload.destination_id, "destination_id")
-        amenities = await fetch_by_ids(
-            self.db, Amenity, payload.amenity_ids, label="amenity"
-        )
+        amenity_links = await self._build_amenity_links(payload.amenities)
 
         sanatorium = Sanatorium(
             name=name_dict,
@@ -76,6 +74,11 @@ class SanatoriumService:
             website=payload.website,
             check_in_time=payload.check_in_time,
             check_out_time=payload.check_out_time,
+            pets_allowed=payload.pets_allowed,
+            service_animals_allowed=payload.service_animals_allowed,
+            min_checkin_age=payload.min_checkin_age,
+            quiet_hours_from=payload.quiet_hours_from,
+            quiet_hours_to=payload.quiet_hours_to,
             payment_methods=payload.payment_methods,
             house_rules=payload.house_rules.model_dump(exclude_none=True),
             cancellation_policy=payload.cancellation_policy.model_dump(
@@ -86,6 +89,12 @@ class SanatoriumService:
             property_type=payload.property_type,
             wellness_category=payload.wellness_category,
             treatment_focuses=payload.treatment_focuses,
+            year_opened=payload.year_opened,
+            languages_spoken=payload.languages_spoken,
+            highlights=payload.highlights,
+            surroundings=[s.model_dump() for s in payload.surroundings],
+            venues=[v.model_dump() for v in payload.venues],
+            meal_schedule=[m.model_dump() for m in payload.meal_schedule],
             platform_commission_percent=payload.platform_commission_percent,
             b2b_commission_percent=payload.b2b_commission_percent,
             agent_discount_tiers=[
@@ -93,7 +102,7 @@ class SanatoriumService:
             ],
             admin_user_id=payload.admin_user_id,
             status=SanatoriumStatus.PENDING,
-            amenities=amenities,
+            amenity_links=amenity_links,
         )
         self.db.add(sanatorium)
         await self.db.commit()
@@ -112,7 +121,8 @@ class SanatoriumService:
             data, actor, restricted_fields=SANATORIUM_SUPER_ADMIN_ONLY_FIELDS
         )
 
-        amenity_ids = data.pop("amenity_ids", None)
+        amenities_provided = "amenities" in data
+        data.pop("amenities", None)
         tiers = data.pop("agent_discount_tiers", _MISSING)
 
         if "region_id" in data:
@@ -155,13 +165,26 @@ class SanatoriumService:
                 for t in (tiers or [])
             ]
 
-        if amenity_ids is not None:
-            sanatorium.amenities = await fetch_by_ids(
-                self.db, Amenity, amenity_ids, label="amenity"
+        if amenities_provided:
+            sanatorium.amenity_links = await self._build_amenity_links(
+                payload.amenities or []
             )
 
         await self.db.commit()
         return await self._reload_required(sanatorium.id)
+
+    async def _build_amenity_links(self, items) -> list[SanatoriumAmenity]:
+        if not items:
+            return []
+        await fetch_by_ids(
+            self.db, Amenity, [i.amenity_id for i in items], label="amenity"
+        )
+        return [
+            SanatoriumAmenity(
+                amenity_id=i.amenity_id, cost=i.cost, is_available=i.is_available
+            )
+            for i in items
+        ]
 
     async def approve(self, sanatorium: Sanatorium) -> Sanatorium:
         if sanatorium.status == SanatoriumStatus.APPROVED:
@@ -242,9 +265,8 @@ class SanatoriumService:
         if amenity_ids:
             for aid in amenity_ids:
                 sub = (
-                    select(Sanatorium.id)
-                    .join(Sanatorium.amenities)
-                    .where(Amenity.id == aid)
+                    select(SanatoriumAmenity.sanatorium_id)
+                    .where(SanatoriumAmenity.amenity_id == aid)
                     .scalar_subquery()
                 )
                 base = base.where(Sanatorium.id.in_(sub))
@@ -256,7 +278,7 @@ class SanatoriumService:
         stmt = (
             base.options(
                 selectinload(Sanatorium.images),
-                selectinload(Sanatorium.amenities),
+                selectinload(Sanatorium.amenity_links),
             )
             .order_by(_resolve_sort(sort, locale))
             .limit(limit)
@@ -277,7 +299,7 @@ class SanatoriumService:
             .where(Sanatorium.id == sanatorium_id)
             .options(
                 selectinload(Sanatorium.images),
-                selectinload(Sanatorium.amenities),
+                selectinload(Sanatorium.amenity_links),
             )
         )
 

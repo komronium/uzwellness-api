@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
+from app.models.amenity import AmenityCost
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
@@ -45,6 +46,63 @@ class SanatoriumImageUpdate(BaseModel):
     caption: str | None = Field(default=None, max_length=255)
 
 
+class SanatoriumAmenityItem(BaseModel):
+    amenity_id: uuid.UUID
+    cost: AmenityCost = AmenityCost.FREE
+    is_available: bool = True
+
+
+class SanatoriumAmenityRead(BaseModel):
+    cost: AmenityCost
+    is_available: bool
+    amenity: AmenityRead
+
+    @classmethod
+    def from_obj(cls, link, locale: str) -> "SanatoriumAmenityRead":
+        return cls(
+            cost=link.cost,
+            is_available=link.is_available,
+            amenity=AmenityRead.from_obj(link.amenity, locale),
+        )
+
+
+class SanatoriumAmenityAdminRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    cost: AmenityCost
+    is_available: bool
+    amenity: AmenityAdminRead
+
+
+class Surrounding(BaseModel):
+    """A nearby point of interest, e.g. 'Chor Minor Monument, attraction, 440m'."""
+
+    name: str = Field(min_length=1, max_length=200)
+    type: str = Field(min_length=1, max_length=40)
+    distance_m: int = Field(ge=0)
+
+
+class Venue(BaseModel):
+    """An on-site venue, e.g. 'Charlston restaurant (buffet) in Blue House'."""
+
+    name: str = Field(min_length=1, max_length=120)
+    type: str = Field(min_length=1, max_length=40)
+    building: str | None = Field(default=None, max_length=120)
+    hours: str | None = Field(default=None, max_length=120)
+
+
+_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+class MealService(BaseModel):
+    """A meal serving window, e.g. 'breakfast 07:30-10:30 buffet'."""
+
+    meal: str = Field(min_length=1, max_length=40)
+    time_from: str = Field(pattern=_HHMM)
+    time_to: str = Field(pattern=_HHMM)
+    style: str | None = Field(default=None, max_length=40)
+
+
 class SanatoriumCreate(BaseModel):
     name: TranslationsCreate
     description: TranslationsCreate
@@ -58,6 +116,11 @@ class SanatoriumCreate(BaseModel):
     website: str | None = Field(default=None, max_length=255)
     check_in_time: time | None = None
     check_out_time: time | None = None
+    pets_allowed: bool | None = None
+    service_animals_allowed: bool | None = None
+    min_checkin_age: int | None = Field(default=None, ge=0, le=120)
+    quiet_hours_from: time | None = None
+    quiet_hours_to: time | None = None
     payment_methods: list[str] = Field(default_factory=list)
     house_rules: Translations = Field(default_factory=Translations)
     cancellation_policy: Translations = Field(default_factory=Translations)
@@ -66,9 +129,15 @@ class SanatoriumCreate(BaseModel):
     property_type: PropertyType = PropertyType.SANATORIUM
     wellness_category: WellnessCategory | None = None
     treatment_focuses: list[str] = Field(default_factory=list)
+    year_opened: int | None = Field(default=None, ge=1800, le=2100)
+    languages_spoken: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
+    surroundings: list[Surrounding] = Field(default_factory=list)
+    venues: list[Venue] = Field(default_factory=list)
+    meal_schedule: list[MealService] = Field(default_factory=list)
     slug: str | None = Field(default=None, max_length=255)
     admin_user_id: uuid.UUID | None = None
-    amenity_ids: list[uuid.UUID] = Field(default_factory=list)
+    amenities: list[SanatoriumAmenityItem] = Field(default_factory=list)
     platform_commission_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     b2b_commission_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     agent_discount_tiers: list[AgentDiscountTier] = Field(default_factory=list)
@@ -95,6 +164,11 @@ class SanatoriumUpdate(BaseModel):
     website: str | None = Field(default=None, max_length=255)
     check_in_time: time | None = None
     check_out_time: time | None = None
+    pets_allowed: bool | None = None
+    service_animals_allowed: bool | None = None
+    min_checkin_age: int | None = Field(default=None, ge=0, le=120)
+    quiet_hours_from: time | None = None
+    quiet_hours_to: time | None = None
     payment_methods: list[str] | None = None
     house_rules: Translations | None = None
     cancellation_policy: Translations | None = None
@@ -104,7 +178,13 @@ class SanatoriumUpdate(BaseModel):
     wellness_category: WellnessCategory | None = None
     admin_user_id: uuid.UUID | None = None
     treatment_focuses: list[str] | None = None
-    amenity_ids: list[uuid.UUID] | None = None
+    year_opened: int | None = Field(default=None, ge=1800, le=2100)
+    languages_spoken: list[str] | None = None
+    highlights: list[str] | None = None
+    surroundings: list[Surrounding] | None = None
+    venues: list[Venue] | None = None
+    meal_schedule: list[MealService] | None = None
+    amenities: list[SanatoriumAmenityItem] | None = None
     platform_commission_percent: Decimal | None = Field(default=None, ge=0, le=100)
     b2b_commission_percent: Decimal | None = Field(default=None, ge=0, le=100)
     agent_discount_tiers: list[AgentDiscountTier] | None = None
@@ -133,6 +213,11 @@ class _SanatoriumReadCommon(BaseModel):
     website: str | None
     check_in_time: time | None
     check_out_time: time | None
+    pets_allowed: bool | None
+    service_animals_allowed: bool | None
+    min_checkin_age: int | None
+    quiet_hours_from: time | None
+    quiet_hours_to: time | None
     payment_methods: list[str]
     weekly_schedule: dict
     stars: int
@@ -140,6 +225,12 @@ class _SanatoriumReadCommon(BaseModel):
     property_type: PropertyType
     wellness_category: WellnessCategory | None
     treatment_focuses: list[str]
+    year_opened: int | None
+    languages_spoken: list[str]
+    highlights: list[str]
+    surroundings: list[Surrounding]
+    venues: list[Venue]
+    meal_schedule: list[MealService]
     avg_rating: Decimal | None
     review_count: int
     admin_user_id: uuid.UUID | None
@@ -161,7 +252,7 @@ class SanatoriumRead(_SanatoriumReadCommon):
     cancellation_policy: str
     region: RegionRead | None = None
     destination: DestinationRead | None = None
-    amenities: list[AmenityRead] = Field(default_factory=list)
+    amenities: list[SanatoriumAmenityRead] = Field(default_factory=list)
 
     @classmethod
     def from_obj(cls, obj, locale: str) -> "SanatoriumRead":
@@ -188,6 +279,11 @@ class SanatoriumRead(_SanatoriumReadCommon):
             website=obj.website,
             check_in_time=obj.check_in_time,
             check_out_time=obj.check_out_time,
+            pets_allowed=obj.pets_allowed,
+            service_animals_allowed=obj.service_animals_allowed,
+            min_checkin_age=obj.min_checkin_age,
+            quiet_hours_from=obj.quiet_hours_from,
+            quiet_hours_to=obj.quiet_hours_to,
             payment_methods=obj.payment_methods,
             house_rules=pick_locale(obj.house_rules, locale),
             cancellation_policy=pick_locale(obj.cancellation_policy, locale),
@@ -197,6 +293,12 @@ class SanatoriumRead(_SanatoriumReadCommon):
             property_type=obj.property_type,
             wellness_category=obj.wellness_category,
             treatment_focuses=obj.treatment_focuses,
+            year_opened=obj.year_opened,
+            languages_spoken=obj.languages_spoken,
+            highlights=obj.highlights,
+            surroundings=obj.surroundings,
+            venues=obj.venues,
+            meal_schedule=obj.meal_schedule,
             avg_rating=obj.avg_rating,
             review_count=obj.review_count,
             admin_user_id=obj.admin_user_id,
@@ -208,7 +310,10 @@ class SanatoriumRead(_SanatoriumReadCommon):
             created_at=obj.created_at,
             updated_at=obj.updated_at,
             images=[SanatoriumImageRead.model_validate(i) for i in obj.images],
-            amenities=[AmenityRead.from_obj(a, locale) for a in obj.amenities],
+            amenities=[
+                SanatoriumAmenityRead.from_obj(link, locale)
+                for link in obj.amenity_links
+            ],
         )
 
 
@@ -224,7 +329,9 @@ class SanatoriumAdminRead(_SanatoriumReadCommon):
     cancellation_policy: dict
     region: RegionAdminRead | None = None
     destination: DestinationAdminRead | None = None
-    amenities: list[AmenityAdminRead] = Field(default_factory=list)
+    amenities: list[SanatoriumAmenityAdminRead] = Field(
+        default_factory=list, validation_alias="amenity_links"
+    )
 
 
 class SanatoriumList(BaseModel):

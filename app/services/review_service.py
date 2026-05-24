@@ -65,7 +65,13 @@ class ReviewService:
             user_id=user.id,
             reviewer_name=payload.reviewer_name,
             reviewer_country=payload.reviewer_country,
+            traveler_type=payload.traveler_type,
             rating=payload.rating,
+            cleanliness=payload.cleanliness,
+            location=payload.location,
+            service=payload.service,
+            value=payload.value,
+            food=payload.food,
             body=payload.body,
         )
         self.db.add(review)

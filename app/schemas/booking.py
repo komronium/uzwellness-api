@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, BookingType
+from app.models.rate_plan import BoardType, PaymentTiming
 from app.models.user import UserRole
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
 from app.schemas.payment import BookingPaymentSummary
@@ -30,6 +31,7 @@ class BookingCreate(BaseModel):
     room_id: uuid.UUID | None = None
     program_id: uuid.UUID | None = None
     package_id: uuid.UUID | None = None
+    rate_plan_id: uuid.UUID | None = None
     check_in: date
     check_out: date | None = None
     guests: int = Field(default=1, ge=1)
@@ -46,6 +48,8 @@ class BookingCreate(BaseModel):
             raise ValueError(
                 "Provide exactly one of room_id, program_id, or package_id"
             )
+        if self.rate_plan_id is not None and self.room_id is None:
+            raise ValueError("rate_plan_id is only valid with a room booking")
         if self.guest_details and len(self.guest_details) > self.guests:
             raise ValueError("guest_details cannot exceed guests count")
         return self
@@ -60,6 +64,7 @@ class BookingRead(BaseModel):
     room_id: uuid.UUID | None
     program_id: uuid.UUID | None
     package_id: uuid.UUID | None
+    rate_plan_id: uuid.UUID | None = None
     booking_type: BookingType
     check_in: date
     check_out: date
@@ -67,7 +72,15 @@ class BookingRead(BaseModel):
     rooms_count: int
     status: BookingStatus
     final_price: Decimal
+    original_price: Decimal | None = None
+    promo_percent_snapshot: Decimal | None = None
     currency: str
+    board: BoardType | None = None
+    refundable: bool | None = None
+    free_cancellation_days: int | None = None
+    cancellation_penalty_percent: Decimal | None = None
+    cancellation_penalty_amount: Decimal | None = None
+    payment_timing: PaymentTiming | None = None
     is_b2b: bool
     b2b_client_price: Decimal | None = None
     b2b_commission: Decimal | None = None

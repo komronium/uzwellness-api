@@ -39,16 +39,6 @@ class DestinationService:
     async def list_tiles(
         self, *, usd_uzs_rate: Decimal | None
     ) -> list[tuple[Destination, int, Decimal | None]]:
-        """Return (destination, sanatoriums_count, min_price_usd) for active tiles.
-
-        Computes the **customer-facing** weekday price per room:
-        `base_price * (1 + markup_percent/100) * (1 - coalesce(discount, 0)/100)`
-        — same formula as `calculate_night_price` for non-weekend nights.
-        UZS rooms are normalized to USD via `usd_uzs_rate` if configured;
-        otherwise they drop out of the MIN. Seasonal period overrides
-        (`room_price_periods`) are intentionally skipped — tile prices
-        reflect the year-round default, not a snapshot of any single date.
-        """
         markup_factor = literal(1) + Room.markup_percent / literal(100)
         discount_factor = literal(1) - func.coalesce(
             Room.discount_percent, literal(0)
@@ -102,9 +92,7 @@ class DestinationService:
         return await self.db.get(Destination, destination_id)
 
     async def get_by_slug(self, slug: str) -> Destination | None:
-        return await self.db.scalar(
-            select(Destination).where(Destination.slug == slug)
-        )
+        return await self.db.scalar(select(Destination).where(Destination.slug == slug))
 
     async def create(self, payload: DestinationCreate) -> Destination:
         name_dict = payload.name.model_dump()

@@ -38,7 +38,13 @@ class SanatoriumReview(Base):
     )
     reviewer_name: Mapped[str] = mapped_column(String(120), nullable=False)
     reviewer_country: Mapped[str | None] = mapped_column(String(60))
+    traveler_type: Mapped[str | None] = mapped_column(String(30))
     rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    cleanliness: Mapped[int | None] = mapped_column(SmallInteger)
+    location: Mapped[int | None] = mapped_column(SmallInteger)
+    service: Mapped[int | None] = mapped_column(SmallInteger)
+    value: Mapped[int | None] = mapped_column(SmallInteger)
+    food: Mapped[int | None] = mapped_column(SmallInteger)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     is_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

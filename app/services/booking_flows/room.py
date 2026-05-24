@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
@@ -16,6 +17,7 @@ from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
+from app.models.rate_plan import RatePlan
 from app.models.room import Room
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
@@ -49,6 +51,7 @@ class RoomBookingFlow(BookingFlowBase):
         room = await self._lock_room(payload.room_id)
         sanatorium = await self._approved_sanatorium(room.sanatorium_id)
         rooms_count = self._validate_and_compute_rooms(room, payload, nights)
+        rate_plan = await self._load_rate_plan(payload.rate_plan_id, room, nights)
 
         await self._reserve_units(room, all_dates, rooms_count)
 
@@ -56,13 +59,28 @@ class RoomBookingFlow(BookingFlowBase):
         rooms_total = calculate_stay_total(
             room, all_dates, room.price_periods
         ) * rooms_count
+        board_total = Decimal("0")
+        promo_percent = Decimal("0")
+        if rate_plan is not None:
+            if rate_plan.price_adjustment_percent is not None:
+                rooms_total *= 1 + rate_plan.price_adjustment_percent / 100
+            if rate_plan.board_optional and rate_plan.board_price is not None:
+                board_total = rate_plan.board_price * payload.guests * nights
+            promo_percent = self._active_promo_percent(rate_plan)
         extra_bed_records = await self._build_extra_beds(
             payload, room.sanatorium_id, nights, room.base_currency
         )
         extras_total = sum(
             (eb.total_price for eb in extra_bed_records), Decimal("0")
         )
-        base_total = (rooms_total + extras_total).quantize(_CENTS, ROUND_HALF_UP)
+        room_and_board = rooms_total + board_total
+        original_price: Decimal | None = None
+        if promo_percent > 0:
+            original_price = (room_and_board + extras_total).quantize(
+                _CENTS, ROUND_HALF_UP
+            )
+            room_and_board *= 1 - promo_percent / 100
+        base_total = (room_and_board + extras_total).quantize(_CENTS, ROUND_HALF_UP)
 
         pricing = await self.pricing.apply(
             base_total=base_total,
@@ -75,6 +93,7 @@ class RoomBookingFlow(BookingFlowBase):
         booking = Booking(
             user_id=user.id,
             room_id=room.id,
+            rate_plan_id=rate_plan.id if rate_plan is not None else None,
             booking_type=BookingType.ROOM,
             check_in=payload.check_in,
             check_out=payload.check_out,
@@ -82,6 +101,8 @@ class RoomBookingFlow(BookingFlowBase):
             rooms_count=rooms_count,
             status=BookingStatus.CONFIRMED,
             final_price=pricing.final_price,
+            original_price=original_price,
+            promo_percent_snapshot=promo_percent if promo_percent > 0 else None,
             currency=room.base_currency,
             is_b2b=is_b2b,
             b2b_client_price=pricing.b2b_client_price,
@@ -90,6 +111,24 @@ class RoomBookingFlow(BookingFlowBase):
             commission_percent_snapshot=pricing.commission_percent,
             agent_discount_percent_snapshot=(
                 pricing.agent_discount_percent if is_b2b else None
+            ),
+            board=rate_plan.board if rate_plan is not None else None,
+            refundable=rate_plan.refundable if rate_plan is not None else None,
+            free_cancellation_days=(
+                rate_plan.free_cancellation_days if rate_plan is not None else None
+            ),
+            cancellation_penalty_percent=(
+                rate_plan.cancellation_penalty_percent
+                if rate_plan is not None
+                else None
+            ),
+            cancellation_penalty_amount=(
+                rate_plan.cancellation_penalty_amount
+                if rate_plan is not None
+                else None
+            ),
+            payment_timing=(
+                rate_plan.payment_timing if rate_plan is not None else None
             ),
         )
         self.db.add(booking)
@@ -119,6 +158,44 @@ class RoomBookingFlow(BookingFlowBase):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
             )
         return room
+
+    async def _load_rate_plan(
+        self, rate_plan_id, room: Room, nights: int
+    ) -> RatePlan | None:
+        if rate_plan_id is None:
+            return None
+        rate_plan = await self.db.get(RatePlan, rate_plan_id)
+        if (
+            rate_plan is None
+            or not rate_plan.is_active
+            or rate_plan.room_id != room.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rate plan not found for this room",
+            )
+        if rate_plan.min_nights is not None and nights < rate_plan.min_nights:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This rate requires at least {rate_plan.min_nights} night(s)",
+            )
+        if rate_plan.max_nights is not None and nights > rate_plan.max_nights:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This rate allows at most {rate_plan.max_nights} night(s)",
+            )
+        return rate_plan
+
+    @staticmethod
+    def _active_promo_percent(rate_plan: RatePlan) -> Decimal:
+        if rate_plan.promo_percent is None:
+            return Decimal("0")
+        now = datetime.now(UTC)
+        if rate_plan.promo_starts_at is not None and now < rate_plan.promo_starts_at:
+            return Decimal("0")
+        if rate_plan.promo_ends_at is not None and now > rate_plan.promo_ends_at:
+            return Decimal("0")
+        return rate_plan.promo_percent
 
     @staticmethod
     def _validate_and_compute_rooms(

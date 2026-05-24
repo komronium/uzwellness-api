@@ -1,7 +1,16 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 
 from app.api.deps import (
     CurrentUser,
@@ -12,7 +21,10 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.pagination import Pagination
+from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
+from app.core.storage import StorageBackend, detect_image_mime, get_storage
+from app.core.uploads import read_upload
 from app.models.room import Room
 from app.models.user import UserRole
 from app.schemas.room import (
@@ -22,11 +34,14 @@ from app.schemas.room import (
     RoomAdminList,
     RoomAdminRead,
     RoomCreate,
+    RoomImageRead,
+    RoomImageUpdate,
     RoomList,
     RoomRead,
     RoomSearchResult,
     RoomUpdate,
 )
+from app.services.room_image_service import RoomImageService, get_room_image_service
 from app.services.room_service import RoomService, get_room_service
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -293,3 +308,97 @@ async def upsert_room_availability(
         units_booked=row.units_booked,
         units_available=row.units_available,
     )
+
+
+@router.post(
+    "/{room_id}/images",
+    response_model=RoomImageRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def upload_room_image(
+    room_id: uuid.UUID,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None, max_length=255),
+    is_primary: bool = Form(default=False),
+    order: int = Form(default=0, ge=0),
+    rooms: RoomService = Depends(get_room_service),
+    images: RoomImageService = Depends(get_room_image_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> RoomImageRead:
+    room = await rooms.get_by_id(room_id)
+    if room is None:
+        raise not_found("Room not found")
+    await assert_sanatorium_access(
+        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+    )
+    content, mime = await read_upload(
+        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
+    )
+    image = await images.add(
+        room=room,
+        content=content,
+        content_type=mime,
+        storage=storage,
+        caption=caption,
+        is_primary=is_primary,
+        order=order,
+    )
+    return RoomImageRead.model_validate(image)
+
+
+@router.patch(
+    "/{room_id}/images/{image_id}",
+    response_model=RoomImageRead,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def update_room_image(
+    room_id: uuid.UUID,
+    image_id: uuid.UUID,
+    payload: RoomImageUpdate,
+    current_user: CurrentUser,
+    rooms: RoomService = Depends(get_room_service),
+    images: RoomImageService = Depends(get_room_image_service),
+) -> RoomImageRead:
+    image = await images.get(image_id)
+    if image is None or image.room_id != room_id:
+        raise not_found("Image not found")
+    room = await rooms.get_by_id(room_id)
+    if room is None:
+        raise not_found("Room not found")
+    await assert_sanatorium_access(
+        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+    )
+    updated = await images.update(
+        image,
+        is_primary=payload.is_primary,
+        order=payload.order,
+        caption=payload.caption,
+    )
+    return RoomImageRead.model_validate(updated)
+
+
+@router.delete(
+    "/{room_id}/images/{image_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def delete_room_image(
+    room_id: uuid.UUID,
+    image_id: uuid.UUID,
+    current_user: CurrentUser,
+    rooms: RoomService = Depends(get_room_service),
+    images: RoomImageService = Depends(get_room_image_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> None:
+    image = await images.get(image_id)
+    if image is None or image.room_id != room_id:
+        raise not_found("Image not found")
+    room = await rooms.get_by_id(room_id)
+    if room is None:
+        raise not_found("Room not found")
+    await assert_sanatorium_access(
+        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+    )
+    await images.delete(image, storage)

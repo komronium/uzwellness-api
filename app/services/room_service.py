@@ -9,10 +9,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.db_utils import fetch_by_ids
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import enrich_room
 from app.core.utils import date_range, merge_translation_fields
+from app.models.amenity import Amenity
 from app.models.availability import RoomAvailability
 from app.models.package import Package
 from app.models.room import Room
@@ -101,12 +103,22 @@ class RoomService:
             user,
             action="manage this sanatorium's rooms",
         )
+        amenities = await fetch_by_ids(
+            self.db, Amenity, payload.amenity_ids, label="amenity"
+        )
         room = Room(
             sanatorium_id=payload.sanatorium_id,
             name=payload.name.model_dump(),
             description=payload.description.model_dump(exclude_none=True),
-            room_amenities=payload.room_amenities,
+            amenities=amenities,
+            size_sqm=payload.size_sqm,
+            floor=payload.floor,
+            beds=[option.model_dump() for option in payload.beds],
+            view=payload.view,
+            smoking_allowed=payload.smoking_allowed,
             capacity=payload.capacity,
+            max_adults=payload.max_adults,
+            max_children=payload.max_children,
             inventory_count=payload.inventory_count,
             base_price=payload.base_price,
             base_price_weekend=payload.base_price_weekend,
@@ -123,6 +135,7 @@ class RoomService:
             self.db, room.sanatorium_id, user, action="manage this sanatorium's rooms"
         )
         data = payload.model_dump(exclude_unset=True)
+        amenity_ids = data.pop("amenity_ids", None)
 
         if "markup_percent" in data and user.role != UserRole.SUPER_ADMIN:
             raise HTTPException(
@@ -137,6 +150,10 @@ class RoomService:
 
         for key, value in data.items():
             setattr(room, key, value)
+        if amenity_ids is not None:
+            room.amenities = await fetch_by_ids(
+                self.db, Amenity, amenity_ids, label="amenity"
+            )
         await self.db.commit()
         await self.db.refresh(room)
         return room

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -13,6 +15,7 @@ from sqlalchemy import (
     Uuid,
     func,
 )
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +25,13 @@ from app.core.ids import uuid7
 if TYPE_CHECKING:
     from app.models.program import TreatmentProgram
     from app.models.sanatorium import Sanatorium
+
+
+class AmenityCost(StrEnum):
+    FREE = "free"
+    PAID = "paid"  # "Additional charge"
+    ON_REQUEST = "on_request"
+
 
 program_amenities = Table(
     "program_amenities",
@@ -40,13 +50,13 @@ program_amenities = Table(
     ),
 )
 
-sanatorium_amenities = Table(
-    "sanatorium_amenities",
+room_amenities = Table(
+    "room_amenities",
     Base.metadata,
     Column(
-        "sanatorium_id",
+        "room_id",
         Uuid,
-        ForeignKey("sanatoriums.id", ondelete="CASCADE"),
+        ForeignKey("rooms.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column(
@@ -75,6 +85,37 @@ class Amenity(Base):
     programs: Mapped[list["TreatmentProgram"]] = relationship(
         secondary=program_amenities, back_populates="amenities"
     )
-    sanatoriums: Mapped[list["Sanatorium"]] = relationship(
-        secondary=sanatorium_amenities, back_populates="amenities"
+
+
+class SanatoriumAmenity(Base):
+    """Association object: a sanatorium offers an amenity, with cost + availability."""
+
+    __tablename__ = "sanatorium_amenities"
+
+    sanatorium_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("sanatoriums.id", ondelete="CASCADE"),
+        primary_key=True,
     )
+    amenity_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("amenities.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    cost: Mapped[AmenityCost] = mapped_column(
+        SQLEnum(
+            AmenityCost,
+            native_enum=False,
+            length=20,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+        default=AmenityCost.FREE,
+        server_default="free",
+    )
+    is_available: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    amenity: Mapped["Amenity"] = relationship(lazy="selectin")
+    sanatorium: Mapped["Sanatorium"] = relationship(back_populates="amenity_links")
