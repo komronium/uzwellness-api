@@ -1,15 +1,34 @@
 """Integration tests for rooms, availability, exchange rates, and room search."""
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.room import RoomCreate, RoomUpdate
 from app.models.sanatorium import SanatoriumStatus
 from app.models.user import User, UserRole
-from tests.factories import make_exchange_rate, make_room, make_sanatorium, make_user
+from tests.factories import make_room, make_sanatorium, make_user
 
 
 # ── Room CRUD ──────────────────────────────────────────────────────────────
 
 class TestRoomCRUD:
+    def test_floor_input_is_normalized(self):
+        payload = {
+            "sanatorium_id": "00000000-0000-0000-0000-000000000001",
+            "name": {"uz": "Standart", "ru": "Стандарт", "en": "Standard"},
+            "capacity": 2,
+            "base_price": "100.00",
+            "base_currency": "USD",
+        }
+
+        assert RoomCreate(**payload, floor=2).floor == "2"
+        assert RoomCreate(**payload, floor=" 2 - 4 ").floor == "2-4"
+        assert RoomUpdate(floor=" 2, 4 ").floor == "2,4"
+
+    def test_floor_slash_format_is_rejected(self):
+        with pytest.raises(ValueError, match="2-4"):
+            RoomUpdate(floor="2/4")
+
     async def test_admin_creates_room_for_own_sanatorium(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
     ):

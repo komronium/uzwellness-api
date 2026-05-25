@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
 from app.models.room import RoomView
@@ -11,6 +11,48 @@ from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
 
 BedType = Literal["single", "double", "twin", "queen", "king", "sofa_bed", "bunk"]
+
+
+def normalize_floor(value) -> str | None:
+    """Store floor values in one display-safe format.
+
+    Valid examples:
+    - "2"
+    - "2-4" for a continuous range
+    - "2,4" for discrete floors
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        value = str(value)
+    if not isinstance(value, str):
+        raise ValueError("floor must be a string or integer")
+
+    floor = value.strip()
+    if not floor:
+        return None
+    if "/" in floor:
+        raise ValueError("use '2-4' for ranges or '2,4' for separate floors")
+
+    if floor.isdigit():
+        return floor
+
+    if "-" in floor:
+        parts = [part.strip() for part in floor.split("-")]
+        if len(parts) != 2 or not all(part.isdigit() for part in parts):
+            raise ValueError("floor range must look like '2-4'")
+        start, end = (int(part) for part in parts)
+        if start > end:
+            raise ValueError("floor range start must be less than or equal to end")
+        return f"{start}-{end}"
+
+    if "," in floor:
+        parts = [part.strip() for part in floor.split(",")]
+        if not parts or not all(part.isdigit() for part in parts):
+            raise ValueError("floor list must look like '2,4'")
+        return ",".join(parts)
+
+    raise ValueError("floor must look like '2', '2-4', or '2,4'")
 
 
 class BedConfig(BaseModel):
@@ -65,6 +107,11 @@ class RoomCreate(BaseModel):
     base_currency: str = Field(pattern=r"^(UZS|USD)$")
     min_nights: int = Field(default=1, ge=1)
 
+    @field_validator("floor", mode="before")
+    @classmethod
+    def _normalize_floor(cls, value):
+        return normalize_floor(value)
+
 
 class RoomUpdate(BaseModel):
     name: Translations | None = None
@@ -86,6 +133,11 @@ class RoomUpdate(BaseModel):
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
     min_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
+
+    @field_validator("floor", mode="before")
+    @classmethod
+    def _normalize_floor(cls, value):
+        return normalize_floor(value)
 
 
 class _RoomReadCommon(BaseModel):

@@ -1,804 +1,1486 @@
-"""Populate the database with realistic demo data.
-
-Idempotent: running multiple times is safe (checks existing data first).
+"""Reset and populate the database with a full-featured demo dataset.
 
 Usage:
     uv run python -m scripts.demo_data
+
+This script is intentionally destructive for demo environments: it clears
+application data and recreates a coherent dataset that exercises the main API
+surfaces.
 """
 
+from __future__ import annotations
+
 import asyncio
-import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from app.core.database import SessionLocal
-from app.core.security import hash_password
-from app.models.availability import RoomAvailability
-from app.models.booking import Booking, BookingStatus
-from app.models.destination import Destination
-from app.models.exchange_rate import ExchangeRate
-from app.models.notification import Notification
-from app.models.package import Package, PackageItem, PackageItemType
-from app.models.region import Region
-from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
-from app.models.user import User, UserRole
-from app.models.visa_request import VisaPurpose, VisaRequest, VisaStatus
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-# ── constants ──────────────────────────────────────────────────────────────
+from app.core.database import SessionLocal
+from app.core.pricing import calculate_night_price
+from app.core.security import hash_password
+from app.models import (
+    Amenity,
+    AmenityCost,
+    BoardType,
+    Booking,
+    BookingExtraBed,
+    BookingStatus,
+    BookingType,
+    ConfirmationType,
+    Destination,
+    ExchangeRate,
+    ExtraBedConfig,
+    Notification,
+    Package,
+    PackageItem,
+    PackageItemType,
+    Payment,
+    PaymentMethod,
+    PaymentStatus,
+    PaymentTiming,
+    PropertyType,
+    RatePlan,
+    RefreshToken,
+    Region,
+    Room,
+    RoomAvailability,
+    RoomImage,
+    RoomPricePeriod,
+    RoomView,
+    Sanatorium,
+    SanatoriumAmenity,
+    SanatoriumImage,
+    SanatoriumReview,
+    SanatoriumStatus,
+    TransferDirection,
+    TransferRequest,
+    TransferStatus,
+    TreatmentProgram,
+    User,
+    UserRole,
+    VehicleType,
+    VisaPurpose,
+    VisaRequest,
+    VisaStatus,
+    WellnessCategory,
+)
+
 
 SUPER_ADMIN_EMAIL = "admin@uzwellness.com"
-SUPER_ADMIN_PASSWORD = "Admin123!"
+DEFAULT_PASSWORD = "Admin123!"
+CUSTOMER_PASSWORD = "User123!"
+AGENT_PASSWORD = "Agent123!"
+USD_UZS = Decimal("12800.000000")
 
-ADMINS = [
-    {"email": "charvak@uzwellness.com",   "password": "Admin123!", "full_name": "Charvak Admin"},
-    {"email": "samarqand@uzwellness.com", "password": "Admin123!", "full_name": "Samarqand Admin"},
-    {"email": "buxoro@uzwellness.com",    "password": "Admin123!", "full_name": "Buxoro Admin"},
-    {"email": "namangan@uzwellness.com",  "password": "Admin123!", "full_name": "Namangan Admin"},
+
+def tr(uz: str, ru: str, en: str) -> dict[str, str]:
+    return {"uz": uz, "ru": ru, "en": en}
+
+
+def money(value: str) -> Decimal:
+    return Decimal(value)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+REGIONS = [
+    ("toshkent", tr("Toshkent viloyati", "Ташкентская область", "Tashkent Region")),
+    ("samarqand", tr("Samarqand", "Самаркандская область", "Samarkand Region")),
+    ("buxoro", tr("Buxoro", "Бухарская область", "Bukhara Region")),
+    ("jizzax", tr("Jizzax", "Джизакская область", "Jizzakh Region")),
+    ("namangan", tr("Namangan", "Наманганская область", "Namangan Region")),
+    ("fargona", tr("Farg'ona", "Ферганская область", "Fergana Region")),
 ]
 
-CUSTOMERS = [
-    {"email": "ali@gmail.com",     "password": "User123!", "full_name": "Ali Karimov",    "phone": "+998901234567"},
-    {"email": "zulfiya@gmail.com", "password": "User123!", "full_name": "Zulfiya Yusupova","phone": "+998907654321"},
-    {"email": "jasur@gmail.com",   "password": "User123!", "full_name": "Jasur Toshmatov", "phone": "+998931112233"},
-    {"email": "malika@gmail.com",  "password": "User123!", "full_name": "Malika Rahimova", "phone": "+998946667788"},
-    {"email": "bobur@gmail.com",   "password": "User123!", "full_name": "Bobur Xasanov",   "phone": "+998991234567"},
-    {"email": "nilufar@gmail.com", "password": "User123!", "full_name": "Nilufar Islomova","phone": "+998977778899"},
-    {"email": "sardor@gmail.com",  "password": "User123!", "full_name": "Sardor Nazarov",  "phone": "+998901230000"},
-    {"email": "dilnoza@gmail.com", "password": "User123!", "full_name": "Dilnoza Mirzayeva","phone": "+998909876543"},
+DESTINATIONS = [
+    {
+        "slug": "chimgan-mountains",
+        "name": tr("Chimgan tog'lari", "Чимганские горы", "Chimgan Mountains"),
+        "tagline": tr(
+            "Tog' havosi, mineral suv va sokin dam olish",
+            "Горный воздух, минеральная вода и спокойный отдых",
+            "Mountain air, mineral water, and quiet recovery",
+        ),
+        "description": tr(
+            "Toshkentdan qisqa masofadagi sanatoriya va kurortlar.",
+            "Санатории и курорты недалеко от Ташкента.",
+            "Sanatoriums and resorts a short drive from Tashkent.",
+        ),
+        "hero_image": "/uploads/demo/destinations/chimgan.jpg",
+        "lat": money("41.550000"),
+        "lng": money("70.016700"),
+    },
+    {
+        "slug": "samarkand",
+        "name": tr("Samarqand", "Самарканд", "Samarkand"),
+        "tagline": tr(
+            "Tarixiy shahar ichida premium tiklanish",
+            "Премиальное восстановление в историческом городе",
+            "Premium recovery inside a heritage city",
+        ),
+        "description": tr(
+            "Shahar sayohati va wellness dasturlari birlashtirilgan yo'nalish.",
+            "Направление, сочетающее экскурсии и wellness-программы.",
+            "A destination combining city touring with wellness programs.",
+        ),
+        "hero_image": "/uploads/demo/destinations/samarkand.jpg",
+        "lat": money("39.654200"),
+        "lng": money("66.959700"),
+    },
+    {
+        "slug": "zaamin-national-park",
+        "name": tr("Zomin milliy bog'i", "Зааминский нацпарк", "Zaamin National Park"),
+        "tagline": tr(
+            "Qarag'ay o'rmonlari va baland tog' terapiyasi",
+            "Сосновые леса и высотная терапия",
+            "Pine forests and altitude therapy",
+        ),
+        "description": tr(
+            "Jizzax tog'larida nafas olish va reabilitatsiya dasturlari.",
+            "Респираторные и реабилитационные программы в горах Джизака.",
+            "Respiratory and rehabilitation programs in the Jizzakh mountains.",
+        ),
+        "hero_image": "/uploads/demo/destinations/zaamin.jpg",
+        "lat": money("39.950000"),
+        "lng": money("68.400000"),
+    },
+    {
+        "slug": "fergana-valley",
+        "name": tr("Farg'ona vodiysi", "Ферганская долина", "Fergana Valley"),
+        "tagline": tr(
+            "Mineral buloqlar va an'anaviy mehmondo'stlik",
+            "Минеральные источники и традиционное гостеприимство",
+            "Mineral springs and traditional hospitality",
+        ),
+        "description": tr(
+            "Vodiydagi sanatoriyalar, spa va oilaviy dam olish maskanlari.",
+            "Санатории, спа и семейные курорты долины.",
+            "Valley sanatoriums, spas, and family resorts.",
+        ),
+        "hero_image": "/uploads/demo/destinations/fergana.jpg",
+        "lat": money("40.389200"),
+        "lng": money("71.783300"),
+    },
 ]
 
-# Regions (14 viloyatlar) and destinations (6 marketing tiles) are seeded
-# by migration d4e8f1a6c2b3 — demo just maps existing sanatoriums to them
-# by slug. To add a new demo sanatorium, append entries to both maps below.
+USERS = [
+    {
+        "email": SUPER_ADMIN_EMAIL,
+        "password": DEFAULT_PASSWORD,
+        "role": UserRole.SUPER_ADMIN,
+        "full_name": "UzWellness Super Admin",
+        "phone": "+998900000001",
+    },
+    {
+        "email": "zaamin@uzwellness.com",
+        "password": DEFAULT_PASSWORD,
+        "role": UserRole.ADMIN,
+        "full_name": "Zomin Shifo Admin",
+        "phone": "+998900000101",
+    },
+    {
+        "email": "chortoq@uzwellness.com",
+        "password": DEFAULT_PASSWORD,
+        "role": UserRole.ADMIN,
+        "full_name": "Chortoq Mineral Admin",
+        "phone": "+998900000102",
+    },
+    {
+        "email": "chinobod@uzwellness.com",
+        "password": DEFAULT_PASSWORD,
+        "role": UserRole.ADMIN,
+        "full_name": "Chinobod Admin",
+        "phone": "+998900000103",
+    },
+    {
+        "email": "samarkand@uzwellness.com",
+        "password": DEFAULT_PASSWORD,
+        "role": UserRole.ADMIN,
+        "full_name": "Samarkand Wellness Admin",
+        "phone": "+998900000104",
+    },
+    {
+        "email": "agent@uzwellness.com",
+        "password": AGENT_PASSWORD,
+        "role": UserRole.AGENT,
+        "full_name": "Silk Road Travel Agent",
+        "phone": "+998901112233",
+    },
+    {
+        "email": "ali@gmail.com",
+        "password": CUSTOMER_PASSWORD,
+        "role": UserRole.CUSTOMER,
+        "full_name": "Ali Karimov",
+        "phone": "+998901234567",
+    },
+    {
+        "email": "zulfiya@gmail.com",
+        "password": CUSTOMER_PASSWORD,
+        "role": UserRole.CUSTOMER,
+        "full_name": "Zulfiya Yusupova",
+        "phone": "+998907654321",
+    },
+    {
+        "email": "malika@gmail.com",
+        "password": CUSTOMER_PASSWORD,
+        "role": UserRole.CUSTOMER,
+        "full_name": "Malika Rahimova",
+        "phone": "+998946667788",
+    },
+]
 
-# Map sanatorium slug → administrative viloyat slug (matches `regions.slug`).
-SANATORIUM_TO_REGION: dict[str, str] = {
-    "charvak-oromgohi": "toshkent",       # Toshkent viloyati (Bostanlyk)
-    "nur-samarqand":    "samarqand",      # Samarqand viloyati
-    "buxoro-ziloli":    "buxoro",         # Buxoro viloyati
-    "namangan-bogi":    "namangan",       # Namangan viloyati
-}
-
-# Map sanatorium slug → marketing destination tile slug (matches
-# `destinations.slug`). Bukhara has no FE tile, so it stays NULL.
-SANATORIUM_TO_DESTINATION: dict[str, str | None] = {
-    "charvak-oromgohi": "chimgan-mountains",
-    "nur-samarqand":    "samarkand",
-    "buxoro-ziloli":    None,
-    "namangan-bogi":    "fergana-valley",
-}
+AMENITIES = [
+    ("wifi", "connectivity", "wifi", tr("Wi-Fi", "Wi-Fi", "Wi-Fi")),
+    ("pool", "wellness", "waves", tr("Basseyn", "Бассейн", "Pool")),
+    ("spa", "wellness", "sparkles", tr("Spa markazi", "Спа-центр", "Spa center")),
+    ("doctor", "medical", "stethoscope", tr("Shifokor nazorati", "Наблюдение врача", "Doctor supervision")),
+    ("mineral-water", "medical", "droplets", tr("Mineral suv", "Минеральная вода", "Mineral water")),
+    ("physio", "medical", "activity", tr("Fizioterapiya", "Физиотерапия", "Physiotherapy")),
+    ("gym", "sport", "dumbbell", tr("Sport zal", "Тренажерный зал", "Gym")),
+    ("parking", "transport", "parking-circle", tr("Avtoturargoh", "Парковка", "Parking")),
+    ("airport-transfer", "transport", "plane", tr("Aeroport transferi", "Трансфер из аэропорта", "Airport transfer")),
+    ("restaurant", "food", "utensils", tr("Restoran", "Ресторан", "Restaurant")),
+    ("kids-club", "family", "baby", tr("Bolalar klubi", "Детский клуб", "Kids club")),
+    ("conference", "business", "briefcase", tr("Konferensiya zali", "Конференц-зал", "Conference hall")),
+    ("yoga", "wellness", "person-standing", tr("Yoga studiyasi", "Йога-студия", "Yoga studio")),
+]
 
 SANATORIUMS = [
     {
-        "name": {
-            "uz": "Charvak Oromgohi",
-            "ru": "Чарвак Оромгохи",
-            "en": "Charvak Resort",
-        },
-        "slug": "charvak-oromgohi",
-        "description": {
-            "uz": "Charvak suv ombori yonida joylashgan zamonaviy dam olish maskani.",
-            "ru": "Современный курорт на берегу Чарвакского водохранилища.",
-            "en": "A modern resort located on the shores of Charvak Reservoir.",
-        },
-        "city": "Toshkent viloyati",
-        "address": {
-            "uz": "Charvak qo'rg'oni, Bostanliq tumani",
-            "ru": "Чарвакский кишлак, Бостанлыкский район",
-            "en": "Charvak village, Bostanlyk district",
-        },
-        "lat": Decimal("41.5500"),
-        "lng": Decimal("70.0167"),
+        "slug": "zomin-shifo-resort",
+        "admin": "zaamin@uzwellness.com",
+        "region": "jizzax",
+        "destination": "zaamin-national-park",
+        "name": tr("Zomin Shifo Resort", "Заамин Шифо Resort", "Zaamin Shifo Resort"),
+        "description": tr(
+            "Qarag'ay o'rmonlari orasidagi baland tog' sanatoriysi: nafas yo'llari, reabilitatsiya va sokin oilaviy dam olish uchun.",
+            "Высокогорный санаторий среди сосновых лесов: дыхательные программы, реабилитация и спокойный семейный отдых.",
+            "A high-altitude sanatorium among pine forests for respiratory care, rehabilitation, and quiet family stays.",
+        ),
+        "city": "Zomin",
+        "address": tr(
+            "Jizzax viloyati, Zomin tumani, Milliy bog' hududi",
+            "Джизакская область, Зааминский район, территория нацпарка",
+            "Jizzakh Region, Zaamin District, National Park area",
+        ),
+        "lat": money("39.960100"),
+        "lng": money("68.395900"),
         "stars": 5,
+        "phones": ["+998724505050", "+998901111050"],
+        "website": "https://zomin-shifo.uzwellness.com",
+        "check_in_time": time(14, 0),
+        "check_out_time": time(12, 0),
+        "pets_allowed": False,
+        "service_animals_allowed": True,
+        "min_checkin_age": 18,
+        "quiet_hours_from": time(22, 30),
+        "quiet_hours_to": time(7, 0),
+        "payment_methods": ["cash", "bank_transfer", "uzcard", "visa", "mastercard"],
+        "house_rules": tr(
+            "Davolash zonalarida shovqin qilish va chekish mumkin emas.",
+            "В лечебных зонах запрещены шум и курение.",
+            "Noise and smoking are not allowed in treatment areas.",
+        ),
+        "cancellation_policy": tr(
+            "Kelishdan 5 kun oldin bepul bekor qilish mumkin.",
+            "Бесплатная отмена за 5 дней до заезда.",
+            "Free cancellation up to 5 days before arrival.",
+        ),
+        "weekly_schedule": {
+            "monday": "08:00-20:00",
+            "tuesday": "08:00-20:00",
+            "wednesday": "08:00-20:00",
+            "thursday": "08:00-20:00",
+            "friday": "08:00-20:00",
+            "saturday": "09:00-18:00",
+            "sunday": "09:00-16:00",
+        },
+        "property_type": PropertyType.SANATORIUM,
+        "wellness_category": None,
+        "treatment_focuses": ["respiratory", "neurological", "wellness"],
+        "year_opened": 2018,
+        "languages_spoken": ["uz", "ru", "en"],
+        "highlights": [
+            "High-altitude respiratory therapy",
+            "Pine forest walking routes",
+            "Mineral inhalation rooms",
+        ],
+        "surroundings": [
+            {"name": "Zomin milliy bog'i", "type": "national_park", "distance_m": 600},
+            {"name": "Suffa plato", "type": "viewpoint", "distance_m": 8200},
+        ],
+        "venues": [
+            {"name": "Archazor Restaurant", "type": "restaurant", "building": "Main block", "hours": "07:30-22:00"},
+            {"name": "Pine Hall", "type": "conference", "building": "Business wing", "hours": "09:00-18:00"},
+        ],
+        "meal_schedule": [
+            {"meal": "breakfast", "time_from": "07:30", "time_to": "10:00", "style": "buffet"},
+            {"meal": "lunch", "time_from": "12:30", "time_to": "14:30", "style": "diet menu"},
+            {"meal": "dinner", "time_from": "18:30", "time_to": "20:30", "style": "set menu"},
+        ],
+        "platform_commission_percent": money("12.00"),
+        "b2b_commission_percent": money("7.00"),
+        "agent_discount_tiers": [
+            {"min_bookings": 3, "discount_percent": "5"},
+            {"min_bookings": 10, "discount_percent": "10"},
+        ],
+        "amenities": [
+            ("wifi", AmenityCost.FREE),
+            ("doctor", AmenityCost.FREE),
+            ("mineral-water", AmenityCost.FREE),
+            ("physio", AmenityCost.PAID),
+            ("restaurant", AmenityCost.FREE),
+            ("airport-transfer", AmenityCost.ON_REQUEST),
+            ("conference", AmenityCost.PAID),
+        ],
+        "images": [
+            ("zomin-hero.jpg", True, "Pine forest resort facade"),
+            ("zomin-treatment.jpg", False, "Respiratory treatment wing"),
+            ("zomin-trail.jpg", False, "Forest walking trail"),
+        ],
     },
     {
-        "name": {
-            "uz": "Nur Samarqand",
-            "ru": "Нур Самарканд",
-            "en": "Nur Samarkand",
-        },
-        "slug": "nur-samarqand",
-        "description": {
-            "uz": "Samarqandning tarixiy markazida joylashgan, zamonaviy shifo markazi.",
-            "ru": "Современный оздоровительный центр в историческом центре Самарканда.",
-            "en": "A modern wellness centre in the heart of historic Samarkand.",
-        },
+        "slug": "chortoq-mineral-spa",
+        "admin": "chortoq@uzwellness.com",
+        "region": "namangan",
+        "destination": "fergana-valley",
+        "name": tr("Chortoq Mineral Spa", "Чартак Mineral Spa", "Chortoq Mineral Spa"),
+        "description": tr(
+            "Mineral buloqlar, balneologiya va oilaviy wellness dasturlariga ixtisoslashgan Namangan sanatoriysi.",
+            "Санаторий в Намангане с минеральными источниками, бальнеологией и семейными wellness-программами.",
+            "A Namangan sanatorium focused on mineral springs, balneology, and family wellness programs.",
+        ),
+        "city": "Chortoq",
+        "address": tr("Chortoq tumani, Mineral buloqlar ko'chasi 7", "Чартакский район, ул. Минеральных источников 7", "Chortoq District, 7 Mineral Springs Street"),
+        "lat": money("41.066800"),
+        "lng": money("71.825600"),
+        "stars": 4,
+        "phones": ["+998694123333", "+998909009090"],
+        "website": "https://chortoq-mineral.uzwellness.com",
+        "check_in_time": time(13, 0),
+        "check_out_time": time(11, 30),
+        "pets_allowed": False,
+        "service_animals_allowed": True,
+        "min_checkin_age": 16,
+        "quiet_hours_from": time(23, 0),
+        "quiet_hours_to": time(7, 0),
+        "payment_methods": ["cash", "bank_transfer", "uzcard", "visa", "mir"],
+        "house_rules": tr("Mineral vanna seanslariga vaqtida kelish talab qilinadi.", "На минеральные ванны необходимо приходить вовремя.", "Guests must arrive on time for mineral bath sessions."),
+        "cancellation_policy": tr("Kelishdan 3 kun oldin bepul bekor qilish mumkin.", "Бесплатная отмена за 3 дня до заезда.", "Free cancellation up to 3 days before arrival."),
+        "weekly_schedule": {"daily": "08:00-21:00", "treatment_break": "13:00-14:00"},
+        "property_type": PropertyType.SANATORIUM,
+        "wellness_category": None,
+        "treatment_focuses": ["musculoskeletal", "dermatology", "endocrine", "wellness"],
+        "year_opened": 2015,
+        "languages_spoken": ["uz", "ru"],
+        "highlights": ["Mineral baths", "Family wellness plans", "Dietitian menu"],
+        "surroundings": [
+            {"name": "Chortoq mineral spring", "type": "spring", "distance_m": 250},
+            {"name": "Namangan airport", "type": "airport", "distance_m": 32000},
+        ],
+        "venues": [
+            {"name": "Buloq Dining", "type": "restaurant", "building": "Block A", "hours": "07:00-21:00"},
+            {"name": "Mineral Bath Center", "type": "treatment", "building": "Spa block", "hours": "08:00-18:00"},
+        ],
+        "meal_schedule": [
+            {"meal": "breakfast", "time_from": "07:00", "time_to": "09:30", "style": "buffet"},
+            {"meal": "lunch", "time_from": "12:00", "time_to": "14:00", "style": "diet menu"},
+            {"meal": "dinner", "time_from": "18:00", "time_to": "20:00", "style": "buffet"},
+        ],
+        "platform_commission_percent": money("10.00"),
+        "b2b_commission_percent": money("6.00"),
+        "agent_discount_tiers": [{"min_bookings": 5, "discount_percent": "7"}],
+        "amenities": [
+            ("wifi", AmenityCost.FREE),
+            ("pool", AmenityCost.FREE),
+            ("spa", AmenityCost.PAID),
+            ("doctor", AmenityCost.FREE),
+            ("mineral-water", AmenityCost.FREE),
+            ("kids-club", AmenityCost.FREE),
+            ("parking", AmenityCost.FREE),
+        ],
+        "images": [
+            ("chortoq-hero.jpg", True, "Mineral spa entrance"),
+            ("chortoq-pool.jpg", False, "Indoor mineral pool"),
+            ("chortoq-family.jpg", False, "Family garden area"),
+        ],
+    },
+    {
+        "slug": "chinobod-health-resort",
+        "admin": "chinobod@uzwellness.com",
+        "region": "toshkent",
+        "destination": "chimgan-mountains",
+        "name": tr("Chinobod Health Resort", "Чинобод Health Resort", "Chinobod Health Resort"),
+        "description": tr(
+            "Toshkent yaqinidagi klinik-diagnostika, spa va biznes qulayliklari bor shahar-tog' kurorti.",
+            "Городской горный курорт недалеко от Ташкента с диагностикой, спа и бизнес-инфраструктурой.",
+            "A city-mountain resort near Tashkent with diagnostics, spa, and business facilities.",
+        ),
+        "city": "Toshkent viloyati",
+        "address": tr("Qibray tumani, Chinobod yo'li 12", "Кибрайский район, Чинободская дорога 12", "Qibray District, 12 Chinobod Road"),
+        "lat": money("41.383200"),
+        "lng": money("69.468100"),
+        "stars": 5,
+        "phones": ["+998712005050", "+998998887777"],
+        "website": "https://chinobod-health.uzwellness.com",
+        "check_in_time": time(15, 0),
+        "check_out_time": time(12, 0),
+        "pets_allowed": True,
+        "service_animals_allowed": True,
+        "min_checkin_age": 18,
+        "quiet_hours_from": time(22, 0),
+        "quiet_hours_to": time(7, 0),
+        "payment_methods": ["cash", "bank_transfer", "uzcard", "visa", "mastercard", "unionpay"],
+        "house_rules": tr("Uy hayvonlari faqat garden wing xonalarida qabul qilinadi.", "Питомцы размещаются только в номерах garden wing.", "Pets are accepted only in garden wing rooms."),
+        "cancellation_policy": tr("Kelishdan 7 kun oldin bepul, keyin 1 kecha jarima.", "Бесплатно за 7 дней, далее штраф за 1 ночь.", "Free up to 7 days before arrival, then a 1-night penalty."),
+        "weekly_schedule": {"reception": "24/7", "clinic": "08:00-19:00", "spa": "09:00-22:00"},
+        "property_type": PropertyType.SANATORIUM,
+        "wellness_category": None,
+        "treatment_focuses": ["cardiovascular", "digestive", "wellness"],
+        "year_opened": 2021,
+        "languages_spoken": ["uz", "ru", "en"],
+        "highlights": ["Full diagnostics", "Business-ready rooms", "Airport transfer desk"],
+        "surroundings": [
+            {"name": "Tashkent International Airport", "type": "airport", "distance_m": 28000},
+            {"name": "Amirsoy resort road", "type": "landmark", "distance_m": 43000},
+        ],
+        "venues": [
+            {"name": "Oqsaroy Restaurant", "type": "restaurant", "building": "Tower", "hours": "07:00-23:00"},
+            {"name": "Executive Hall", "type": "conference", "building": "Business block", "hours": "08:00-20:00"},
+        ],
+        "meal_schedule": [
+            {"meal": "breakfast", "time_from": "07:00", "time_to": "10:30", "style": "buffet"},
+            {"meal": "lunch", "time_from": "12:30", "time_to": "15:00", "style": "a la carte"},
+            {"meal": "dinner", "time_from": "18:30", "time_to": "22:00", "style": "a la carte"},
+        ],
+        "platform_commission_percent": money("14.00"),
+        "b2b_commission_percent": money("8.00"),
+        "agent_discount_tiers": [
+            {"min_bookings": 2, "discount_percent": "4"},
+            {"min_bookings": 8, "discount_percent": "9"},
+        ],
+        "amenities": [
+            ("wifi", AmenityCost.FREE),
+            ("pool", AmenityCost.FREE),
+            ("spa", AmenityCost.PAID),
+            ("gym", AmenityCost.FREE),
+            ("restaurant", AmenityCost.FREE),
+            ("airport-transfer", AmenityCost.ON_REQUEST),
+            ("conference", AmenityCost.PAID),
+        ],
+        "images": [
+            ("chinobod-hero.jpg", True, "Main resort building"),
+            ("chinobod-suite.jpg", False, "Suite view"),
+            ("chinobod-spa.jpg", False, "Spa treatment area"),
+        ],
+    },
+    {
+        "slug": "samarkand-silk-wellness",
+        "admin": "samarkand@uzwellness.com",
+        "region": "samarqand",
+        "destination": "samarkand",
+        "name": tr("Samarkand Silk Wellness", "Самарканд Silk Wellness", "Samarkand Silk Wellness"),
+        "description": tr(
+            "Samarqand markazidagi wellness markaz: yoga, spa, meditatsiya va qisqa shahar retreatlari.",
+            "Wellness-центр в центре Самарканда: йога, спа, медитация и короткие городские ретриты.",
+            "A wellness center in central Samarkand for yoga, spa, meditation, and short city retreats.",
+        ),
         "city": "Samarqand",
-        "address": {
-            "uz": "Registon ko'chasi, 12",
-            "ru": "ул. Регистан, 12",
-            "en": "12 Registan Street",
-        },
-        "lat": Decimal("39.6542"),
-        "lng": Decimal("66.9597"),
+        "address": tr("Registon yaqinida, Universitet xiyoboni 18", "Рядом с Регистаном, Университетский бульвар 18", "Near Registan, 18 University Boulevard"),
+        "lat": money("39.657100"),
+        "lng": money("66.974900"),
         "stars": 4,
-    },
-    {
-        "name": {
-            "uz": "Buxoro Ziloli",
-            "ru": "Бухара Зилоли",
-            "en": "Bukhara Ziloli",
-        },
-        "slug": "buxoro-ziloli",
-        "description": {
-            "uz": "Qadimiy Buxoro shahri yaqinida, toza havo va shifo manbalari bilan.",
-            "ru": "Рядом с древней Бухарой, чистый воздух и природные источники.",
-            "en": "Near ancient Bukhara, clean air and natural healing springs.",
-        },
-        "city": "Buxoro",
-        "address": {
-            "uz": "Olimlar ko'chasi, 5",
-            "ru": "ул. Олимлар, 5",
-            "en": "5 Olimlar Street",
-        },
-        "lat": Decimal("39.7747"),
-        "lng": Decimal("64.4286"),
-        "stars": 3,
-    },
-    {
-        "name": {
-            "uz": "Namangan Bog'i",
-            "ru": "Наманган Боги",
-            "en": "Namangan Garden",
-        },
-        "slug": "namangan-bogi",
-        "description": {
-            "uz": "Namangan shahridagi katta bog' ichida joylashgan tinch dam olish joyi.",
-            "ru": "Тихий курорт в большом парке Намангана.",
-            "en": "A peaceful resort nestled inside a large park in Namangan.",
-        },
-        "city": "Namangan",
-        "address": {
-            "uz": "Bog' ko'chasi, 88",
-            "ru": "ул. Бог, 88",
-            "en": "88 Bog Street",
-        },
-        "lat": Decimal("41.0011"),
-        "lng": Decimal("71.6728"),
-        "stars": 4,
-    },
-]
-
-# room_categories per sanatorium index
-ROOM_TEMPLATES = [
-    [
-        {"name": {"uz": "Standart xona", "ru": "Стандартный номер", "en": "Standard Room"},
-         "capacity": 2, "base_price": Decimal("80.00"),  "base_currency": "USD", "min_nights": 1},
-        {"name": {"uz": "Deluxe xona",   "ru": "Делюкс номер",      "en": "Deluxe Room"},
-         "capacity": 2, "base_price": Decimal("120.00"), "base_currency": "USD", "min_nights": 2},
-        {"name": {"uz": "Lyuks",         "ru": "Люкс",              "en": "Suite"},
-         "capacity": 3, "base_price": Decimal("200.00"), "base_currency": "USD", "min_nights": 2},
-        {"name": {"uz": "Prezident lyuks","ru": "Президентский люкс","en": "Presidential Suite"},
-         "capacity": 4, "base_price": Decimal("350.00"), "base_currency": "USD", "min_nights": 3},
-    ],
-    [
-        {"name": {"uz": "Iqtisodiy",  "ru": "Эконом",      "en": "Economy"},
-         "capacity": 2, "base_price": Decimal("600000"), "base_currency": "UZS", "min_nights": 1},
-        {"name": {"uz": "Standart",   "ru": "Стандарт",    "en": "Standard"},
-         "capacity": 2, "base_price": Decimal("900000"), "base_currency": "UZS", "min_nights": 1},
-        {"name": {"uz": "Oila xonasi","ru": "Семейный",    "en": "Family Room"},
-         "capacity": 4, "base_price": Decimal("1400000"),"base_currency": "UZS", "min_nights": 2},
-    ],
-    [
-        {"name": {"uz": "Standart",  "ru": "Стандарт",  "en": "Standard"},
-         "capacity": 2, "base_price": Decimal("450000"), "base_currency": "UZS", "min_nights": 1},
-        {"name": {"uz": "Komfort",   "ru": "Комфорт",   "en": "Comfort"},
-         "capacity": 2, "base_price": Decimal("650000"), "base_currency": "UZS", "min_nights": 2},
-        {"name": {"uz": "Oila",      "ru": "Семейный",  "en": "Family"},
-         "capacity": 5, "base_price": Decimal("1000000"),"base_currency": "UZS", "min_nights": 2},
-    ],
-    [
-        {"name": {"uz": "Standart",   "ru": "Стандарт",   "en": "Standard"},
-         "capacity": 2, "base_price": Decimal("75.00"),  "base_currency": "USD", "min_nights": 1},
-        {"name": {"uz": "Junior lyuks","ru": "Джуниор люкс","en": "Junior Suite"},
-         "capacity": 2, "base_price": Decimal("130.00"), "base_currency": "USD", "min_nights": 2},
-        {"name": {"uz": "VIP xona",   "ru": "VIP номер",  "en": "VIP Room"},
-         "capacity": 3, "base_price": Decimal("180.00"), "base_currency": "USD", "min_nights": 2},
-    ],
-]
-
-PACKAGE_TEMPLATES = [
-    {
-        "slug": "charvak-wellness-weekend",
-        "sanatorium_slug": "charvak-oromgohi",
-        "title": {
-            "uz": "Charvak Wellness Weekend",
-            "ru": "Велнес-уикенд в Чарваке",
-            "en": "Charvak Wellness Weekend",
-        },
-        "description": {
-            "uz": "3 kecha davomida tog' havosi, transfer, ovqatlanish va shifo muolajalari.",
-            "ru": "3 ночи с горным воздухом, трансфером, питанием и оздоровительными процедурами.",
-            "en": "3 nights with mountain air, transfer, meals, and wellness treatments.",
-        },
-        "duration_nights": 3,
-        "base_price": Decimal("690.00"),
-        "currency": "USD",
-        "items": [
-            {
-                "item_type": PackageItemType.TRANSFER,
-                "title": {
-                    "uz": "Aeroportdan transfer",
-                    "ru": "Трансфер из аэропорта",
-                    "en": "Airport transfer",
-                },
-                "description": {
-                    "uz": "Toshkent aeroportidan Charvakka borish va qaytish.",
-                    "ru": "Трансфер из аэропорта Ташкента в Чарвак и обратно.",
-                    "en": "Round-trip transfer from Tashkent airport to Charvak.",
-                },
-                "display_order": 1,
-            },
-            {
-                "item_type": PackageItemType.TREATMENT,
-                "title": {
-                    "uz": "Wellness muolajalari",
-                    "ru": "Оздоровительные процедуры",
-                    "en": "Wellness treatments",
-                },
-                "description": {
-                    "uz": "Kundalik konsultatsiya va tiklanish dasturi.",
-                    "ru": "Ежедневная консультация и восстановительная программа.",
-                    "en": "Daily consultation and recovery program.",
-                },
-                "display_order": 2,
-            },
+        "phones": ["+998662220000", "+998935556677"],
+        "website": "https://samarkand-silk.uzwellness.com",
+        "check_in_time": time(9, 0),
+        "check_out_time": time(21, 0),
+        "pets_allowed": False,
+        "service_animals_allowed": True,
+        "min_checkin_age": 14,
+        "quiet_hours_from": time(21, 30),
+        "quiet_hours_to": time(8, 0),
+        "payment_methods": ["cash", "bank_transfer", "uzcard", "visa", "mastercard"],
+        "house_rules": tr("Sessiyalarga 10 daqiqa oldin kelish so'raladi.", "Просим приходить за 10 минут до сессии.", "Please arrive 10 minutes before each session."),
+        "cancellation_policy": tr("Sessiyadan 24 soat oldin bepul bekor qilish mumkin.", "Бесплатная отмена за 24 часа до сессии.", "Free cancellation up to 24 hours before the session."),
+        "weekly_schedule": {"daily": "09:00-21:00", "friday": "09:00-18:00"},
+        "property_type": PropertyType.WELLNESS,
+        "wellness_category": WellnessCategory.YOGA_RETREAT,
+        "treatment_focuses": ["wellness", "neurological"],
+        "year_opened": 2023,
+        "languages_spoken": ["uz", "ru", "en"],
+        "highlights": ["Small group yoga", "Guided meditation", "Historic city retreats"],
+        "surroundings": [
+            {"name": "Registon maydoni", "type": "attraction", "distance_m": 900},
+            {"name": "Siyob bozori", "type": "market", "distance_m": 1500},
         ],
-    },
-    {
-        "slug": "samarqand-health-retreat",
-        "sanatorium_slug": "nur-samarqand",
-        "title": {
-            "uz": "Samarqand Health Retreat",
-            "ru": "Оздоровительный ретрит в Самарканде",
-            "en": "Samarkand Health Retreat",
-        },
-        "description": {
-            "uz": "5 kecha Samarqandda dam olish, tekshiruv va shaharga qisqa ekskursiya.",
-            "ru": "5 ночей в Самарканде с отдыхом, обследованием и короткой экскурсией.",
-            "en": "5 nights in Samarkand with rest, check-up, and a short city tour.",
-        },
-        "duration_nights": 5,
-        "base_price": Decimal("12000000"),
-        "currency": "UZS",
-        "items": [
-            {
-                "item_type": PackageItemType.TREATMENT,
-                "title": {
-                    "uz": "Boshlang'ich tibbiy tekshiruv",
-                    "ru": "Первичный медицинский осмотр",
-                    "en": "Initial medical check-up",
-                },
-                "description": {
-                    "uz": "Shifokor konsultatsiyasi va asosiy tavsiyalar.",
-                    "ru": "Консультация врача и базовые рекомендации.",
-                    "en": "Doctor consultation and baseline recommendations.",
-                },
-                "display_order": 1,
-            },
-            {
-                "item_type": PackageItemType.EXCURSION,
-                "title": {
-                    "uz": "Registon ekskursiyasi",
-                    "ru": "Экскурсия на Регистан",
-                    "en": "Registan excursion",
-                },
-                "description": {
-                    "uz": "Gid bilan yarim kunlik shaharga sayohat.",
-                    "ru": "Полудневная экскурсия по городу с гидом.",
-                    "en": "Half-day guided city tour.",
-                },
-                "display_order": 2,
-            },
+        "venues": [
+            {"name": "Silk Studio", "type": "yoga", "building": "Main floor", "hours": "09:00-21:00"},
+            {"name": "Tea Lounge", "type": "lounge", "building": "Courtyard", "hours": "10:00-20:00"},
         ],
-    },
-    {
-        "slug": "buxoro-recovery-tour",
-        "sanatorium_slug": "buxoro-ziloli",
-        "title": {
-            "uz": "Buxoro Recovery Tour",
-            "ru": "Восстановительный тур в Бухару",
-            "en": "Bukhara Recovery Tour",
-        },
-        "description": {
-            "uz": "7 kecha tiklanish dasturi, ovqatlanish va transport xizmati.",
-            "ru": "7 ночей восстановительной программы с питанием и транспортом.",
-            "en": "7-night recovery program with meals and transport.",
-        },
-        "duration_nights": 7,
-        "base_price": Decimal("16000000"),
-        "currency": "UZS",
-        "items": [
-            {
-                "item_type": PackageItemType.MEAL,
-                "title": {
-                    "uz": "Kuniga 3 mahal ovqat",
-                    "ru": "Трехразовое питание",
-                    "en": "Three meals per day",
-                },
-                "description": {
-                    "uz": "Diyetolog tavsiyasi bo'yicha menyu.",
-                    "ru": "Меню по рекомендации диетолога.",
-                    "en": "Menu based on dietitian recommendations.",
-                },
-                "display_order": 1,
-            },
-            {
-                "item_type": PackageItemType.TREATMENT,
-                "title": {
-                    "uz": "7 kunlik tiklanish kursi",
-                    "ru": "7-дневный курс восстановления",
-                    "en": "7-day recovery course",
-                },
-                "description": {
-                    "uz": "Mineral vannalar va yengil fizioterapiya.",
-                    "ru": "Минеральные ванны и легкая физиотерапия.",
-                    "en": "Mineral baths and light physiotherapy.",
-                },
-                "display_order": 2,
-            },
-            {
-                "item_type": PackageItemType.TRANSFER,
-                "title": {
-                    "uz": "Temir yo'l vokzalidan transfer",
-                    "ru": "Трансфер с железнодорожного вокзала",
-                    "en": "Railway station transfer",
-                },
-                "description": {
-                    "uz": "Buxoro vokzalidan sanatoriygacha kutib olish.",
-                    "ru": "Встреча на вокзале Бухары и трансфер в санаторий.",
-                    "en": "Pickup from Bukhara railway station to the sanatorium.",
-                },
-                "display_order": 3,
-            },
+        "meal_schedule": [
+            {"meal": "tea", "time_from": "10:00", "time_to": "20:00", "style": "herbal"},
+            {"meal": "brunch", "time_from": "11:30", "time_to": "13:00", "style": "vegetarian"},
+        ],
+        "platform_commission_percent": money("15.00"),
+        "b2b_commission_percent": money("10.00"),
+        "agent_discount_tiers": [{"min_bookings": 4, "discount_percent": "6"}],
+        "amenities": [
+            ("wifi", AmenityCost.FREE),
+            ("spa", AmenityCost.PAID),
+            ("yoga", AmenityCost.FREE),
+            ("restaurant", AmenityCost.PAID),
+            ("airport-transfer", AmenityCost.ON_REQUEST),
+        ],
+        "images": [
+            ("samarkand-wellness-hero.jpg", True, "Courtyard yoga studio"),
+            ("samarkand-yoga.jpg", False, "Morning yoga session"),
+            ("samarkand-spa.jpg", False, "Urban spa room"),
         ],
     },
 ]
 
-VISA_REQUEST_TEMPLATES = [
-    {
-        "user_email": "ali@gmail.com",
-        "full_name": "Ali Karimov",
-        "citizenship": "Kazakhstan",
-        "passport_number": "KZ1234567",
-        "date_of_birth": date(1991, 5, 14),
-        "arrival_offset_days": 35,
-        "stay_nights": 10,
-        "purpose": VisaPurpose.TREATMENT,
-        "status": VisaStatus.PENDING,
-        "admin_notes": None,
-    },
-    {
-        "user_email": "zulfiya@gmail.com",
-        "full_name": "Zulfiya Yusupova",
-        "citizenship": "Kyrgyzstan",
-        "passport_number": "KG7654321",
-        "date_of_birth": date(1988, 11, 3),
-        "arrival_offset_days": 50,
-        "stay_nights": 8,
-        "purpose": VisaPurpose.TOURISM,
-        "status": VisaStatus.PROCESSING,
-        "admin_notes": "Passport scan received; invitation letter in progress.",
-    },
-    {
-        "user_email": "jasur@gmail.com",
-        "full_name": "Jasur Toshmatov",
-        "citizenship": "Tajikistan",
-        "passport_number": "TJ9988776",
-        "date_of_birth": date(1985, 2, 22),
-        "arrival_offset_days": 70,
-        "stay_nights": 14,
-        "purpose": VisaPurpose.TREATMENT,
-        "status": VisaStatus.ISSUED,
-        "admin_notes": "Demo visa issued for testing.",
-    },
-]
+ROOMS = {
+    "zomin-shifo-resort": [
+        {
+            "name": tr("Pine Standard", "Pine Standard", "Pine Standard"),
+            "description": tr("Qarag'ay tomonga qaragan sokin standart xona.", "Тихий стандартный номер с видом на сосны.", "A quiet standard room facing the pine forest."),
+            "size_sqm": 28,
+            "floor": "2-4",
+            "beds": [{"label": "Twin or double", "beds": [{"type": "twin", "count": 2, "size_cm": "90x200"}, {"type": "double", "count": 1, "size_cm": "160x200"}]}],
+            "view": RoomView.MOUNTAIN,
+            "smoking_allowed": False,
+            "capacity": 2,
+            "max_adults": 2,
+            "max_children": 1,
+            "inventory_count": 8,
+            "base_price": money("950000.00"),
+            "base_price_weekend": money("1150000.00"),
+            "base_currency": "UZS",
+            "markup_percent": money("8.00"),
+            "discount_percent": money("5.00"),
+            "min_nights": 2,
+            "amenities": ["wifi", "doctor", "restaurant"],
+        },
+        {
+            "name": tr("Family Forest Suite", "Семейный лесной люкс", "Family Forest Suite"),
+            "description": tr("Oilalar uchun ikki zonali keng lyuks.", "Просторный двухзонный люкс для семей.", "A spacious two-zone suite for families."),
+            "size_sqm": 52,
+            "floor": "5",
+            "beds": [{"label": "Family", "beds": [{"type": "queen", "count": 1, "size_cm": "180x200"}, {"type": "sofa_bed", "count": 1, "size_cm": "140x190"}]}],
+            "view": RoomView.MOUNTAIN,
+            "smoking_allowed": False,
+            "capacity": 4,
+            "max_adults": 3,
+            "max_children": 2,
+            "inventory_count": 5,
+            "base_price": money("1650000.00"),
+            "base_price_weekend": money("1900000.00"),
+            "base_currency": "UZS",
+            "markup_percent": money("10.00"),
+            "discount_percent": None,
+            "min_nights": 3,
+            "amenities": ["wifi", "doctor", "restaurant", "parking"],
+        },
+    ],
+    "chortoq-mineral-spa": [
+        {
+            "name": tr("Mineral Comfort", "Минеральный комфорт", "Mineral Comfort"),
+            "description": tr("Spa blokiga yaqin komfort xona.", "Комфортный номер рядом со спа-блоком.", "A comfort room close to the spa block."),
+            "size_sqm": 30,
+            "floor": "2,4",
+            "beds": [{"label": "Double", "beds": [{"type": "double", "count": 1, "size_cm": "160x200"}]}],
+            "view": RoomView.GARDEN,
+            "smoking_allowed": False,
+            "capacity": 2,
+            "max_adults": 2,
+            "max_children": 1,
+            "inventory_count": 10,
+            "base_price": money("85.00"),
+            "base_price_weekend": money("99.00"),
+            "base_currency": "USD",
+            "markup_percent": money("6.00"),
+            "discount_percent": money("3.00"),
+            "min_nights": 1,
+            "amenities": ["wifi", "pool", "spa", "restaurant"],
+        },
+        {
+            "name": tr("Balneo Family", "Бальнео семейный", "Balneo Family"),
+            "description": tr("Mineral muolajalar uchun oilaviy xona.", "Семейный номер для бальнеологических программ.", "A family room for balneology programs."),
+            "size_sqm": 44,
+            "floor": "3-5",
+            "beds": [{"label": "Family", "beds": [{"type": "queen", "count": 1, "size_cm": "180x200"}, {"type": "single", "count": 2, "size_cm": "90x200"}]}],
+            "view": RoomView.POOL,
+            "smoking_allowed": False,
+            "capacity": 4,
+            "max_adults": 2,
+            "max_children": 3,
+            "inventory_count": 6,
+            "base_price": money("130.00"),
+            "base_price_weekend": money("155.00"),
+            "base_currency": "USD",
+            "markup_percent": money("7.00"),
+            "discount_percent": None,
+            "min_nights": 2,
+            "amenities": ["wifi", "pool", "kids-club", "restaurant"],
+        },
+    ],
+    "chinobod-health-resort": [
+        {
+            "name": tr("Executive Deluxe", "Executive Deluxe", "Executive Deluxe"),
+            "description": tr("Biznes mehmonlar uchun ish stoli va tez internetli xona.", "Номер с рабочей зоной и быстрым интернетом для бизнес-гостей.", "A room with workspace and fast internet for business guests."),
+            "size_sqm": 36,
+            "floor": "6-8",
+            "beds": [{"label": "King", "beds": [{"type": "king", "count": 1, "size_cm": "200x200"}]}],
+            "view": RoomView.CITY,
+            "smoking_allowed": False,
+            "capacity": 2,
+            "max_adults": 2,
+            "max_children": 1,
+            "inventory_count": 7,
+            "base_price": money("140.00"),
+            "base_price_weekend": money("165.00"),
+            "base_currency": "USD",
+            "markup_percent": money("12.00"),
+            "discount_percent": money("4.00"),
+            "min_nights": 1,
+            "amenities": ["wifi", "gym", "restaurant", "conference"],
+        },
+        {
+            "name": tr("Garden Pet Suite", "Garden Pet Suite", "Garden Pet Suite"),
+            "description": tr("Bog'ga chiqishli, uy hayvoni bilan kelish mumkin bo'lgan lyuks.", "Люкс с выходом в сад, доступен для гостей с питомцами.", "A garden-access suite available for guests traveling with pets."),
+            "size_sqm": 58,
+            "floor": "1",
+            "beds": [{"label": "Suite", "beds": [{"type": "king", "count": 1, "size_cm": "200x200"}, {"type": "sofa_bed", "count": 1, "size_cm": "150x190"}]}],
+            "view": RoomView.GARDEN,
+            "smoking_allowed": False,
+            "capacity": 3,
+            "max_adults": 2,
+            "max_children": 2,
+            "inventory_count": 4,
+            "base_price": money("220.00"),
+            "base_price_weekend": money("260.00"),
+            "base_currency": "USD",
+            "markup_percent": money("12.00"),
+            "discount_percent": None,
+            "min_nights": 2,
+            "amenities": ["wifi", "spa", "gym", "restaurant", "parking"],
+        },
+    ],
+}
+
+PROGRAMS = {
+    "zomin-shifo-resort": [
+        {
+            "name": tr("Nafas olish reabilitatsiyasi", "Респираторная реабилитация", "Respiratory Rehabilitation"),
+            "description": tr("Shifokor ko'rigi, inhalatsiya va o'rmon yurishlaridan iborat 7 kunlik dastur.", "7-дневная программа с осмотром врача, ингаляциями и лесными прогулками.", "A 7-day program with doctor checks, inhalation, and forest walks."),
+            "min_nights": 7,
+            "max_nights": 14,
+            "duration_minutes": 60,
+            "price": None,
+            "currency": None,
+            "instructor_name": "Dr. Dilshod Rasulov",
+            "instructor_bio": tr("Pulmonolog, 12 yillik tajriba.", "Пульмонолог, 12 лет опыта.", "Pulmonologist with 12 years of experience."),
+            "group_size_min": 1,
+            "group_size_max": 8,
+            "what_to_bring": tr("Qulay poyabzal va avvalgi tahlillar.", "Удобная обувь и предыдущие анализы.", "Comfortable shoes and previous test results."),
+            "amenities": ["doctor", "mineral-water", "physio"],
+        }
+    ],
+    "chortoq-mineral-spa": [
+        {
+            "name": tr("Mineral vannalar kursi", "Курс минеральных ванн", "Mineral Bath Course"),
+            "description": tr("Teri va bo'g'imlar uchun 10 seanslik mineral vanna kursi.", "Курс из 10 минеральных ванн для кожи и суставов.", "A 10-session mineral bath course for skin and joints."),
+            "min_nights": 5,
+            "max_nights": 12,
+            "duration_minutes": 45,
+            "price": None,
+            "currency": None,
+            "instructor_name": "Dr. Shahnoza Ergasheva",
+            "instructor_bio": tr("Balneolog mutaxassis.", "Специалист-бальнеолог.", "Balneology specialist."),
+            "group_size_min": 1,
+            "group_size_max": 6,
+            "what_to_bring": tr("Shaxsiy tibbiy karta.", "Личная медицинская карта.", "Personal medical record."),
+            "amenities": ["doctor", "mineral-water", "spa"],
+        }
+    ],
+    "samarkand-silk-wellness": [
+        {
+            "name": tr("Morning Yoga Drop-in", "Утренняя йога drop-in", "Morning Yoga Drop-in"),
+            "description": tr("90 daqiqalik kichik guruh yoga mashg'uloti.", "90-минутное занятие йогой в малой группе.", "A 90-minute small-group yoga class."),
+            "min_nights": None,
+            "max_nights": None,
+            "duration_minutes": 90,
+            "price": money("180000.00"),
+            "currency": "UZS",
+            "instructor_name": "Madina Sodiqova",
+            "instructor_bio": tr("RYT-500 sertifikatli yoga instruktori.", "Инструктор йоги RYT-500.", "RYT-500 certified yoga instructor."),
+            "group_size_min": 2,
+            "group_size_max": 12,
+            "what_to_bring": tr("Qulay kiyim va suv idishi.", "Удобная одежда и бутылка воды.", "Comfortable clothes and a water bottle."),
+            "amenities": ["yoga", "wifi"],
+        },
+        {
+            "name": tr("Silk Road Meditation", "Медитация Silk Road", "Silk Road Meditation"),
+            "description": tr("Meditatsiya, choy marosimi va yengil brunch.", "Медитация, чайная церемония и легкий brunch.", "Meditation, tea ceremony, and light brunch."),
+            "min_nights": None,
+            "max_nights": None,
+            "duration_minutes": 150,
+            "price": money("320000.00"),
+            "currency": "UZS",
+            "instructor_name": "Aziza Tursunova",
+            "instructor_bio": tr("Mindfulness mentor va retreat kuratori.", "Mindfulness-наставник и куратор ретритов.", "Mindfulness mentor and retreat curator."),
+            "group_size_min": 3,
+            "group_size_max": 10,
+            "what_to_bring": tr("Telefonni jim rejimga qo'ying.", "Переведите телефон в беззвучный режим.", "Set your phone to silent mode."),
+            "amenities": ["yoga", "restaurant"],
+        },
+    ],
+}
 
 
-# ── helpers ────────────────────────────────────────────────────────────────
-
-async def get_or_create_user(db, *, email, password, role, full_name, phone=None):
-    existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if existing:
-        return existing, False
-    user = User(
-        email=email,
-        password_hash=hash_password(password),
-        role=role,
-        full_name=full_name,
-        phone=phone,
-        is_active=True,
-    )
-    db.add(user)
-    await db.flush()
-    return user, True
-
-
-async def get_or_create_sanatorium(
-    db, data, admin_id, region_id, destination_id
-):
-    existing = (
-        await db.execute(select(Sanatorium).where(Sanatorium.slug == data["slug"]))
-    ).scalar_one_or_none()
-    if existing:
-        # Sync FKs to the demo maps so the homepage tiles aggregate the way
-        # the FE design expects.
-        if region_id is not None and existing.region_id != region_id:
-            existing.region_id = region_id
-        if existing.destination_id != destination_id:
-            existing.destination_id = destination_id
-        return existing, False
-    san = Sanatorium(
-        name=data["name"],
-        slug=data["slug"],
-        description=data["description"],
-        city=data["city"],
-        region_id=region_id,
-        destination_id=destination_id,
-        address=data["address"],
-        lat=data.get("lat"),
-        lng=data.get("lng"),
-        stars=data["stars"],
-        status=SanatoriumStatus.APPROVED,
-        admin_user_id=admin_id,
-    )
-    db.add(san)
-    await db.flush()
-    return san, True
+async def clear_demo_data(db) -> None:
+    models = [
+        Payment,
+        Notification,
+        BookingExtraBed,
+        TransferRequest,
+        VisaRequest,
+        Booking,
+        SanatoriumReview,
+        PackageItem,
+        Package,
+        ExtraBedConfig,
+        RoomAvailability,
+        RatePlan,
+        RoomPricePeriod,
+        RoomImage,
+        Room,
+        TreatmentProgram,
+        SanatoriumAmenity,
+        SanatoriumImage,
+        Sanatorium,
+        Amenity,
+        RefreshToken,
+        User,
+    ]
+    for model in models:
+        await db.execute(delete(model))
 
 
-async def ensure_package_items(db, package: Package, item_templates):
-    existing_items = (
-        await db.execute(
-            select(PackageItem).where(PackageItem.package_id == package.id)
-        )
-    ).scalars().all()
-    existing_keys = {
-        (item.item_type, item.display_order)
-        for item in existing_items
+async def ensure_regions(db) -> dict[str, Region]:
+    existing = {
+        row.slug: row
+        for row in (await db.execute(select(Region))).scalars().all()
     }
-    created_count = 0
-    for item_data in item_templates:
-        key = (item_data["item_type"], item_data["display_order"])
-        if key in existing_keys:
-            continue
-        db.add(PackageItem(
-            package_id=package.id,
-            item_type=item_data["item_type"],
-            title=item_data["title"],
-            description=item_data["description"],
-            is_included=item_data.get("is_included", True),
-            extra_price=item_data.get("extra_price"),
-            display_order=item_data["display_order"],
-        ))
-        created_count += 1
-    if created_count:
+    for slug, name in REGIONS:
+        if slug not in existing:
+            region = Region(slug=slug, name=name, is_active=True)
+            db.add(region)
+            await db.flush()
+            existing[slug] = region
+    return existing
+
+
+async def ensure_destinations(db) -> dict[str, Destination]:
+    existing = {
+        row.slug: row
+        for row in (await db.execute(select(Destination))).scalars().all()
+    }
+    for data in DESTINATIONS:
+        if data["slug"] not in existing:
+            destination = Destination(
+                slug=data["slug"],
+                name=data["name"],
+                tagline=data["tagline"],
+                description=data["description"],
+                hero_image=data["hero_image"],
+                lat=data["lat"],
+                lng=data["lng"],
+                country="Uzbekistan",
+                is_active=True,
+            )
+            db.add(destination)
+            await db.flush()
+            existing[destination.slug] = destination
+    return existing
+
+
+async def create_users(db) -> dict[str, User]:
+    users = {}
+    for data in USERS:
+        user = User(
+            email=data["email"],
+            password_hash=hash_password(data["password"]),
+            role=data["role"],
+            full_name=data["full_name"],
+            phone=data["phone"],
+            is_active=True,
+        )
+        db.add(user)
+        users[user.email] = user
+    await db.flush()
+    return users
+
+
+async def create_amenities(db) -> dict[str, Amenity]:
+    amenities = {}
+    for slug, category, icon, name in AMENITIES:
+        amenity = Amenity(
+            name=name,
+            description=tr(
+                f"{name['uz']} xizmati mavjud.",
+                f"Доступна услуга: {name['ru']}.",
+                f"{name['en']} is available.",
+            ),
+            category=category,
+            icon=icon,
+        )
+        db.add(amenity)
+        amenities[slug] = amenity
+    await db.flush()
+    return amenities
+
+
+async def create_sanatoriums(
+    db,
+    *,
+    users: dict[str, User],
+    amenities: dict[str, Amenity],
+    regions: dict[str, Region],
+    destinations: dict[str, Destination],
+) -> dict[str, Sanatorium]:
+    sanatoriums = {}
+    for data in SANATORIUMS:
+        san = Sanatorium(
+            name=data["name"],
+            slug=data["slug"],
+            description=data["description"],
+            city=data["city"],
+            region_id=regions[data["region"]].id,
+            destination_id=destinations[data["destination"]].id,
+            address=data["address"],
+            lat=data["lat"],
+            lng=data["lng"],
+            phones=data["phones"],
+            website=data["website"],
+            check_in_time=data["check_in_time"],
+            check_out_time=data["check_out_time"],
+            pets_allowed=data["pets_allowed"],
+            service_animals_allowed=data["service_animals_allowed"],
+            min_checkin_age=data["min_checkin_age"],
+            quiet_hours_from=data["quiet_hours_from"],
+            quiet_hours_to=data["quiet_hours_to"],
+            payment_methods=data["payment_methods"],
+            house_rules=data["house_rules"],
+            cancellation_policy=data["cancellation_policy"],
+            weekly_schedule=data["weekly_schedule"],
+            stars=data["stars"],
+            property_type=data["property_type"],
+            wellness_category=data["wellness_category"],
+            treatment_focuses=data["treatment_focuses"],
+            year_opened=data["year_opened"],
+            languages_spoken=data["languages_spoken"],
+            highlights=data["highlights"],
+            surroundings=data["surroundings"],
+            venues=data["venues"],
+            meal_schedule=data["meal_schedule"],
+            platform_commission_percent=data["platform_commission_percent"],
+            b2b_commission_percent=data["b2b_commission_percent"],
+            agent_discount_tiers=data["agent_discount_tiers"],
+            avg_rating=Decimal("0.00"),
+            review_count=0,
+            status=SanatoriumStatus.APPROVED,
+            admin_user_id=users[data["admin"]].id,
+        )
+        db.add(san)
         await db.flush()
-    return created_count
 
-
-async def pick_room_for_package(db, sanatorium_id, currency):
-    """Cheapest active room in the sanatorium matching the package currency."""
-    return (
-        await db.execute(
-            select(Room)
-            .where(
-                Room.sanatorium_id == sanatorium_id,
-                Room.base_currency == currency,
-                Room.is_active.is_(True),
+        for order, (filename, primary, caption) in enumerate(data["images"]):
+            db.add(
+                SanatoriumImage(
+                    sanatorium_id=san.id,
+                    url=f"/uploads/demo/sanatoriums/{data['slug']}/{filename}",
+                    order=order,
+                    is_primary=primary,
+                    caption=caption,
+                )
             )
-            .order_by(Room.base_price)
-            .limit(1)
+        for slug, cost in data["amenities"]:
+            db.add(
+                SanatoriumAmenity(
+                    sanatorium_id=san.id,
+                    amenity_id=amenities[slug].id,
+                    cost=cost,
+                    is_available=True,
+                )
+            )
+        sanatoriums[san.slug] = san
+    await db.flush()
+    return sanatoriums
+
+
+async def create_rooms(
+    db, *, sanatoriums: dict[str, Sanatorium], amenities: dict[str, Amenity], today: date
+) -> dict[str, list[Room]]:
+    rooms_by_slug: dict[str, list[Room]] = {}
+    for san_slug, templates in ROOMS.items():
+        san = sanatoriums[san_slug]
+        rooms_by_slug[san_slug] = []
+        for index, data in enumerate(templates, start=1):
+            room = Room(
+                sanatorium_id=san.id,
+                name=data["name"],
+                description=data["description"],
+                size_sqm=data["size_sqm"],
+                floor=data["floor"],
+                beds=data["beds"],
+                view=data["view"],
+                smoking_allowed=data["smoking_allowed"],
+                capacity=data["capacity"],
+                max_adults=data["max_adults"],
+                max_children=data["max_children"],
+                inventory_count=data["inventory_count"],
+                base_price=data["base_price"],
+                base_price_weekend=data["base_price_weekend"],
+                base_currency=data["base_currency"],
+                markup_percent=data["markup_percent"],
+                discount_percent=data["discount_percent"],
+                min_nights=data["min_nights"],
+                is_active=True,
+                amenities=[amenities[slug] for slug in data["amenities"]],
+            )
+            db.add(room)
+            await db.flush()
+
+            db.add_all(
+                [
+                    RoomImage(
+                        room_id=room.id,
+                        url=f"/uploads/demo/rooms/{san_slug}/room-{index}-1.jpg",
+                        order=0,
+                        is_primary=True,
+                        is_video=False,
+                        caption=f"{data['name']['en']} bedroom",
+                    ),
+                    RoomImage(
+                        room_id=room.id,
+                        url=f"/uploads/demo/rooms/{san_slug}/room-{index}-tour.mp4",
+                        order=1,
+                        is_primary=False,
+                        is_video=True,
+                        caption=f"{data['name']['en']} video tour",
+                    ),
+                ]
+            )
+            db.add_all(
+                [
+                    RatePlan(
+                        room_id=room.id,
+                        name=tr("Moslashuvchan tarif", "Гибкий тариф", "Flexible rate"),
+                        board=BoardType.FULL_BOARD,
+                        board_optional=False,
+                        board_price=None,
+                        board_guests=room.capacity,
+                        refundable=True,
+                        free_cancellation_days=5,
+                        cancellation_penalty_percent=money("50.00"),
+                        cancellation_penalty_amount=None,
+                        payment_timing=PaymentTiming.DEPOSIT,
+                        confirmation=ConfirmationType.INSTANT,
+                        price_adjustment_percent=None,
+                        promo_label="Early wellness",
+                        promo_percent=money("7.00"),
+                        promo_starts_at=utc_now(),
+                        promo_ends_at=utc_now() + timedelta(days=45),
+                        min_nights=room.min_nights,
+                        max_nights=21,
+                        is_active=True,
+                    ),
+                    RatePlan(
+                        room_id=room.id,
+                        name=tr("Qaytarilmaydigan tarif", "Невозвратный тариф", "Non-refundable rate"),
+                        board=BoardType.BREAKFAST,
+                        board_optional=True,
+                        board_price=money("12.00") if room.base_currency == "USD" else money("120000.00"),
+                        board_guests=2,
+                        refundable=False,
+                        free_cancellation_days=None,
+                        cancellation_penalty_percent=money("100.00"),
+                        cancellation_penalty_amount=None,
+                        payment_timing=PaymentTiming.PREPAY,
+                        confirmation=ConfirmationType.INSTANT,
+                        price_adjustment_percent=money("-8.00"),
+                        promo_label=None,
+                        promo_percent=None,
+                        promo_starts_at=None,
+                        promo_ends_at=None,
+                        min_nights=room.min_nights,
+                        max_nights=14,
+                        is_active=True,
+                    ),
+                ]
+            )
+            db.add(
+                RoomPricePeriod(
+                    room_id=room.id,
+                    label="Summer high season",
+                    date_from=today + timedelta(days=30),
+                    date_to=today + timedelta(days=95),
+                    base_price=(room.base_price * Decimal("1.18")).quantize(Decimal("0.01")),
+                    base_price_weekend=(
+                        room.base_price_weekend * Decimal("1.18")
+                    ).quantize(Decimal("0.01"))
+                    if room.base_price_weekend is not None
+                    else None,
+                    discount_percent=money("2.00"),
+                )
+            )
+            for offset in range(1, 61):
+                blocked = 1 if offset in {12, 13, 35} and room.inventory_count > 2 else 0
+                booked = 1 if offset in {8, 9, 10, 28} else 0
+                db.add(
+                    RoomAvailability(
+                        room_id=room.id,
+                        date=today + timedelta(days=offset),
+                        units_blocked=blocked,
+                        units_booked=booked,
+                    )
+                )
+            rooms_by_slug[san_slug].append(room)
+    await db.flush()
+    return rooms_by_slug
+
+
+async def create_programs(
+    db, *, sanatoriums: dict[str, Sanatorium], amenities: dict[str, Amenity]
+) -> dict[str, list[TreatmentProgram]]:
+    programs_by_slug = {}
+    for san_slug, templates in PROGRAMS.items():
+        san = sanatoriums[san_slug]
+        programs_by_slug[san_slug] = []
+        for data in templates:
+            program = TreatmentProgram(
+                sanatorium_id=san.id,
+                name=data["name"],
+                description=data["description"],
+                min_nights=data["min_nights"],
+                max_nights=data["max_nights"],
+                duration_minutes=data["duration_minutes"],
+                price=data["price"],
+                currency=data["currency"],
+                instructor_name=data["instructor_name"],
+                instructor_bio=data["instructor_bio"],
+                group_size_min=data["group_size_min"],
+                group_size_max=data["group_size_max"],
+                what_to_bring=data["what_to_bring"],
+                is_active=True,
+                amenities=[amenities[slug] for slug in data["amenities"]],
+            )
+            db.add(program)
+            programs_by_slug[san_slug].append(program)
+    await db.flush()
+    return programs_by_slug
+
+
+async def create_extra_beds(db, sanatoriums: dict[str, Sanatorium]) -> dict[str, ExtraBedConfig]:
+    configs = {}
+    for san_slug, san in sanatoriums.items():
+        currency = "UZS" if san_slug == "zomin-shifo-resort" else "USD"
+        price = money("180000.00") if currency == "UZS" else money("18.00")
+        config = ExtraBedConfig(
+            sanatorium_id=san.id,
+            name=tr("Qo'shimcha o'rin", "Дополнительное место", "Extra bed"),
+            description=tr(
+                "Kattalar yoki bolalar uchun yig'ma qo'shimcha o'rin.",
+                "Раскладное дополнительное место для взрослого или ребенка.",
+                "A foldaway extra bed for an adult or child.",
+            ),
+            price_per_night=price,
+            currency=currency,
+            max_count=3,
+            is_active=True,
         )
-    ).scalar_one_or_none()
+        db.add(config)
+        configs[san_slug] = config
+    await db.flush()
+    return configs
 
 
-async def get_or_create_package(db, data, sanatorium_by_slug):
-    sanatorium = sanatorium_by_slug.get(data["sanatorium_slug"])
-    if sanatorium is None:
-        return None, False, 0, "no-sanatorium"
+async def create_packages(
+    db, *, sanatoriums: dict[str, Sanatorium], rooms_by_slug: dict[str, list[Room]]
+) -> dict[str, Package]:
+    package_specs = [
+        {
+            "slug": "zaamin-respiratory-retreat-7n",
+            "sanatorium": "zomin-shifo-resort",
+            "room_index": 0,
+            "title": tr("Zomin 7 kecha nafas retreati", "7 ночей дыхательного ретрита в Заамине", "Zaamin 7-Night Respiratory Retreat"),
+            "description": tr(
+                "Yashash, to'liq pansion, shifokor ko'rigi, inhalatsiya va transfer kiritilgan.",
+                "Проживание, полный пансион, осмотр врача, ингаляции и трансфер включены.",
+                "Accommodation, full board, doctor check, inhalation, and transfer included.",
+            ),
+            "duration_nights": 7,
+            "base_price": money("6800000.00"),
+            "currency": "UZS",
+            "hero": "/uploads/demo/packages/zaamin-retreat.jpg",
+        },
+        {
+            "slug": "chinobod-diagnostics-weekend",
+            "sanatorium": "chinobod-health-resort",
+            "room_index": 0,
+            "title": tr("Chinobod diagnostika weekend", "Диагностический weekend в Чинободе", "Chinobod Diagnostics Weekend"),
+            "description": tr(
+                "2 kecha yashash, diagnostika paketi, spa va aeroport transferi.",
+                "2 ночи проживания, диагностика, спа и трансфер из аэропорта.",
+                "Two nights, diagnostics package, spa, and airport transfer.",
+            ),
+            "duration_nights": 2,
+            "base_price": money("520.00"),
+            "currency": "USD",
+            "hero": "/uploads/demo/packages/chinobod-weekend.jpg",
+        },
+    ]
+    packages = {}
+    for spec in package_specs:
+        room = rooms_by_slug[spec["sanatorium"]][spec["room_index"]]
+        package = Package(
+            slug=spec["slug"],
+            title=spec["title"],
+            description=spec["description"],
+            hero_image_url=spec["hero"],
+            duration_nights=spec["duration_nights"],
+            base_price=spec["base_price"],
+            currency=spec["currency"],
+            sanatorium_id=sanatoriums[spec["sanatorium"]].id,
+            room_id=room.id,
+            is_active=True,
+        )
+        db.add(package)
+        await db.flush()
+        db.add_all(
+            [
+                PackageItem(
+                    package_id=package.id,
+                    item_type=PackageItemType.TREATMENT,
+                    title=tr("Davolash dasturi", "Лечебная программа", "Treatment program"),
+                    description=tr("Shifokor tuzgan kunlik muolajalar.", "Ежедневные процедуры по назначению врача.", "Daily treatments prescribed by a doctor."),
+                    is_included=True,
+                    extra_price=None,
+                    display_order=1,
+                ),
+                PackageItem(
+                    package_id=package.id,
+                    item_type=PackageItemType.TRANSFER,
+                    title=tr("Transfer", "Трансфер", "Transfer"),
+                    description=tr("Aeroport yoki vokzaldan kutib olish.", "Встреча из аэропорта или вокзала.", "Pickup from the airport or railway station."),
+                    is_included=True,
+                    extra_price=None,
+                    display_order=2,
+                ),
+                PackageItem(
+                    package_id=package.id,
+                    item_type=PackageItemType.EXCURSION,
+                    title=tr("Mahalliy ekskursiya", "Местная экскурсия", "Local excursion"),
+                    description=tr("Yarim kunlik gid xizmati.", "Полдня с гидом.", "A half-day guided tour."),
+                    is_included=False,
+                    extra_price=money("45.00") if spec["currency"] == "USD" else money("450000.00"),
+                    display_order=3,
+                ),
+            ]
+        )
+        packages[package.slug] = package
+    await db.flush()
+    return packages
 
-    existing = (
-        await db.execute(select(Package).where(Package.slug == data["slug"]))
-    ).scalar_one_or_none()
-    if existing:
-        created_items = await ensure_package_items(db, existing, data["items"])
-        return existing, False, created_items, None
 
-    room = await pick_room_for_package(db, sanatorium.id, data["currency"])
-    if room is None:
-        return None, False, 0, f"no {data['currency']} room"
+async def create_reviews(db, *, sanatoriums: dict[str, Sanatorium], users: dict[str, User]) -> None:
+    review_specs = [
+        ("zomin-shifo-resort", "ali@gmail.com", "Ali Karimov", "Kazakhstan", "family", 5, "Tog' havosi va davolash rejasi juda yaxshi tashkil qilingan."),
+        ("zomin-shifo-resort", "zulfiya@gmail.com", "Zulfiya Yusupova", "Kyrgyzstan", "couple", 4, "Xodimlar e'tiborli, ovqatlanish rejasi aniq."),
+        ("chortoq-mineral-spa", "malika@gmail.com", "Malika Rahimova", "Uzbekistan", "solo", 5, "Mineral vannalar va spa zonasi yoqdi."),
+        ("chinobod-health-resort", "ali@gmail.com", "Ali Karimov", "Kazakhstan", "business", 5, "Diagnostika tez, xona qulay va internet barqaror."),
+        ("samarkand-silk-wellness", "zulfiya@gmail.com", "Zulfiya Yusupova", "Kyrgyzstan", "solo", 5, "Yoga sessiyasi kichik guruhda professional o'tdi."),
+    ]
+    rating_sum: dict[str, int] = {slug: 0 for slug in sanatoriums}
+    rating_count: dict[str, int] = {slug: 0 for slug in sanatoriums}
+    for san_slug, email, name, country, traveler_type, rating, body in review_specs:
+        db.add(
+            SanatoriumReview(
+                sanatorium_id=sanatoriums[san_slug].id,
+                user_id=users[email].id,
+                reviewer_name=name,
+                reviewer_country=country,
+                traveler_type=traveler_type,
+                rating=rating,
+                cleanliness=rating,
+                location=rating,
+                service=rating,
+                value=max(rating - 1, 1),
+                food=rating,
+                body=body,
+                is_visible=True,
+            )
+        )
+        rating_sum[san_slug] += rating
+        rating_count[san_slug] += 1
+    for slug, san in sanatoriums.items():
+        count = rating_count[slug]
+        san.review_count = count
+        san.avg_rating = (
+            Decimal(rating_sum[slug]) / Decimal(count)
+        ).quantize(Decimal("0.01")) if count else None
 
-    package = Package(
-        slug=data["slug"],
-        title=data["title"],
-        description=data["description"],
-        duration_nights=data["duration_nights"],
-        base_price=data["base_price"],
-        currency=data["currency"],
-        sanatorium_id=sanatorium.id,
+
+async def create_bookings(
+    db,
+    *,
+    users: dict[str, User],
+    rooms_by_slug: dict[str, list[Room]],
+    programs_by_slug: dict[str, list[TreatmentProgram]],
+    packages: dict[str, Package],
+    extra_beds: dict[str, ExtraBedConfig],
+    today: date,
+) -> None:
+    room = rooms_by_slug["zomin-shifo-resort"][0]
+    rate_plan = (
+        await db.execute(select(RatePlan).where(RatePlan.room_id == room.id).limit(1))
+    ).scalar_one()
+    check_in = today + timedelta(days=14)
+    check_out = check_in + timedelta(days=3)
+    nightly = calculate_night_price(
+        room.base_price,
+        room.base_price_weekend,
+        room.markup_percent,
+        room.discount_percent,
+        False,
+    )
+    base_total = nightly * 3
+    extra = extra_beds["zomin-shifo-resort"]
+    extra_total = extra.price_per_night * 3
+    booking = Booking(
+        user_id=users["ali@gmail.com"].id,
         room_id=room.id,
-        is_active=True,
+        rate_plan_id=rate_plan.id,
+        booking_type=BookingType.ROOM,
+        check_in=check_in,
+        check_out=check_out,
+        guests=3,
+        rooms_count=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=base_total + extra_total,
+        currency=room.base_currency,
+        is_b2b=False,
+        b2b_client_price=None,
+        guest_details=[
+            {"full_name": "Ali Karimov", "age": 34},
+            {"full_name": "Madina Karimova", "age": 32},
+            {"full_name": "Yusuf Karimov", "age": 8},
+        ],
+        commission_snapshot=(base_total * Decimal("0.12")).quantize(Decimal("0.01")),
+        commission_percent_snapshot=Decimal("12.00"),
+        agent_discount_percent_snapshot=None,
+        board=rate_plan.board,
+        refundable=rate_plan.refundable,
+        free_cancellation_days=rate_plan.free_cancellation_days,
+        cancellation_penalty_percent=rate_plan.cancellation_penalty_percent,
+        cancellation_penalty_amount=rate_plan.cancellation_penalty_amount,
+        original_price=base_total,
+        promo_percent_snapshot=rate_plan.promo_percent,
+        payment_timing=rate_plan.payment_timing,
     )
-    db.add(package)
+    db.add(booking)
     await db.flush()
-    created_items = await ensure_package_items(db, package, data["items"])
-    return package, True, created_items, None
-
-
-async def get_or_create_visa_request(db, data, customer_by_email, today):
-    existing = (
-        await db.execute(
-            select(VisaRequest).where(
-                VisaRequest.passport_number == data["passport_number"]
-            )
+    db.add(
+        BookingExtraBed(
+            booking_id=booking.id,
+            config_id=extra.id,
+            name_snapshot=extra.name,
+            price_per_night_snapshot=extra.price_per_night,
+            currency=extra.currency,
+            count=1,
+            total_price=extra_total,
         )
-    ).scalar_one_or_none()
-    if existing:
-        return existing, False
-
-    customer = customer_by_email.get(data["user_email"])
-    arrival_date = today + timedelta(days=data["arrival_offset_days"])
-    visa = VisaRequest(
-        user_id=customer.id if customer is not None else None,
-        full_name=data["full_name"],
-        citizenship=data["citizenship"],
-        passport_number=data["passport_number"],
-        date_of_birth=data["date_of_birth"],
-        arrival_date=arrival_date,
-        departure_date=arrival_date + timedelta(days=data["stay_nights"]),
-        purpose=data["purpose"],
-        status=data["status"],
-        admin_notes=data["admin_notes"],
-        contact_email=customer.email if customer is not None else None,
-        contact_phone=customer.phone if customer is not None else None,
     )
-    db.add(visa)
-    await db.flush()
-    return visa, True
+    db.add_all(
+        [
+            Notification(booking_id=booking.id, type="booking_created", channel="email", status="sent"),
+            Payment(
+                booking_id=booking.id,
+                method=PaymentMethod.PAYME,
+                status=PaymentStatus.PAID,
+                amount=booking.final_price,
+                currency=booking.currency,
+                merchant_trans_id=f"demo-{booking.code}",
+                provider_payment_id="payme-demo-001",
+                raw_payload={"source": "demo_data", "status": "paid"},
+                paid_at=utc_now(),
+            ),
+        ]
+    )
+
+    program = programs_by_slug["samarkand-silk-wellness"][0]
+    session_booking = Booking(
+        user_id=users["zulfiya@gmail.com"].id,
+        program_id=program.id,
+        booking_type=BookingType.SESSION,
+        check_in=today + timedelta(days=9),
+        check_out=today + timedelta(days=9),
+        guests=2,
+        rooms_count=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=program.price * 2,
+        currency=program.currency,
+        is_b2b=False,
+        guest_details=[{"full_name": "Zulfiya Yusupova"}, {"full_name": "Aida Yusupova"}],
+        commission_snapshot=(program.price * 2 * Decimal("0.15")).quantize(Decimal("0.01")),
+        commission_percent_snapshot=Decimal("15.00"),
+    )
+    db.add(session_booking)
+
+    package = packages["chinobod-diagnostics-weekend"]
+    package_booking = Booking(
+        user_id=users["agent@uzwellness.com"].id,
+        room_id=package.room_id,
+        package_id=package.id,
+        booking_type=BookingType.PACKAGE,
+        check_in=today + timedelta(days=21),
+        check_out=today + timedelta(days=23),
+        guests=2,
+        rooms_count=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=money("998.40"),
+        currency=package.currency,
+        is_b2b=True,
+        b2b_client_price=money("1120.00"),
+        guest_details=[{"full_name": "B2B Client One"}, {"full_name": "B2B Client Two"}],
+        commission_snapshot=money("79.87"),
+        commission_percent_snapshot=money("8.00"),
+        agent_discount_percent_snapshot=money("4.00"),
+        payment_timing=PaymentTiming.PREPAY,
+    )
+    db.add(package_booking)
 
 
-# ── main seed ──────────────────────────────────────────────────────────────
+async def create_requests(db, *, users: dict[str, User], today: date) -> None:
+    db.add_all(
+        [
+            VisaRequest(
+                user_id=users["ali@gmail.com"].id,
+                full_name="Ali Karimov",
+                citizenship="Kazakhstan",
+                passport_number="KZ-DEMO-123456",
+                date_of_birth=date(1991, 5, 14),
+                arrival_date=today + timedelta(days=30),
+                departure_date=today + timedelta(days=40),
+                purpose=VisaPurpose.TREATMENT,
+                status=VisaStatus.PROCESSING,
+                admin_notes="Invitation letter draft prepared.",
+                contact_email="ali@gmail.com",
+                contact_phone=users["ali@gmail.com"].phone,
+            ),
+            VisaRequest(
+                user_id=users["zulfiya@gmail.com"].id,
+                full_name="Zulfiya Yusupova",
+                citizenship="Kyrgyzstan",
+                passport_number="KG-DEMO-765432",
+                date_of_birth=date(1988, 11, 3),
+                arrival_date=today + timedelta(days=18),
+                departure_date=today + timedelta(days=24),
+                purpose=VisaPurpose.TOURISM,
+                status=VisaStatus.ISSUED,
+                admin_notes="Issued for demo workflow.",
+                contact_email="zulfiya@gmail.com",
+                contact_phone=users["zulfiya@gmail.com"].phone,
+            ),
+            TransferRequest(
+                user_id=users["ali@gmail.com"].id,
+                booking_id=None,
+                direction=TransferDirection.ROUND_TRIP,
+                pickup_location="Tashkent International Airport, Terminal 2",
+                dropoff_location="Zomin Shifo Resort",
+                flight_number="HY-DEMO-614",
+                flight_time=utc_now() + timedelta(days=14, hours=5),
+                return_flight_number="HY-DEMO-615",
+                return_flight_time=utc_now() + timedelta(days=17, hours=9),
+                passengers_count=3,
+                vehicle_type=VehicleType.MINIVAN,
+                price=money("95.00"),
+                currency="USD",
+                status=TransferStatus.CONFIRMED,
+                driver_name="Rustam Akhmedov",
+                driver_phone="+998901010101",
+                notes="Child seat requested.",
+                admin_notes="Driver assigned.",
+                contact_phone=users["ali@gmail.com"].phone,
+            ),
+        ]
+    )
+
 
 async def main() -> None:
+    today = date.today()
     async with SessionLocal() as db:
+        await clear_demo_data(db)
 
-        # 1. Exchange rate
-        rate_row = (
+        rate = (
             await db.execute(select(ExchangeRate).where(ExchangeRate.pair == "USD_UZS"))
         ).scalar_one_or_none()
-        if rate_row is None:
-            db.add(ExchangeRate(
-                pair="USD_UZS",
-                rate=Decimal("12800.000000"),
-                valid_from=datetime.now(tz=timezone.utc),
-            ))
-            print("✓ Exchange rate USD_UZS = 12800")
+        if rate is None:
+            db.add(
+                ExchangeRate(
+                    pair="USD_UZS",
+                    rate=USD_UZS,
+                    valid_from=utc_now(),
+                )
+            )
         else:
-            print("- Exchange rate already exists")
+            rate.rate = USD_UZS
+            rate.valid_from = utc_now()
 
-        # 2. Super admin
-        super_admin, created = await get_or_create_user(
-            db, email=SUPER_ADMIN_EMAIL, password=SUPER_ADMIN_PASSWORD,
-            role=UserRole.SUPER_ADMIN, full_name="Super Admin",
+        regions = await ensure_regions(db)
+        destinations = await ensure_destinations(db)
+        users = await create_users(db)
+        amenities = await create_amenities(db)
+        sanatoriums = await create_sanatoriums(
+            db,
+            users=users,
+            amenities=amenities,
+            regions=regions,
+            destinations=destinations,
         )
-        print(f"{'✓' if created else '-'} super_admin: {SUPER_ADMIN_EMAIL}")
-
-        # 3. Admins
-        admin_users = []
-        for a in ADMINS:
-            user, created = await get_or_create_user(
-                db, email=a["email"], password=a["password"],
-                role=UserRole.ADMIN, full_name=a["full_name"],
-            )
-            admin_users.append(user)
-            print(f"{'✓' if created else '-'} admin: {a['email']}")
-
-        # 4. Customers
-        customer_users = []
-        for c in CUSTOMERS:
-            user, created = await get_or_create_user(
-                db, email=c["email"], password=c["password"],
-                role=UserRole.CUSTOMER, full_name=c["full_name"], phone=c["phone"],
-            )
-            customer_users.append(user)
-            print(f"{'✓' if created else '-'} customer: {c['email']}")
-
-        await db.flush()
-
-        # 4.5 Regions + destinations (seeded by migration; just look up by slug)
-        region_by_slug = {
-            r.slug: r
-            for r in (await db.execute(select(Region))).scalars().all()
-        }
-        destination_by_slug = {
-            d.slug: d
-            for d in (await db.execute(select(Destination))).scalars().all()
-        }
-        print(
-            f"- regions catalog: {len(region_by_slug)} viloyatlar, "
-            f"destinations catalog: {len(destination_by_slug)} tiles"
+        rooms_by_slug = await create_rooms(
+            db, sanatoriums=sanatoriums, amenities=amenities, today=today
         )
-
-        # 5. Sanatoriums + rooms + availability
-        today = date.today()
-        all_rooms: list[Room] = []
-
-        for i, san_data in enumerate(SANATORIUMS):
-            region_slug = SANATORIUM_TO_REGION.get(san_data["slug"])
-            region_id = region_by_slug[region_slug].id if region_slug else None
-            dest_slug = SANATORIUM_TO_DESTINATION.get(san_data["slug"])
-            destination_id = (
-                destination_by_slug[dest_slug].id if dest_slug else None
-            )
-            san, san_created = await get_or_create_sanatorium(
-                db, san_data, admin_users[i].id, region_id, destination_id
-            )
-            print(f"{'✓' if san_created else '-'} sanatorium: {san_data['name']['uz']}")
-
-            for tmpl in ROOM_TEMPLATES[i]:
-                existing_room = (
-                    await db.execute(
-                        select(Room).where(
-                            Room.sanatorium_id == san.id,
-                            Room.base_price == tmpl["base_price"],
-                        )
-                    )
-                ).scalar_one_or_none()
-
-                if existing_room:
-                    all_rooms.append(existing_room)
-                    continue
-
-                markup = Decimal(str(random.choice([0, 5, 10, 15])))
-                inventory = random.randint(3, 8)
-                room = Room(
-                    sanatorium_id=san.id,
-                    name=tmpl["name"],
-                    capacity=tmpl["capacity"],
-                    inventory_count=inventory,
-                    base_price=tmpl["base_price"],
-                    base_currency=tmpl["base_currency"],
-                    markup_percent=markup,
-                    min_nights=tmpl["min_nights"],
-                    is_active=True,
-                )
-                db.add(room)
-                await db.flush()
-                all_rooms.append(room)
-                print(
-                    f"  ✓ room: {tmpl['name']['en']} "
-                    f"({tmpl['base_price']} {tmpl['base_currency']}, "
-                    f"{inventory} units)"
-                )
-
-        await db.flush()
-
-        # 6. Demo packages
-        sanatorium_by_slug = {
-            san.slug: san
-            for san in (
-                await db.execute(select(Sanatorium))
-            ).scalars().all()
-        }
-        print("\nCreating demo packages...")
-        for package_data in PACKAGE_TEMPLATES:
-            (
-                package,
-                created,
-                created_items,
-                skip_reason,
-            ) = await get_or_create_package(
-                db, package_data, sanatorium_by_slug
-            )
-            if package is None:
-                print(
-                    f"- skipped package {package_data['slug']!r} ({skip_reason})"
-                )
-                continue
-            prefix = "✓" if created else "-"
-            extras = (
-                f" ({created_items} item(s) added)"
-                if created_items and not created
-                else ""
-            )
-            print(f"{prefix} package: {package.title['en']}{extras}")
-
-        # 7. Demo visa requests
-        customer_by_email = {customer.email: customer for customer in customer_users}
-        print("\nCreating demo visa requests...")
-        for visa_data in VISA_REQUEST_TEMPLATES:
-            visa, created = await get_or_create_visa_request(
-                db, visa_data, customer_by_email, today
-            )
-            print(f"{'✓' if created else '-'} visa request: {visa.full_name}")
-
-        # 8. Sample bookings (only if none exist yet)
-        existing_bookings = (
-            await db.execute(select(Booking).limit(1))
-        ).scalar_one_or_none()
-
-        if existing_bookings is None and all_rooms:
-            print("\nCreating sample bookings...")
-            for customer in random.sample(customer_users, k=min(5, len(customer_users))):
-                room = random.choice(all_rooms)
-                # pick a future date window (5–40 days from today)
-                start_offset = random.randint(5, 40)
-                nights = random.randint(room.min_nights, room.min_nights + 3)
-                check_in = today + timedelta(days=start_offset)
-                check_out = check_in + timedelta(days=nights)
-
-                # lazy availability: get-or-create rows and bump units_booked
-                existing_rows = {
-                    row.date: row
-                    for row in (
-                        await db.execute(
-                            select(RoomAvailability).where(
-                                RoomAvailability.room_id == room.id,
-                                RoomAvailability.date >= check_in,
-                                RoomAvailability.date < check_out,
-                            )
-                        )
-                    ).scalars().all()
-                }
-                full = False
-                for offset_d in range(nights):
-                    d = check_in + timedelta(days=offset_d)
-                    row = existing_rows.get(d)
-                    if row is None:
-                        existing_rows[d] = RoomAvailability(
-                            room_id=room.id,
-                            date=d,
-                            units_blocked=0,
-                            units_booked=1,
-                        )
-                        db.add(existing_rows[d])
-                    else:
-                        if (
-                            row.units_blocked + row.units_booked + 1
-                            > room.inventory_count
-                        ):
-                            full = True
-                            break
-                        row.units_booked += 1
-                if full:
-                    continue
-
-                from app.core.pricing import calculate_final_price
-                final_price = calculate_final_price(room.base_price, room.markup_percent)
-
-                booking = Booking(
-                    user_id=customer.id,
-                    room_id=room.id,
-                    check_in=check_in,
-                    check_out=check_out,
-                    guests=random.randint(1, room.capacity),
-                    status=BookingStatus.CONFIRMED,
-                    final_price=final_price,
-                    currency=room.base_currency,
-                )
-                db.add(booking)
-                await db.flush()
-
-                db.add(Notification(
-                    booking_id=booking.id,
-                    type="booking_created",
-                    channel="email",
-                    status="pending",
-                ))
-                print(
-                    f"  ✓ booking: {customer.full_name} → "
-                    f"{room.name.get('en', '?')} "
-                    f"({check_in} – {check_out})"
-                )
+        programs_by_slug = await create_programs(
+            db, sanatoriums=sanatoriums, amenities=amenities
+        )
+        extra_beds = await create_extra_beds(db, sanatoriums)
+        packages = await create_packages(
+            db, sanatoriums=sanatoriums, rooms_by_slug=rooms_by_slug
+        )
+        await create_reviews(db, sanatoriums=sanatoriums, users=users)
+        await create_bookings(
+            db,
+            users=users,
+            rooms_by_slug=rooms_by_slug,
+            programs_by_slug=programs_by_slug,
+            packages=packages,
+            extra_beds=extra_beds,
+            today=today,
+        )
+        await create_requests(db, users=users, today=today)
 
         await db.commit()
-        print("\nDone.")
-        print("\nAPI:        https://api.uzwellness.com/docs")
-        print(f"super_admin: {SUPER_ADMIN_EMAIL} / {SUPER_ADMIN_PASSWORD}")
-        print( "customer:    ali@gmail.com / User123!")
+
+    print("Demo data reset complete.")
+    print(f"super_admin: {SUPER_ADMIN_EMAIL} / {DEFAULT_PASSWORD}")
+    print(f"admin:       zaamin@uzwellness.com / {DEFAULT_PASSWORD}")
+    print(f"agent:       agent@uzwellness.com / {AGENT_PASSWORD}")
+    print(f"customer:    ali@gmail.com / {CUSTOMER_PASSWORD}")
 
 
 if __name__ == "__main__":
