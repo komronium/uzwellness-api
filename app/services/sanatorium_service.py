@@ -223,6 +223,14 @@ class SanatoriumService:
             return None
         return sanatorium
 
+    async def get_visible_by_slug(
+        self, slug: str, user: User | None
+    ) -> Sanatorium | None:
+        sanatorium = await self.get_by_slug(slug)
+        if sanatorium is None or not SanatoriumPolicy.can_view(sanatorium, user):
+            return None
+        return sanatorium
+
     async def list_for_user(
         self,
         *,

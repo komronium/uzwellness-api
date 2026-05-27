@@ -448,6 +448,46 @@ async def test_get_public_approved(client: AsyncClient, db: AsyncSession) -> Non
     assert resp.json()["slug"] == "open"
 
 
+async def test_get_public_approved_by_slug(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await make_sanatorium(
+        db,
+        slug="humson-buloq-health-resort",
+        name={"uz": "Humson Buloq", "ru": "Humson Buloq", "en": "Humson Buloq"},
+    )
+    resp = await client.get("/api/sanatoriums/slug/humson-buloq-health-resort?lang=uz")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["slug"] == "humson-buloq-health-resort"
+    assert body["name"] == "Humson Buloq"
+
+
+async def test_get_by_slug_include_translations(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await make_sanatorium(
+        db,
+        slug="translated-slug",
+        name={"uz": "Vodiy", "ru": "Долина", "en": "Valley"},
+    )
+    resp = await client.get(
+        "/api/sanatoriums/slug/translated-slug?include_translations=true"
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == {"uz": "Vodiy", "ru": "Долина", "en": "Valley"}
+
+
+async def test_get_by_slug_public_pending_returns_404(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await make_sanatorium(
+        db, slug="hidden-slug", status=SanatoriumStatus.PENDING
+    )
+    resp = await client.get("/api/sanatoriums/slug/hidden-slug")
+    assert resp.status_code == 404
+
+
 async def test_get_public_pending_returns_404(
     client: AsyncClient, db: AsyncSession
 ) -> None:

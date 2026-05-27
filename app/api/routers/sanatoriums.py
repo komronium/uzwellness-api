@@ -9,6 +9,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Path,
     Query,
     UploadFile,
     status,
@@ -135,6 +136,22 @@ async def list_sanatoriums(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get("/slug/{slug}", response_model=SanatoriumRead | SanatoriumAdminRead)
+async def get_sanatorium_by_slug(
+    slug: Annotated[str, Path(min_length=1, max_length=255)],
+    current_user: OptionalUser,
+    locale: LocaleDep,
+    include_translations: IncludeTranslationsDep,
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+) -> SanatoriumRead | SanatoriumAdminRead:
+    sanatorium = await sanatoriums.get_visible_by_slug(slug, current_user)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    if include_translations:
+        return SanatoriumAdminRead.model_validate(sanatorium)
+    return SanatoriumRead.from_obj(sanatorium, locale)
 
 
 @router.get("/{sanatorium_id}", response_model=SanatoriumRead | SanatoriumAdminRead)
