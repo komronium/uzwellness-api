@@ -77,6 +77,9 @@ class Room(Base):
     smoking_allowed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    room_features: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
 
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     max_adults: Mapped[int | None] = mapped_column(SmallInteger)
@@ -169,7 +172,20 @@ class RoomImage(Base):
     is_video: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    is_360: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    category: Mapped[str | None] = mapped_column(String(40))
     caption: Mapped[str | None] = mapped_column(String(255))
+    caption_i18n: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    alt_text: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    tags: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

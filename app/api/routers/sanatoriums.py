@@ -1,4 +1,5 @@
 import uuid
+import json
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -52,6 +53,24 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
+def _json_form(value: str | None, *, default):
+    if value is None or value == "":
+        return default
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON form field",
+        ) from exc
+    if not isinstance(parsed, type(default)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="JSON form field has invalid type",
+        )
+    return parsed
+
+
 def _ensure_can_edit(sanatorium, user: User) -> None:
     if not SanatoriumPolicy.can_edit(sanatorium, user):
         raise HTTPException(
@@ -65,7 +84,7 @@ SortField = Literal[
 ]
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=SanatoriumList | SanatoriumAdminList)
 async def list_sanatoriums(
     current_user: OptionalUser,
     locale: LocaleDep,
@@ -118,7 +137,7 @@ async def list_sanatoriums(
     )
 
 
-@router.get("/{sanatorium_id}", response_model=None)
+@router.get("/{sanatorium_id}", response_model=SanatoriumRead | SanatoriumAdminRead)
 async def get_sanatorium(
     sanatorium_id: uuid.UUID,
     current_user: OptionalUser,
@@ -210,6 +229,11 @@ async def upload_image(
     file: UploadFile = File(...),
     caption: str | None = Form(default=None, max_length=255),
     is_primary: bool = Form(default=False),
+    is_360: bool = Form(default=False),
+    category: str | None = Form(default=None, max_length=40),
+    caption_i18n: str | None = Form(default=None),
+    alt_text: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
     order: int = Form(default=0, ge=0),
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
     images: SanatoriumImageService = Depends(get_sanatorium_image_service),
@@ -231,6 +255,11 @@ async def upload_image(
         storage=storage,
         caption=caption,
         is_primary=is_primary,
+        is_360=is_360,
+        category=category,
+        caption_i18n=_json_form(caption_i18n, default={}),
+        alt_text=_json_form(alt_text, default={}),
+        tags=_json_form(tags, default=[]),
         order=order,
     )
     return SanatoriumImageRead.model_validate(image)
@@ -258,8 +287,19 @@ async def update_image(
     updated = await images.update(
         image,
         is_primary=payload.is_primary,
+        is_360=payload.is_360,
+        category=payload.category,
         order=payload.order,
         caption=payload.caption,
+        caption_i18n=(
+            payload.caption_i18n.model_dump(exclude_none=True)
+            if payload.caption_i18n
+            else None
+        ),
+        alt_text=(
+            payload.alt_text.model_dump(exclude_none=True) if payload.alt_text else None
+        ),
+        tags=payload.tags,
     )
     return SanatoriumImageRead.model_validate(updated)
 

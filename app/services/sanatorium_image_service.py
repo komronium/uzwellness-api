@@ -26,6 +26,11 @@ class SanatoriumImageService:
         storage: StorageBackend,
         caption: str | None,
         is_primary: bool,
+        is_360: bool,
+        category: str | None,
+        caption_i18n: dict | None,
+        alt_text: dict | None,
+        tags: list[str] | None,
         order: int,
     ) -> SanatoriumImage:
         ext = MIME_EXTENSIONS[content_type]
@@ -42,7 +47,12 @@ class SanatoriumImageService:
             url=url,
             order=order,
             is_primary=is_primary,
+            is_360=is_360,
+            category=category,
             caption=caption,
+            caption_i18n=caption_i18n or {},
+            alt_text=alt_text or {},
+            tags=tags or [],
         )
         self.db.add(image)
         await self.db.commit()
@@ -54,18 +64,33 @@ class SanatoriumImageService:
         image: SanatoriumImage,
         *,
         is_primary: bool | None = None,
+        is_360: bool | None = None,
+        category: str | None = None,
         order: int | None = None,
         caption: str | None = None,
+        caption_i18n: dict | None = None,
+        alt_text: dict | None = None,
+        tags: list[str] | None = None,
     ) -> SanatoriumImage:
         if is_primary is True:
             await self._unset_primaries(image.sanatorium_id, except_id=image.id)
             image.is_primary = True
         elif is_primary is False:
             image.is_primary = False
+        if is_360 is not None:
+            image.is_360 = is_360
+        if category is not None:
+            image.category = category
         if order is not None:
             image.order = order
         if caption is not None:
             image.caption = caption
+        if caption_i18n is not None:
+            image.caption_i18n = caption_i18n
+        if alt_text is not None:
+            image.alt_text = alt_text
+        if tags is not None:
+            image.tags = tags
         await self.db.commit()
         await self.db.refresh(image)
         return image

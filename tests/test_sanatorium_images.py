@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from httpx import AsyncClient
@@ -28,7 +29,17 @@ async def test_upload_as_super_admin(
     storage: InMemoryStorage,
 ) -> None:
     sanatorium = await make_sanatorium(db, slug="upload-target")
-    files, data = _multipart(PNG, caption="hi", is_primary=True, order=1)
+    files, data = _multipart(
+        PNG,
+        caption="hi",
+        is_primary=True,
+        is_360=True,
+        category="treatment",
+        caption_i18n=json.dumps({"uz": "Muolaja xonasi", "en": "Treatment room"}),
+        alt_text=json.dumps({"en": "Treatment bath room"}),
+        tags=json.dumps(["medical", "bath"]),
+        order=1,
+    )
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/images",
         headers=super_admin_headers,
@@ -39,6 +50,11 @@ async def test_upload_as_super_admin(
     body = resp.json()
     assert body["caption"] == "hi"
     assert body["is_primary"] is True
+    assert body["is_360"] is True
+    assert body["category"] == "treatment"
+    assert body["caption_i18n"]["uz"] == "Muolaja xonasi"
+    assert body["alt_text"]["en"] == "Treatment bath room"
+    assert body["tags"] == ["medical", "bath"]
     assert body["url"].endswith(".png")
     # actually saved into the in-memory storage
     key = body["url"].removeprefix(storage.url_prefix + "/")
@@ -49,9 +65,7 @@ async def test_upload_as_super_admin(
 async def test_upload_as_owning_admin(
     client: AsyncClient, db: AsyncSession, admin_user, admin_headers
 ) -> None:
-    sanatorium = await make_sanatorium(
-        db, slug="mine", admin_user_id=admin_user.id
-    )
+    sanatorium = await make_sanatorium(db, slug="mine", admin_user_id=admin_user.id)
     files, data = _multipart(PNG)
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/images",
@@ -65,9 +79,7 @@ async def test_upload_as_owning_admin(
 async def test_upload_as_other_admin_returns_403(
     client: AsyncClient, db: AsyncSession, admin_headers
 ) -> None:
-    other_admin = await make_user(
-        db, email="o-admin-img@test.com", role=UserRole.ADMIN
-    )
+    other_admin = await make_user(db, email="o-admin-img@test.com", role=UserRole.ADMIN)
     sanatorium = await make_sanatorium(
         db, slug="not-mine", admin_user_id=other_admin.id
     )
@@ -138,7 +150,9 @@ async def test_upload_too_large_returns_413(
     client: AsyncClient, db: AsyncSession, super_admin_headers
 ) -> None:
     sanatorium = await make_sanatorium(db, slug="size-check")
-    oversized = b"\x89PNG\r\n\x1a\n" + b"A" * (settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024)
+    oversized = b"\x89PNG\r\n\x1a\n" + b"A" * (
+        settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    )
     files = {"file": ("big.png", oversized, "image/png")}
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/images",
@@ -189,3 +203,38 @@ async def test_upload_primary_toggles_previous(
     images = {img["id"]: img for img in detail.json()["images"]}
     assert images[first_id]["is_primary"] is False
     assert images[resp2.json()["id"]]["is_primary"] is True
+
+
+async def test_update_image_metadata(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(db, slug="metadata-update")
+    files, data = _multipart(PNG, caption="old")
+    created = await client.post(
+        f"/api/sanatoriums/{sanatorium.id}/images",
+        headers=super_admin_headers,
+        files=files,
+        data=data,
+    )
+    assert created.status_code == 201, created.text
+
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}/images/{created.json()['id']}",
+        json={
+            "is_360": True,
+            "category": "restaurant",
+            "caption": "new",
+            "caption_i18n": {"uz": "Restoran", "ru": "Ресторан"},
+            "alt_text": {"en": "Restaurant buffet"},
+            "tags": ["food", "buffet"],
+        },
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["caption"] == "new"
+    assert body["is_360"] is True
+    assert body["category"] == "restaurant"
+    assert body["caption_i18n"]["uz"] == "Restoran"
+    assert body["alt_text"]["en"] == "Restaurant buffet"
+    assert body["tags"] == ["food", "buffet"]

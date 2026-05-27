@@ -32,9 +32,7 @@ async def _make_destination(
     return d
 
 
-async def _make_region(
-    db: AsyncSession, *, slug: str, name_en: str
-) -> Region:
+async def _make_region(db: AsyncSession, *, slug: str, name_en: str) -> Region:
     r = Region(slug=slug, name={"en": name_en})
     db.add(r)
     await db.commit()
@@ -155,9 +153,7 @@ async def test_unknown_destination_404(client: AsyncClient) -> None:
 # ── tiles aggregation ──────────────────────────────────────────────────────
 
 
-async def test_tiles_count_and_min_price(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_tiles_count_and_min_price(client: AsyncClient, db: AsyncSession) -> None:
     db.add(
         ExchangeRate(
             pair="USD_UZS",
@@ -168,7 +164,7 @@ async def test_tiles_count_and_min_price(
     await db.commit()
 
     d1 = await _make_destination(db, slug="d1", name_en="D1")
-    d2 = await _make_destination(db, slug="d2", name_en="D2")
+    await _make_destination(db, slug="d2", name_en="D2")
 
     s1 = await _make_sanatorium(db, slug="s1", destination_id=d1.id)
     s2 = await _make_sanatorium(db, slug="s2", destination_id=d1.id)
@@ -264,9 +260,7 @@ async def test_delete_sets_sanatorium_destination_id_null(
 ) -> None:
     d = await _make_destination(db, slug="doomed", name_en="Doomed")
     s = await _make_sanatorium(db, slug="s", destination_id=d.id)
-    resp = await client.delete(
-        f"/api/destinations/{d.id}", headers=super_admin_headers
-    )
+    resp = await client.delete(f"/api/destinations/{d.id}", headers=super_admin_headers)
     assert resp.status_code == 204
     await db.refresh(s)
     assert s.destination_id is None
@@ -294,9 +288,7 @@ async def test_sanatorium_read_includes_nested_region_and_destination(
 ) -> None:
     r = await _make_region(db, slug="toshkent", name_en="Tashkent Region")
     d = await _make_destination(db, slug="chimgan", name_en="Chimgan")
-    s = await _make_sanatorium(
-        db, slug="s", region_id=r.id, destination_id=d.id
-    )
+    s = await _make_sanatorium(db, slug="s", region_id=r.id, destination_id=d.id)
     resp = await client.get(f"/api/sanatoriums/{s.id}?lang=en")
     body = resp.json()
     assert body["region_id"] == str(r.id)

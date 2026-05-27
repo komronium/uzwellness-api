@@ -1,24 +1,25 @@
 """Integration tests for /b2b endpoints (agent role)."""
+
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.program import TreatmentProgram
-from app.models.sanatorium import SanatoriumStatus
 from app.models.user import UserRole
 from tests.factories import make_sanatorium, make_user
 
 _FUTURE = (date.today() + timedelta(days=20)).isoformat()
 
 
-async def _agent_headers(client: AsyncClient, db: AsyncSession) -> tuple[dict, uuid.UUID]:
+async def _agent_headers(
+    client: AsyncClient, db: AsyncSession
+) -> tuple[dict, uuid.UUID]:
     agent = await make_user(
         db,
         email="agent@test.com",

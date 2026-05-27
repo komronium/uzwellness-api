@@ -741,6 +741,455 @@ PROGRAMS = {
 }
 
 
+def medical_base_for(data: dict) -> dict:
+    focus_map = {
+        "respiratory": (
+            "respiratory_rehab",
+            tr(
+                "Nafas olish reabilitatsiyasi uchun inhalatsiya, speleoterapiya va o'rmon yurishlari.",
+                "Ингаляции, спелеотерапия и лесные прогулки для респираторной реабилитации.",
+                "Inhalation, speleotherapy, and forest walks for respiratory rehabilitation.",
+            ),
+        ),
+        "musculoskeletal": (
+            "balneotherapy",
+            tr(
+                "Bo'g'im va mushaklar uchun mineral vanna va fizioterapiya kurslari.",
+                "Минеральные ванны и физиотерапия для суставов и мышц.",
+                "Mineral baths and physiotherapy courses for joints and muscles.",
+            ),
+        ),
+        "cardiovascular": (
+            "cardio_screening",
+            tr(
+                "Kardiolog nazorati, EKG va yengil kardio mashg'ulotlar.",
+                "Наблюдение кардиолога, ЭКГ и легкие кардиотренировки.",
+                "Cardiologist supervision, ECG, and light cardio sessions.",
+            ),
+        ),
+        "digestive": (
+            "diet_therapy",
+            tr(
+                "Dietolog konsultatsiyasi va individual ovqatlanish rejasi.",
+                "Консультация диетолога и индивидуальный план питания.",
+                "Dietitian consultation and an individual meal plan.",
+            ),
+        ),
+        "neurological": (
+            "stress_recovery",
+            tr(
+                "Uyqu, stress va asab tizimi tiklanishi uchun muolajalar.",
+                "Процедуры для сна, стресса и восстановления нервной системы.",
+                "Treatments for sleep, stress, and nervous-system recovery.",
+            ),
+        ),
+        "dermatology": (
+            "mineral_skin_care",
+            tr(
+                "Teri parvarishi uchun mineral suv va balchiq aplikatsiyalari.",
+                "Минеральная вода и грязевые аппликации для ухода за кожей.",
+                "Mineral water and mud applications for skin care.",
+            ),
+        ),
+        "endocrine": (
+            "metabolic_support",
+            tr(
+                "Endokrinolog nazorati va metabolik qo'llab-quvvatlash.",
+                "Наблюдение эндокринолога и метаболическая поддержка.",
+                "Endocrinologist supervision and metabolic support.",
+            ),
+        ),
+        "wellness": (
+            "wellness_reset",
+            tr(
+                "Yengil spa, massaj va kundalik harakat rejasi.",
+                "Легкий спа, массаж и ежедневная программа активности.",
+                "Light spa, massage, and a daily movement plan.",
+            ),
+        ),
+    }
+    procedures = [
+        {
+            "code": focus_map[focus][0],
+            "image_url": f"/uploads/demo/procedures/{focus}.jpg",
+            "description": focus_map[focus][1],
+        }
+        for focus in data["treatment_focuses"]
+        if focus in focus_map
+    ]
+    return {
+        "description": tr(
+            "Shifokor ko'rigi, bazaviy diagnostika va kunlik muolajalar jadvali kiritilgan.",
+            "Включены осмотр врача, базовая диагностика и ежедневный план процедур.",
+            "Includes a doctor check, basic diagnostics, and a daily treatment schedule.",
+        ),
+        "procedures_per_week": 12 if data["property_type"] == PropertyType.SANATORIUM else 5,
+        "min_age_for_treatment": data["min_checkin_age"],
+        "checkups_included": 2,
+        "natural_resources": [
+            "mineral_water" if "mineral-water" in [slug for slug, _ in data["amenities"]] else "clean_air",
+            "mountain_air" if data["destination"] in {"zaamin-national-park", "chimgan-mountains"} else "urban_wellness",
+        ],
+        "procedures": {
+            "core": procedures[:3],
+            "additional": procedures[3:],
+        },
+        "stay_inclusions": [
+            {"min_days": 3, "inclusions": ["doctor_check", "meal_plan"]},
+            {"min_days": 7, "inclusions": ["doctor_check", "diagnostics", "treatment_plan"]},
+        ],
+    }
+
+
+def treatment_profile_for(data: dict) -> dict:
+    titles = {
+        "respiratory": tr("Nafas yo'llari", "Дыхательная система", "Respiratory system"),
+        "musculoskeletal": tr("Tayanch-harakat tizimi", "Опорно-двигательная система", "Musculoskeletal system"),
+        "cardiovascular": tr("Yurak-qon tomir", "Сердечно-сосудистая система", "Cardiovascular system"),
+        "digestive": tr("Ovqat hazm qilish", "Пищеварение", "Digestive health"),
+        "neurological": tr("Asab tizimi", "Нервная система", "Neurological recovery"),
+        "dermatology": tr("Dermatologiya", "Дерматология", "Dermatology"),
+        "endocrine": tr("Endokrinologiya", "Эндокринология", "Endocrinology"),
+        "wellness": tr("Umumiy wellness", "Общий wellness", "General wellness"),
+    }
+    main = [
+        {
+            "code": focus,
+            "title": titles.get(focus, tr(focus, focus, focus)),
+            "description": tr(
+                "Shifokor tomonidan individual reja tuziladi.",
+                "Врач составляет индивидуальный план.",
+                "A doctor prepares an individual plan.",
+            ),
+        }
+        for focus in data["treatment_focuses"][:3]
+    ]
+    return {
+        "main_indications": main,
+        "additional_indications": [
+            {
+                "code": "fatigue_recovery",
+                "title": tr("Charchoqdan tiklanish", "Восстановление после усталости", "Fatigue recovery"),
+                "description": tr(
+                    "Uyqu, ovqatlanish va yengil jismoniy faollik rejasi.",
+                    "Режим сна, питания и легкой физической активности.",
+                    "A sleep, nutrition, and light activity routine.",
+                ),
+            }
+        ],
+        "contraindications": [
+            {
+                "code": "acute_condition",
+                "title": tr("O'tkir holatlar", "Острые состояния", "Acute conditions"),
+                "description": tr(
+                    "O'tkir infeksiya yoki shifokor taqiqlagan holatlarda tavsiya etilmaydi.",
+                    "Не рекомендуется при острых инфекциях или запрете врача.",
+                    "Not recommended for acute infections or when restricted by a doctor.",
+                ),
+            }
+        ],
+        "diagnostics": ["doctor_consultation", "blood_pressure", "ecg"],
+        "doctor_specialties": ["therapist", "physiotherapist", "dietitian"],
+        "notes": tr(
+            "Dastur kelish kuni shifokor ko'rigidan keyin aniqlashtiriladi.",
+            "Программа уточняется после осмотра врача в день заезда.",
+            "The program is finalized after the doctor's check on arrival day.",
+        ),
+    }
+
+
+def service_group(title: dict, items: list[dict]) -> dict:
+    return {"title": title, "items": items}
+
+
+def service_item(
+    code: str,
+    title: dict,
+    *,
+    icon: str,
+    cost: AmenityCost = AmenityCost.FREE,
+    hours: str | None = None,
+    location: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    return {
+        "code": code,
+        "title": title,
+        "description": tr(
+            f"{title['uz']} mavjud.",
+            f"Доступно: {title['ru']}.",
+            f"{title['en']} is available.",
+        ),
+        "is_available": True,
+        "cost": cost.value,
+        "hours": hours,
+        "location": location,
+        "icon": icon,
+        "tags": tags or [],
+    }
+
+
+def service_matrix_for(data: dict) -> dict:
+    amenity_slugs = {slug for slug, _ in data["amenities"]}
+    return {
+        "food_drink": service_group(
+            tr("Ovqatlanish", "Питание", "Food and drink"),
+            [
+                service_item(
+                    "restaurant",
+                    tr("Restoran", "Ресторан", "Restaurant"),
+                    icon="utensils",
+                    hours="07:00-22:00",
+                    location=data["venues"][0]["name"],
+                )
+            ],
+        ),
+        "wellness": service_group(
+            tr("Wellness", "Wellness", "Wellness"),
+            [
+                service_item(
+                    "spa" if "spa" in amenity_slugs else "walking_routes",
+                    tr("Spa va tiklanish", "Спа и восстановление", "Spa and recovery"),
+                    icon="sparkles",
+                    cost=AmenityCost.PAID if "spa" in amenity_slugs else AmenityCost.FREE,
+                    hours="09:00-21:00",
+                )
+            ],
+        ),
+        "medical_department": service_group(
+            tr("Tibbiy bo'lim", "Медицинское отделение", "Medical department"),
+            [
+                service_item(
+                    "doctor_supervision",
+                    tr("Shifokor nazorati", "Наблюдение врача", "Doctor supervision"),
+                    icon="stethoscope",
+                    hours="08:00-18:00",
+                )
+            ],
+        ),
+        "front_desk": service_group(
+            tr("Qabulxona", "Ресепшен", "Front desk"),
+            [
+                service_item(
+                    "reception",
+                    tr("Qabulxona", "Ресепшен", "Reception"),
+                    icon="concierge-bell",
+                    hours=data["weekly_schedule"].get("reception", "08:00-20:00"),
+                )
+            ],
+        ),
+        "cleaning": service_group(
+            tr("Tozalik", "Уборка", "Cleaning"),
+            [
+                service_item(
+                    "daily_cleaning",
+                    tr("Kunlik tozalash", "Ежедневная уборка", "Daily cleaning"),
+                    icon="sparkles",
+                )
+            ],
+        ),
+        "business": service_group(
+            tr("Biznes", "Бизнес", "Business"),
+            [
+                service_item(
+                    "conference",
+                    tr("Konferensiya xizmati", "Конференц-сервис", "Conference service"),
+                    icon="briefcase",
+                    cost=AmenityCost.PAID,
+                    location=next((v["name"] for v in data["venues"] if v["type"] == "conference"), None),
+                )
+            ]
+            if "conference" in amenity_slugs
+            else [],
+        ),
+        "parking": service_group(
+            tr("Avtoturargoh", "Парковка", "Parking"),
+            [
+                service_item(
+                    "parking",
+                    tr("Avtoturargoh", "Парковка", "Parking"),
+                    icon="parking-circle",
+                )
+            ]
+            if "parking" in amenity_slugs
+            else [],
+        ),
+        "internet": service_group(
+            tr("Internet", "Интернет", "Internet"),
+            [
+                service_item(
+                    "wifi",
+                    tr("Wi-Fi", "Wi-Fi", "Wi-Fi"),
+                    icon="wifi",
+                    tags=["rooms", "public_areas"],
+                )
+            ],
+        ),
+        "children": service_group(
+            tr("Bolalar", "Дети", "Children"),
+            [
+                service_item(
+                    "kids_club",
+                    tr("Bolalar klubi", "Детский клуб", "Kids club"),
+                    icon="baby",
+                    hours="10:00-18:00",
+                )
+            ]
+            if "kids-club" in amenity_slugs
+            else [],
+        ),
+        "accessibility": service_group(
+            tr("Qulay kirish", "Доступность", "Accessibility"),
+            [
+                service_item(
+                    "service_animals",
+                    tr("Xizmat hayvonlari", "Служебные животные", "Service animals"),
+                    icon="accessibility",
+                )
+            ],
+        ),
+        "languages": data["languages_spoken"],
+        "notes": tr(
+            "Xizmatlar mavsum va bandlikka qarab o'zgarishi mumkin.",
+            "Услуги могут меняться в зависимости от сезона и загрузки.",
+            "Services may vary by season and occupancy.",
+        ),
+    }
+
+
+def policies_for(data: dict) -> dict:
+    breakfast_style = next(
+        (meal["style"] for meal in data["meal_schedule"] if meal["meal"] == "breakfast"),
+        "set menu",
+    )
+    return {
+        "check_in": {
+            "instructions": tr(
+                "Pasport va tibbiy hujjatlarni qabulxonada ko'rsating.",
+                "Предъявите паспорт и медицинские документы на ресепшене.",
+                "Show your passport and medical documents at reception.",
+            ),
+            "required_documents": ["passport", "medical_summary"],
+        },
+        "children": {
+            "allowed": data["property_type"] == PropertyType.SANATORIUM,
+            "min_age": 0,
+            "treatment_min_age": data["min_checkin_age"],
+        },
+        "extra_bed": {
+            "available": True,
+            "crib_available": data["min_checkin_age"] <= 16,
+            "price": "180000.00" if data["slug"] == "zomin-shifo-resort" else "18.00",
+            "currency": "UZS" if data["slug"] == "zomin-shifo-resort" else "USD",
+        },
+        "breakfast": {
+            "included": True,
+            "style": breakfast_style,
+            "hours": "07:00-10:00",
+        },
+        "pets": {
+            "allowed": data["pets_allowed"],
+            "service_animals_allowed": data["service_animals_allowed"],
+            "fee": "25.00" if data["pets_allowed"] else None,
+            "currency": "USD" if data["pets_allowed"] else None,
+        },
+        "cancellation": {
+            "free_cancellation_until_days_before": 5,
+            "penalty_percent": "50.00",
+        },
+        "payment": {
+            "methods": data["payment_methods"],
+            "deposit_required": True,
+            "deposit_percent": "20.00",
+        },
+        "fees": {
+            "mandatory_fees": ["resort_registration"],
+            "optional_fees": ["airport_transfer", "additional_procedures"],
+        },
+    }
+
+
+def promo_badges_for(data: dict) -> list[dict]:
+    badges = [
+        {
+            "code": "doctor_checked",
+            "kind": "trust",
+            "title": tr("Shifokor nazorati", "Наблюдение врача", "Doctor supervised"),
+            "description": tr(
+                "Davolash dasturlari shifokor ko'rigidan keyin belgilanadi.",
+                "Лечебные программы назначаются после осмотра врача.",
+                "Treatment programs are assigned after a doctor's check.",
+            ),
+            "icon": "stethoscope",
+            "is_active": True,
+            "priority": 10,
+        }
+    ]
+    if data["property_type"] == PropertyType.SANATORIUM:
+        badges.append(
+            {
+                "code": "full_board_available",
+                "kind": "benefit",
+                "title": tr("To'liq pansion", "Полный пансион", "Full board"),
+                "description": tr(
+                    "Davolanishga mos ovqatlanish jadvali bor.",
+                    "Есть питание по графику, подходящему для лечения.",
+                    "Meal schedules are aligned with treatment stays.",
+                ),
+                "icon": "utensils",
+                "is_active": True,
+                "priority": 20,
+            }
+        )
+    return badges
+
+
+def room_features_for(data: dict) -> dict:
+    is_suite = data["size_sqm"] >= 44
+    return {
+        "has_window": True,
+        "bathroom": {
+            "private": True,
+            "type": "shower_and_bathtub" if is_suite else "shower",
+            "bidet": is_suite,
+            "toiletries": True,
+            "hairdryer": True,
+            "bathrobe": is_suite,
+            "slippers": True,
+        },
+        "climate": {"air_conditioning": True, "heating": True},
+        "kitchen": {
+            "refrigerator": True,
+            "minibar": data["base_currency"] == "USD",
+            "kettle": True,
+            "kitchenette": is_suite,
+        },
+        "accessibility": {
+            "wheelchair_accessible": data["floor"] == "1",
+            "roll_in_shower": data["floor"] == "1",
+            "grab_bars": data["floor"] == "1",
+            "visual_alarm": False,
+        },
+        "safety": {"safe": True, "smoke_detector": True, "smart_lock": True},
+        "entertainment": {
+            "tv": True,
+            "smart_tv": data["base_currency"] == "USD",
+            "satellite_channels": True,
+        },
+        "comfort": {
+            "balcony": data["view"] in {RoomView.MOUNTAIN, RoomView.GARDEN, RoomView.POOL},
+            "terrace": data["floor"] == "1",
+            "desk": True,
+            "sofa": is_suite,
+            "carpet": data["view"] == RoomView.MOUNTAIN,
+        },
+        "highlights": [
+            "spacious" if is_suite else "compact_comfort",
+            f"{data['view'].value}_view" if data["view"] else "quiet_room",
+        ],
+    }
+
+
 async def clear_demo_data(db) -> None:
     models = [
         Payment,
@@ -887,6 +1336,11 @@ async def create_sanatoriums(
             surroundings=data["surroundings"],
             venues=data["venues"],
             meal_schedule=data["meal_schedule"],
+            treatment_profile=treatment_profile_for(data),
+            promo_badges=promo_badges_for(data),
+            service_matrix=service_matrix_for(data),
+            medical_base=medical_base_for(data),
+            policies=policies_for(data),
             platform_commission_percent=data["platform_commission_percent"],
             b2b_commission_percent=data["b2b_commission_percent"],
             agent_discount_tiers=data["agent_discount_tiers"],
@@ -905,7 +1359,20 @@ async def create_sanatoriums(
                     url=f"/uploads/demo/sanatoriums/{data['slug']}/{filename}",
                     order=order,
                     is_primary=primary,
+                    is_360=order == 2,
+                    category="exterior" if primary else "treatment" if "treatment" in filename else "surroundings",
                     caption=caption,
+                    caption_i18n=tr(
+                        caption,
+                        caption,
+                        caption,
+                    ),
+                    alt_text=tr(
+                        caption,
+                        caption,
+                        caption,
+                    ),
+                    tags=[data["slug"], "primary" if primary else "gallery"],
                 )
             )
         for slug, cost in data["amenities"]:
@@ -949,6 +1416,7 @@ async def create_rooms(
                 markup_percent=data["markup_percent"],
                 discount_percent=data["discount_percent"],
                 min_nights=data["min_nights"],
+                room_features=room_features_for(data),
                 is_active=True,
                 amenities=[amenities[slug] for slug in data["amenities"]],
             )
@@ -963,7 +1431,20 @@ async def create_rooms(
                         order=0,
                         is_primary=True,
                         is_video=False,
+                        is_360=False,
+                        category="bedroom",
                         caption=f"{data['name']['en']} bedroom",
+                        caption_i18n=tr(
+                            f"{data['name']['uz']} yotoq zonasi",
+                            f"Спальная зона {data['name']['ru']}",
+                            f"{data['name']['en']} bedroom",
+                        ),
+                        alt_text=tr(
+                            f"{data['name']['uz']} xonasi",
+                            f"Номер {data['name']['ru']}",
+                            f"{data['name']['en']} room",
+                        ),
+                        tags=[san_slug, "room", "bedroom"],
                     ),
                     RoomImage(
                         room_id=room.id,
@@ -971,7 +1452,20 @@ async def create_rooms(
                         order=1,
                         is_primary=False,
                         is_video=True,
+                        is_360=True,
+                        category="tour",
                         caption=f"{data['name']['en']} video tour",
+                        caption_i18n=tr(
+                            f"{data['name']['uz']} video turi",
+                            f"Видео-тур {data['name']['ru']}",
+                            f"{data['name']['en']} video tour",
+                        ),
+                        alt_text=tr(
+                            f"{data['name']['uz']} bo'yicha video tur",
+                            f"Видео-тур по номеру {data['name']['ru']}",
+                            f"Video tour of {data['name']['en']}",
+                        ),
+                        tags=[san_slug, "room", "tour", "360"],
                     ),
                 ]
             )
@@ -1207,7 +1701,20 @@ async def create_reviews(db, *, sanatoriums: dict[str, Sanatorium], users: dict[
     ]
     rating_sum: dict[str, int] = {slug: 0 for slug in sanatoriums}
     rating_count: dict[str, int] = {slug: 0 for slug in sanatoriums}
+    category_sums: dict[str, dict[str, int]] = {
+        slug: {
+            "cleanliness": 0,
+            "amenities": 0,
+            "location": 0,
+            "service": 0,
+            "treatment": 0,
+            "value": 0,
+            "food": 0,
+        }
+        for slug in sanatoriums
+    }
     for san_slug, email, name, country, traveler_type, rating, body in review_specs:
+        value_rating = max(rating - 1, 1)
         db.add(
             SanatoriumReview(
                 sanatorium_id=sanatoriums[san_slug].id,
@@ -1217,9 +1724,11 @@ async def create_reviews(db, *, sanatoriums: dict[str, Sanatorium], users: dict[
                 traveler_type=traveler_type,
                 rating=rating,
                 cleanliness=rating,
+                amenities=rating,
                 location=rating,
                 service=rating,
-                value=max(rating - 1, 1),
+                treatment=rating,
+                value=value_rating,
                 food=rating,
                 body=body,
                 is_visible=True,
@@ -1227,12 +1736,23 @@ async def create_reviews(db, *, sanatoriums: dict[str, Sanatorium], users: dict[
         )
         rating_sum[san_slug] += rating
         rating_count[san_slug] += 1
+        category_sums[san_slug]["cleanliness"] += rating
+        category_sums[san_slug]["amenities"] += rating
+        category_sums[san_slug]["location"] += rating
+        category_sums[san_slug]["service"] += rating
+        category_sums[san_slug]["treatment"] += rating
+        category_sums[san_slug]["value"] += value_rating
+        category_sums[san_slug]["food"] += rating
     for slug, san in sanatoriums.items():
         count = rating_count[slug]
         san.review_count = count
         san.avg_rating = (
             Decimal(rating_sum[slug]) / Decimal(count)
         ).quantize(Decimal("0.01")) if count else None
+        san.rating_breakdown = {
+            key: str((Decimal(value) / Decimal(count)).quantize(Decimal("0.01")))
+            for key, value in category_sums[slug].items()
+        } if count else {}
 
 
 async def create_bookings(

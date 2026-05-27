@@ -10,8 +10,10 @@ class ReviewCreate(BaseModel):
     traveler_type: str | None = Field(default=None, max_length=30)
     rating: int = Field(ge=1, le=5)
     cleanliness: int | None = Field(default=None, ge=1, le=5)
+    amenities: int | None = Field(default=None, ge=1, le=5)
     location: int | None = Field(default=None, ge=1, le=5)
     service: int | None = Field(default=None, ge=1, le=5)
+    treatment: int | None = Field(default=None, ge=1, le=5)
     value: int | None = Field(default=None, ge=1, le=5)
     food: int | None = Field(default=None, ge=1, le=5)
     body: str = Field(min_length=10, max_length=3000)
@@ -32,8 +34,10 @@ class ReviewRead(BaseModel):
     traveler_type: str | None
     rating: int
     cleanliness: int | None
+    amenities: int | None
     location: int | None
     service: int | None
+    treatment: int | None
     value: int | None
     food: int | None
     body: str

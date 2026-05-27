@@ -1,6 +1,8 @@
 """Tests for PATCH /rooms/{id}/availability/{date} and RoomRead extra fields."""
+
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 from httpx import AsyncClient
@@ -8,7 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.availability import RoomAvailability
 from app.models.sanatorium import SanatoriumStatus
-from tests.factories import make_room, make_sanatorium
+from tests.factories import InMemoryStorage, make_png, make_room, make_sanatorium
+
+PNG = make_png()
+
+
+def _multipart(content: bytes, **fields: str | bool | int):
+    files = {"file": ("room.png", content, "image/png")}
+    data = {k: str(v) for k, v in fields.items()}
+    return files, data
 
 
 class TestAvailabilityUpsert:
@@ -20,7 +30,9 @@ class TestAvailabilityUpsert:
         admin_headers,
     ):
         san = await make_sanatorium(
-            db, slug="upsert-1", admin_user_id=admin_user.id,
+            db,
+            slug="upsert-1",
+            admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
         room = await make_room(db, sanatorium=san, inventory_count=5)
@@ -45,7 +57,9 @@ class TestAvailabilityUpsert:
         admin_headers,
     ):
         san = await make_sanatorium(
-            db, slug="upsert-2", admin_user_id=admin_user.id,
+            db,
+            slug="upsert-2",
+            admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
         room = await make_room(db, sanatorium=san, inventory_count=10)
@@ -81,7 +95,9 @@ class TestAvailabilityUpsert:
         admin_headers,
     ):
         san = await make_sanatorium(
-            db, slug="upsert-3", admin_user_id=admin_user.id,
+            db,
+            slug="upsert-3",
+            admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
         room = await make_room(db, sanatorium=san, inventory_count=5)
@@ -107,7 +123,9 @@ class TestAvailabilityUpsert:
         admin_headers,
     ):
         san = await make_sanatorium(
-            db, slug="upsert-4", admin_user_id=admin_user.id,
+            db,
+            slug="upsert-4",
+            admin_user_id=admin_user.id,
             status=SanatoriumStatus.APPROVED,
         )
         room = await make_room(db, sanatorium=san, inventory_count=5)
@@ -121,9 +139,7 @@ class TestAvailabilityUpsert:
         assert resp.json()["units_blocked"] == 5
         assert resp.json()["units_available"] == 0
 
-    async def test_upsert_anon_returns_401(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_upsert_anon_returns_401(self, client: AsyncClient, db: AsyncSession):
         san = await make_sanatorium(db, slug="upsert-anon")
         room = await make_room(db, sanatorium=san)
         target = (date.today() + timedelta(days=7)).isoformat()
@@ -183,3 +199,91 @@ class TestRoomAvailabilityFields:
         resp = await client.get(f"/api/rooms/{room.id}")
         body = resp.json()
         assert body["has_availability"] is False
+
+
+class TestRoomImageMetadata:
+    async def test_upload_room_image_with_metadata(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        admin_user,
+        admin_headers,
+        storage: InMemoryStorage,
+    ):
+        san = await make_sanatorium(
+            db,
+            slug="room-image-meta",
+            admin_user_id=admin_user.id,
+            status=SanatoriumStatus.APPROVED,
+        )
+        room = await make_room(db, sanatorium=san)
+        files, data = _multipart(
+            PNG,
+            caption="Classic room",
+            is_primary=True,
+            is_video=True,
+            is_360=True,
+            category="bathroom",
+            caption_i18n=json.dumps({"uz": "Hammom", "en": "Bathroom"}),
+            alt_text=json.dumps({"en": "Private bathroom"}),
+            tags=json.dumps(["bathroom", "shower"]),
+            order=2,
+        )
+        resp = await client.post(
+            f"/api/rooms/{room.id}/images",
+            files=files,
+            data=data,
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["caption"] == "Classic room"
+        assert body["is_primary"] is True
+        assert body["is_video"] is True
+        assert body["is_360"] is True
+        assert body["category"] == "bathroom"
+        assert body["caption_i18n"]["uz"] == "Hammom"
+        assert body["alt_text"]["en"] == "Private bathroom"
+        assert body["tags"] == ["bathroom", "shower"]
+        key = body["url"].removeprefix(storage.url_prefix + "/")
+        assert key in storage.objects
+
+    async def test_patch_room_image_metadata(
+        self, client: AsyncClient, db: AsyncSession, admin_user, admin_headers
+    ):
+        san = await make_sanatorium(
+            db,
+            slug="room-image-patch-meta",
+            admin_user_id=admin_user.id,
+            status=SanatoriumStatus.APPROVED,
+        )
+        room = await make_room(db, sanatorium=san)
+        files, data = _multipart(PNG)
+        created = await client.post(
+            f"/api/rooms/{room.id}/images",
+            files=files,
+            data=data,
+            headers=admin_headers,
+        )
+        assert created.status_code == 201, created.text
+
+        resp = await client.patch(
+            f"/api/rooms/{room.id}/images/{created.json()['id']}",
+            json={
+                "is_video": True,
+                "is_360": True,
+                "category": "room",
+                "caption_i18n": {"en": "Junior suite"},
+                "alt_text": {"en": "Junior suite bed"},
+                "tags": ["bed", "suite"],
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["is_video"] is True
+        assert body["is_360"] is True
+        assert body["category"] == "room"
+        assert body["caption_i18n"]["en"] == "Junior suite"
+        assert body["alt_text"]["en"] == "Junior suite bed"
+        assert body["tags"] == ["bed", "suite"]

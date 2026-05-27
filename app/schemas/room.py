@@ -70,6 +70,71 @@ class BeddingOption(BaseModel):
     label: str | None = Field(default=None, max_length=120)
 
 
+class RoomBathroomFeatures(BaseModel):
+    private: bool | None = None
+    type: Literal["shower", "bathtub", "shower_and_bathtub"] | None = None
+    bidet: bool | None = None
+    toiletries: bool | None = None
+    hairdryer: bool | None = None
+    bathrobe: bool | None = None
+    slippers: bool | None = None
+
+
+class RoomClimateFeatures(BaseModel):
+    air_conditioning: bool | None = None
+    heating: bool | None = None
+
+
+class RoomKitchenFeatures(BaseModel):
+    refrigerator: bool | None = None
+    minibar: bool | None = None
+    kettle: bool | None = None
+    kitchenette: bool | None = None
+
+
+class RoomAccessibilityFeatures(BaseModel):
+    wheelchair_accessible: bool | None = None
+    roll_in_shower: bool | None = None
+    grab_bars: bool | None = None
+    visual_alarm: bool | None = None
+
+
+class RoomSafetyFeatures(BaseModel):
+    safe: bool | None = None
+    smoke_detector: bool | None = None
+    smart_lock: bool | None = None
+
+
+class RoomEntertainmentFeatures(BaseModel):
+    tv: bool | None = None
+    smart_tv: bool | None = None
+    satellite_channels: bool | None = None
+
+
+class RoomComfortFeatures(BaseModel):
+    balcony: bool | None = None
+    terrace: bool | None = None
+    desk: bool | None = None
+    sofa: bool | None = None
+    carpet: bool | None = None
+
+
+class RoomFeatures(BaseModel):
+    has_window: bool | None = None
+    bathroom: RoomBathroomFeatures = Field(default_factory=RoomBathroomFeatures)
+    climate: RoomClimateFeatures = Field(default_factory=RoomClimateFeatures)
+    kitchen: RoomKitchenFeatures = Field(default_factory=RoomKitchenFeatures)
+    accessibility: RoomAccessibilityFeatures = Field(
+        default_factory=RoomAccessibilityFeatures
+    )
+    safety: RoomSafetyFeatures = Field(default_factory=RoomSafetyFeatures)
+    entertainment: RoomEntertainmentFeatures = Field(
+        default_factory=RoomEntertainmentFeatures
+    )
+    comfort: RoomComfortFeatures = Field(default_factory=RoomComfortFeatures)
+    highlights: list[str] = Field(default_factory=list)
+
+
 class RoomImageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,14 +143,25 @@ class RoomImageRead(BaseModel):
     order: int
     is_primary: bool
     is_video: bool
+    is_360: bool
+    category: str | None
     caption: str | None
+    caption_i18n: dict
+    alt_text: dict
+    tags: list[str]
     created_at: datetime
 
 
 class RoomImageUpdate(BaseModel):
     is_primary: bool | None = None
+    is_video: bool | None = None
+    is_360: bool | None = None
+    category: str | None = Field(default=None, max_length=40)
     order: int | None = Field(default=None, ge=0)
     caption: str | None = Field(default=None, max_length=255)
+    caption_i18n: Translations | None = None
+    alt_text: Translations | None = None
+    tags: list[str] | None = None
 
 
 class RoomCreate(BaseModel):
@@ -98,6 +174,7 @@ class RoomCreate(BaseModel):
     beds: list[BeddingOption] = Field(default_factory=list)
     view: RoomView | None = None
     smoking_allowed: bool = False
+    room_features: RoomFeatures = Field(default_factory=RoomFeatures)
     capacity: int = Field(ge=1)
     max_adults: int | None = Field(default=None, ge=0)
     max_children: int | None = Field(default=None, ge=0)
@@ -122,6 +199,7 @@ class RoomUpdate(BaseModel):
     beds: list[BeddingOption] | None = None
     view: RoomView | None = None
     smoking_allowed: bool | None = None
+    room_features: RoomFeatures | None = None
     capacity: int | None = Field(default=None, ge=1)
     max_adults: int | None = Field(default=None, ge=0)
     max_children: int | None = Field(default=None, ge=0)
@@ -130,7 +208,9 @@ class RoomUpdate(BaseModel):
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
     markup_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
-    discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    discount_percent: Decimal | None = Field(
+        default=None, ge=0, le=100, decimal_places=2
+    )
     min_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
@@ -150,6 +230,7 @@ class _RoomReadCommon(BaseModel):
     beds: list[BeddingOption] = Field(default_factory=list)
     view: RoomView | None = None
     smoking_allowed: bool = False
+    room_features: RoomFeatures = Field(default_factory=RoomFeatures)
     capacity: int
     max_adults: int | None = None
     max_children: int | None = None
@@ -193,6 +274,7 @@ class RoomRead(_RoomReadCommon):
             beds=obj.beds or [],
             view=obj.view,
             smoking_allowed=obj.smoking_allowed,
+            room_features=RoomFeatures.model_validate(obj.room_features or {}),
             capacity=obj.capacity,
             max_adults=obj.max_adults,
             max_children=obj.max_children,
@@ -276,7 +358,9 @@ class RoomPricePeriodCreate(BaseModel):
     date_to: date
     base_price: Decimal = Field(ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
-    discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    discount_percent: Decimal | None = Field(
+        default=None, ge=0, le=100, decimal_places=2
+    )
 
 
 class RoomPricePeriodUpdate(BaseModel):
@@ -285,7 +369,9 @@ class RoomPricePeriodUpdate(BaseModel):
     date_to: date | None = None
     base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
-    discount_percent: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    discount_percent: Decimal | None = Field(
+        default=None, ge=0, le=100, decimal_places=2
+    )
 
 
 class RoomPricePeriodRead(BaseModel):

@@ -116,6 +116,7 @@ class RoomService:
             beds=[option.model_dump() for option in payload.beds],
             view=payload.view,
             smoking_allowed=payload.smoking_allowed,
+            room_features=payload.room_features.model_dump(mode="json"),
             capacity=payload.capacity,
             max_adults=payload.max_adults,
             max_children=payload.max_children,
@@ -435,9 +436,7 @@ class RoomService:
         """Block lowering inventory_count below any date's (blocked+booked)."""
         max_used = await self.db.scalar(
             select(
-                func.max(
-                    RoomAvailability.units_blocked + RoomAvailability.units_booked
-                )
+                func.max(RoomAvailability.units_blocked + RoomAvailability.units_booked)
             ).where(RoomAvailability.room_id == room_id)
         )
         if max_used is not None and max_used > new_count:

@@ -21,15 +21,27 @@ _BOARD: dict[str, Label] = {
     "breakfast": {"uz": "Nonushta", "ru": "Завтрак", "en": "Breakfast"},
     "half_board": {"uz": "Yarim pansion", "ru": "Полупансион", "en": "Half board"},
     "full_board": {"uz": "To'liq pansion", "ru": "Полный пансион", "en": "Full board"},
-    "all_inclusive": {"uz": "Hammasi kiritilgan", "ru": "Всё включено", "en": "All inclusive"},
+    "all_inclusive": {
+        "uz": "Hammasi kiritilgan",
+        "ru": "Всё включено",
+        "en": "All inclusive",
+    },
 }
 _PAYMENT_TIMING: dict[str, Label] = {
     "prepay": {"uz": "Onlayn to'lov", "ru": "Предоплата онлайн", "en": "Prepay online"},
-    "at_hotel": {"uz": "Mehmonxonada to'lov", "ru": "Оплата в отеле", "en": "Pay at hotel"},
+    "at_hotel": {
+        "uz": "Mehmonxonada to'lov",
+        "ru": "Оплата в отеле",
+        "en": "Pay at hotel",
+    },
     "deposit": {"uz": "Depozit", "ru": "Депозит", "en": "Deposit"},
 }
 _CONFIRMATION: dict[str, Label] = {
-    "instant": {"uz": "Darhol tasdiq", "ru": "Мгновенное подтверждение", "en": "Instant confirmation"},
+    "instant": {
+        "uz": "Darhol tasdiq",
+        "ru": "Мгновенное подтверждение",
+        "en": "Instant confirmation",
+    },
     "on_request": {"uz": "So'rov bo'yicha", "ru": "По запросу", "en": "On request"},
 }
 _ROOM_VIEW: dict[str, Label] = {
@@ -42,24 +54,48 @@ _ROOM_VIEW: dict[str, Label] = {
     "park": {"uz": "Park manzarasi", "ru": "Вид на парк", "en": "Park view"},
     "courtyard": {"uz": "Hovli manzarasi", "ru": "Вид во двор", "en": "Courtyard view"},
     "street": {"uz": "Ko'cha manzarasi", "ru": "Вид на улицу", "en": "Street view"},
-    "landmark": {"uz": "Diqqatga sazovor joy", "ru": "Вид на достопримечательность", "en": "Landmark view"},
+    "landmark": {
+        "uz": "Diqqatga sazovor joy",
+        "ru": "Вид на достопримечательность",
+        "en": "Landmark view",
+    },
 }
 _AMENITY_COST: dict[str, Label] = {
     "free": {"uz": "Bepul", "ru": "Бесплатно", "en": "Free"},
-    "paid": {"uz": "Qo'shimcha to'lov", "ru": "За дополнительную плату", "en": "Additional charge"},
+    "paid": {
+        "uz": "Qo'shimcha to'lov",
+        "ru": "За дополнительную плату",
+        "en": "Additional charge",
+    },
     "on_request": {"uz": "So'rov bo'yicha", "ru": "По запросу", "en": "On request"},
 }
 _PROPERTY_TYPE: dict[str, Label] = {
     "sanatorium": {"uz": "Sanatoriya", "ru": "Санаторий", "en": "Sanatorium"},
-    "wellness": {"uz": "Wellness markaz", "ru": "Велнес-центр", "en": "Wellness center"},
+    "wellness": {
+        "uz": "Wellness markaz",
+        "ru": "Велнес-центр",
+        "en": "Wellness center",
+    },
 }
 _WELLNESS_CATEGORY: dict[str, Label] = {
     "spa_resort": {"uz": "SPA kurort", "ru": "Спа-курорт", "en": "Spa resort"},
     "yoga_retreat": {"uz": "Yoga retrit", "ru": "Йога-ретрит", "en": "Yoga retreat"},
-    "meditation_center": {"uz": "Meditatsiya markazi", "ru": "Центр медитации", "en": "Meditation center"},
-    "fitness_resort": {"uz": "Fitnes kurort", "ru": "Фитнес-курорт", "en": "Fitness resort"},
+    "meditation_center": {
+        "uz": "Meditatsiya markazi",
+        "ru": "Центр медитации",
+        "en": "Meditation center",
+    },
+    "fitness_resort": {
+        "uz": "Fitnes kurort",
+        "ru": "Фитнес-курорт",
+        "en": "Fitness resort",
+    },
     "beauty_spa": {"uz": "Go'zallik SPA", "ru": "Бьюти-спа", "en": "Beauty spa"},
-    "digital_detox": {"uz": "Raqamli deteks", "ru": "Цифровой детокс", "en": "Digital detox"},
+    "digital_detox": {
+        "uz": "Raqamli deteks",
+        "ru": "Цифровой детокс",
+        "en": "Digital detox",
+    },
 }
 _BOOKING_TYPE: dict[str, Label] = {
     "room": {"uz": "Xona", "ru": "Номер", "en": "Room"},
@@ -84,10 +120,22 @@ _BED_TYPE: dict[str, Label] = {
     "bunk": {"uz": "Qavatli karavot", "ru": "Двухъярусная", "en": "Bunk bed"},
 }
 _TREATMENT_FOCUS: dict[str, Label] = {
-    "cardiovascular": {"uz": "Yurak-qon tomir", "ru": "Сердечно-сосудистые", "en": "Cardiovascular"},
+    "cardiovascular": {
+        "uz": "Yurak-qon tomir",
+        "ru": "Сердечно-сосудистые",
+        "en": "Cardiovascular",
+    },
     "digestive": {"uz": "Ovqat hazm qilish", "ru": "Пищеварение", "en": "Digestive"},
-    "musculoskeletal": {"uz": "Tayanch-harakat", "ru": "Опорно-двигательные", "en": "Musculoskeletal"},
-    "respiratory": {"uz": "Nafas olish", "ru": "Дыхательная система", "en": "Respiratory"},
+    "musculoskeletal": {
+        "uz": "Tayanch-harakat",
+        "ru": "Опорно-двигательные",
+        "en": "Musculoskeletal",
+    },
+    "respiratory": {
+        "uz": "Nafas olish",
+        "ru": "Дыхательная система",
+        "en": "Respiratory",
+    },
     "neurological": {"uz": "Asab tizimi", "ru": "Неврология", "en": "Neurological"},
     "dermatology": {"uz": "Teri", "ru": "Дерматология", "en": "Dermatology"},
     "endocrine": {"uz": "Endokrin", "ru": "Эндокринная система", "en": "Endocrine"},
@@ -95,7 +143,11 @@ _TREATMENT_FOCUS: dict[str, Label] = {
 }
 _PAYMENT_METHOD: dict[str, Label] = {
     "cash": {"uz": "Naqd", "ru": "Наличные", "en": "Cash"},
-    "bank_transfer": {"uz": "Bank o'tkazmasi", "ru": "Банковский перевод", "en": "Bank transfer"},
+    "bank_transfer": {
+        "uz": "Bank o'tkazmasi",
+        "ru": "Банковский перевод",
+        "en": "Bank transfer",
+    },
     "uzcard": {"uz": "UzCard", "ru": "UzCard", "en": "UzCard"},
     "visa": {"uz": "Visa", "ru": "Visa", "en": "Visa"},
     "mastercard": {"uz": "Mastercard", "ru": "Mastercard", "en": "Mastercard"},
@@ -113,13 +165,25 @@ _AMENITY_CATEGORY: dict[str, Label] = {
     "parking": {"uz": "Parking", "ru": "Парковка", "en": "Parking"},
     "front_desk": {"uz": "Qabul", "ru": "Стойка регистрации", "en": "Front desk"},
     "cleaning": {"uz": "Tozalash", "ru": "Уборка", "en": "Cleaning"},
-    "food_drink": {"uz": "Ovqat va ichimlik", "ru": "Еда и напитки", "en": "Food & drink"},
+    "food_drink": {
+        "uz": "Ovqat va ichimlik",
+        "ru": "Еда и напитки",
+        "en": "Food & drink",
+    },
     "public_areas": {"uz": "Umumiy hududlar", "ru": "Общие зоны", "en": "Public areas"},
     "children": {"uz": "Bolalar uchun", "ru": "Для детей", "en": "For children"},
-    "accessibility": {"uz": "Imkoniyati cheklanganlar", "ru": "Доступность", "en": "Accessibility"},
+    "accessibility": {
+        "uz": "Imkoniyati cheklanganlar",
+        "ru": "Доступность",
+        "en": "Accessibility",
+    },
 }
 _SURROUNDING_TYPE: dict[str, Label] = {
-    "attraction": {"uz": "Diqqatga sazovor joy", "ru": "Достопримечательность", "en": "Attraction"},
+    "attraction": {
+        "uz": "Diqqatga sazovor joy",
+        "ru": "Достопримечательность",
+        "en": "Attraction",
+    },
     "recreation": {"uz": "Dam olish", "ru": "Отдых", "en": "Recreation"},
     "transport": {"uz": "Transport", "ru": "Транспорт", "en": "Transport"},
     "shopping": {"uz": "Xarid", "ru": "Шоппинг", "en": "Shopping"},
@@ -151,6 +215,228 @@ _TRAVELER_TYPE: dict[str, Label] = {
 _CURRENCY: dict[str, Label] = {
     "UZS": {"uz": "So'm", "ru": "Сум", "en": "UZS"},
     "USD": {"uz": "Dollar", "ru": "Доллар", "en": "USD"},
+}
+
+_NATURAL_RESOURCE: dict[str, Label] = {
+    "thermal_mineral_water": {
+        "uz": "Termal mineral suv",
+        "ru": "Термальная минеральная вода",
+        "en": "Thermal mineral water",
+    },
+    "drinking_mineral_water": {
+        "uz": "Shifobaxsh ichimlik mineral suv",
+        "ru": "Лечебная питьевая минеральная вода",
+        "en": "Healing drinking mineral water",
+    },
+    "mud": {
+        "uz": "Shifobaxsh balchiq/loy",
+        "ru": "Лечебная грязь",
+        "en": "Healing mud",
+    },
+    "co2_gas": {
+        "uz": "Tabiiy karbonat angidrid gazi",
+        "ru": "Природный углекислый газ",
+        "en": "Natural carbon dioxide gas",
+    },
+    "climate": {
+        "uz": "Shifobaxsh iqlim",
+        "ru": "Лечебный климат",
+        "en": "Healing climate",
+    },
+    "salt_cave": {"uz": "Tuz g'ori", "ru": "Соляная пещера", "en": "Salt cave"},
+}
+
+_MEDICAL_PROCEDURE_CATEGORY: dict[str, Label] = {
+    "hydrotherapy": {"uz": "Gidroterapiya", "ru": "Гидротерапия", "en": "Hydrotherapy"},
+    "physiotherapy": {
+        "uz": "Fizioterapiya",
+        "ru": "Физиотерапия",
+        "en": "Physiotherapy",
+    },
+    "thermotherapy": {
+        "uz": "Termoterapiya (Issiqlik)",
+        "ru": "Термотерапия",
+        "en": "Thermotherapy",
+    },
+    "massages": {"uz": "Massajlar", "ru": "Массажи", "en": "Massages"},
+    "kinesitherapy": {
+        "uz": "Kineziterapiya (Davolash gimnastikasi)",
+        "ru": "Кинезитерапия",
+        "en": "Kinesitherapy",
+    },
+    "other": {
+        "uz": "Boshqa muolajalar",
+        "ru": "Другие процедуры",
+        "en": "Other treatments",
+    },
+}
+
+_MEDICAL_PROCEDURE: dict[str, Label] = {
+    "circular_shower": {
+        "uz": "Sirkulyar dush",
+        "ru": "Циркулярный душ",
+        "en": "Circular shower",
+    },
+    "charcot_shower": {"uz": "Sharko dushi", "ru": "Душ Шарко", "en": "Charcot shower"},
+    "cascade_shower": {
+        "uz": "Kaskad dush",
+        "ru": "Каскадный душ",
+        "en": "Cascade shower",
+    },
+    "hydrocolonotherapy": {
+        "uz": "Gidrokolonoterapiya",
+        "ru": "Гидроколонотерапия",
+        "en": "Hydrocolonotherapy",
+    },
+    "hydromassage_bath": {
+        "uz": "Tibbiy gidromassajli vanna",
+        "ru": "Медицинская гидромассажная ванна",
+        "en": "Medical hydromassage bath",
+    },
+    "vichy_shower": {"uz": "Vishi dushi", "ru": "Душ Виши", "en": "Vichy shower"},
+    "ascending_shower": {
+        "uz": "Ko'tariluvchi dush",
+        "ru": "Восходящий душ",
+        "en": "Ascending shower",
+    },
+    "pearl_baths": {
+        "uz": "Marvaridli vannalar",
+        "ru": "Жемчужные ванны",
+        "en": "Pearl baths",
+    },
+    "hand_baths": {"uz": "Qo'l vannalari", "ru": "Ручные ванны", "en": "Hand baths"},
+    "foot_baths": {"uz": "Oyoq vannalari", "ru": "Ножные ванны", "en": "Foot baths"},
+    "carbon_dioxide_bath": {
+        "uz": "Karbonat angidridli vanna",
+        "ru": "Углекислая ванна",
+        "en": "Carbon dioxide bath",
+    },
+    "mineral_bath": {
+        "uz": "Mineral vanna",
+        "ru": "Минеральная ванна",
+        "en": "Mineral bath",
+    },
+    "ecg": {"uz": "EKG", "ru": "ЭКГ", "en": "ECG"},
+    "uhf_ultratherm": {
+        "uz": "UVCh-Ultraterm",
+        "ru": "УВЧ-Ультратерм",
+        "en": "UHF-Ultratherm",
+    },
+    "radiotherm": {"uz": "Radioterm", "ru": "Радиотерм", "en": "Radiotherm"},
+    "interference_therapy": {
+        "uz": "Interferensiya terapiyasi",
+        "ru": "Интерференцтерапия",
+        "en": "Interference therapy",
+    },
+    "stereodinator": {
+        "uz": "Stereodinator",
+        "ru": "Стереодинатор",
+        "en": "Stereodinator",
+    },
+    "neuroton": {"uz": "Neyroton", "ru": "Нейротон", "en": "Neuroton"},
+    "massage_couch": {
+        "uz": "Massaj kushedkasi",
+        "ru": "Массажная кушетка",
+        "en": "Massage couch",
+    },
+    "laser_therapy": {
+        "uz": "Lazero-terapiya",
+        "ru": "Лазеротерапия",
+        "en": "Laser therapy",
+    },
+    "darsonvalization": {
+        "uz": "Darsonvalizatsiya",
+        "ru": "Дарсонвализация",
+        "en": "Darsonvalization",
+    },
+    "hi_top": {"uz": "Hi-Top terapiya", "ru": "Hi-Top", "en": "Hi-Top therapy"},
+    "mechanotherapy": {
+        "uz": "Mexano-massaj",
+        "ru": "Механомассаж",
+        "en": "Mechanotherapy",
+    },
+    "ufo_tubus": {"uz": "UFO (tubus)", "ru": "УФО (тубус)", "en": "UFO (tubus)"},
+    "inhalation": {"uz": "Ingalyatsiya", "ru": "Ингаляция", "en": "Inhalation"},
+    "magnetotherapy": {
+        "uz": "Magnito-terapiya",
+        "ru": "Магнитотерапия",
+        "en": "Magnetotherapy",
+    },
+    "infra_red": {"uz": "Infraruj (Infraqizil)", "ru": "Инфраруж", "en": "Infrared"},
+    "phonophoresis": {"uz": "Fonoforez", "ru": "Фонофорез", "en": "Phonophoresis"},
+    "ozonotherapy": {"uz": "Ozonoterapiya", "ru": "Озонотерапия", "en": "Ozonotherapy"},
+    "lymphatic_drainage": {
+        "uz": "Limfodrenaj",
+        "ru": "Лимфодренаж",
+        "en": "Lymphatic drainage",
+    },
+    "paraffin_wraps": {
+        "uz": "Parafinli o'ramlar",
+        "ru": "Парафиновые аппликации",
+        "en": "Paraffin wraps",
+    },
+    "mud_applications": {
+        "uz": "Balchiqli applikatsiyalar",
+        "ru": "Грязевые аппликации",
+        "en": "Mud applications",
+    },
+    "sauna": {"uz": "Sauna", "ru": "Сауна", "en": "Sauna"},
+    "classical_massage": {
+        "uz": "Klassik massaj",
+        "ru": "Классический массаж",
+        "en": "Classical massage",
+    },
+    "local_massage": {
+        "uz": "Lokal (mahalliy) massaj",
+        "ru": "Лечебный массаж (локально)",
+        "en": "Local therapeutic massage",
+    },
+    "pool_gymnastics": {
+        "uz": "Hovuzdagi gimnastika",
+        "ru": "Гимнастика в бассейне",
+        "en": "Gymnastics in the pool",
+    },
+    "individual_kinesitherapy": {
+        "uz": "Individual davolash gimnastikasi",
+        "ru": "Индивидуальная гимнастика",
+        "en": "Individual kinesitherapy",
+    },
+    "meals_4x": {
+        "uz": "4 mahal ovqatlanish",
+        "ru": "4-х разовое питание",
+        "en": "4 meals per day",
+    },
+    "phyto_bar": {"uz": "Fito bar", "ru": "Фито бар", "en": "Phyto bar"},
+    "pool_access": {
+        "uz": "Yopiq va ochiq basseyn",
+        "ru": "Крытый и Открытый бассейн",
+        "en": "Indoor & Outdoor pool",
+    },
+    "playstation_room": {
+        "uz": "Play Station o'yin xonasi",
+        "ru": "Комната для игры Play Station",
+        "en": "Play Station games room",
+    },
+    "bicycles": {
+        "uz": "Velosipedlar",
+        "ru": "Велосипеды на территории",
+        "en": "Bicycles on site",
+    },
+    "hippotherapy": {
+        "uz": "Ippoterapiya (otda sayr)",
+        "ru": "Иппотерапия (лечебные прогулки)",
+        "en": "Hippotherapy",
+    },
+    "doctor_consultation": {
+        "uz": "Shifokor nazorati",
+        "ru": "Осмотр и наблюдение врачей",
+        "en": "Doctor checkups",
+    },
+    "lab_tests": {
+        "uz": "Laboratoriya tahlillari",
+        "ru": "Лабораторные анализы",
+        "en": "Laboratory tests",
+    },
 }
 
 
@@ -191,4 +477,7 @@ META: dict[str, list[Option]] = {
     "meal_types": _from_labels(_MEAL_TYPE),
     "traveler_types": _from_labels(_TRAVELER_TYPE),
     "currencies": _from_labels(_CURRENCY),
+    "natural_resources": _from_labels(_NATURAL_RESOURCE),
+    "medical_procedure_categories": _from_labels(_MEDICAL_PROCEDURE_CATEGORY),
+    "medical_procedures": _from_labels(_MEDICAL_PROCEDURE),
 }

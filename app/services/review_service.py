@@ -37,9 +37,7 @@ class ReviewService:
         elif visible_only:
             base = base.where(SanatoriumReview.is_visible.is_(True))
 
-        total = await self.db.scalar(
-            select(func.count()).select_from(base.subquery())
-        )
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
         stmt = (
             base.order_by(SanatoriumReview.created_at.desc())
             .limit(limit)
@@ -68,8 +66,10 @@ class ReviewService:
             traveler_type=payload.traveler_type,
             rating=payload.rating,
             cleanliness=payload.cleanliness,
+            amenities=payload.amenities,
             location=payload.location,
             service=payload.service,
+            treatment=payload.treatment,
             value=payload.value,
             food=payload.food,
             body=payload.body,
@@ -88,7 +88,11 @@ class ReviewService:
         user: User,
     ) -> SanatoriumReview:
         await self._assert_can_moderate(review, user)
+        sanatorium = await self._review_sanatorium(review)
         review.is_visible = payload.is_visible
+        if sanatorium is not None:
+            await self.db.flush()
+            await self._recompute_rating(sanatorium)
         await self.db.commit()
         await self.db.refresh(review)
         return review
@@ -123,11 +127,28 @@ class ReviewService:
         return await self.db.get(Sanatorium, review.sanatorium_id)
 
     async def _recompute_rating(self, sanatorium: Sanatorium) -> None:
-        count, avg = (
+        (
+            count,
+            avg,
+            cleanliness,
+            amenities,
+            location,
+            service,
+            treatment,
+            value,
+            food,
+        ) = (
             await self.db.execute(
                 select(
                     func.count(SanatoriumReview.id),
                     func.avg(SanatoriumReview.rating),
+                    func.avg(SanatoriumReview.cleanliness),
+                    func.avg(SanatoriumReview.amenities),
+                    func.avg(SanatoriumReview.location),
+                    func.avg(SanatoriumReview.service),
+                    func.avg(SanatoriumReview.treatment),
+                    func.avg(SanatoriumReview.value),
+                    func.avg(SanatoriumReview.food),
                 ).where(
                     SanatoriumReview.sanatorium_id == sanatorium.id,
                     SanatoriumReview.is_visible.is_(True),
@@ -138,6 +159,19 @@ class ReviewService:
         sanatorium.avg_rating = (
             Decimal(str(avg)).quantize(_CENTS, ROUND_HALF_UP) if avg else None
         )
+        sanatorium.rating_breakdown = {
+            key: str(Decimal(str(raw)).quantize(_CENTS, ROUND_HALF_UP))
+            for key, raw in {
+                "cleanliness": cleanliness,
+                "amenities": amenities,
+                "location": location,
+                "service": service,
+                "treatment": treatment,
+                "value": value,
+                "food": food,
+            }.items()
+            if raw is not None
+        }
 
 
 def get_review_service(db: AsyncSession = Depends(get_db)) -> ReviewService:

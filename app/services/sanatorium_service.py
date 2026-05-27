@@ -41,9 +41,7 @@ class SanatoriumService:
         return await self._reload(sanatorium_id)
 
     async def get_by_slug(self, slug: str) -> Sanatorium | None:
-        obj = await self.db.scalar(
-            select(Sanatorium).where(Sanatorium.slug == slug)
-        )
+        obj = await self.db.scalar(select(Sanatorium).where(Sanatorium.slug == slug))
         return await self._reload(obj.id) if obj else None
 
     async def create(self, payload: SanatoriumCreate) -> Sanatorium:
@@ -89,12 +87,17 @@ class SanatoriumService:
             property_type=payload.property_type,
             wellness_category=payload.wellness_category,
             treatment_focuses=payload.treatment_focuses,
+            treatment_profile=payload.treatment_profile.model_dump(),
             year_opened=payload.year_opened,
             languages_spoken=payload.languages_spoken,
             highlights=payload.highlights,
+            promo_badges=[b.model_dump(mode="json") for b in payload.promo_badges],
             surroundings=[s.model_dump() for s in payload.surroundings],
             venues=[v.model_dump() for v in payload.venues],
             meal_schedule=[m.model_dump() for m in payload.meal_schedule],
+            service_matrix=payload.service_matrix.model_dump(mode="json"),
+            medical_base=payload.medical_base.model_dump(),
+            policies=payload.policies.model_dump(mode="json"),
             platform_commission_percent=payload.platform_commission_percent,
             b2b_commission_percent=payload.b2b_commission_percent,
             agent_discount_tiers=[
@@ -124,6 +127,7 @@ class SanatoriumService:
         amenities_provided = "amenities" in data
         data.pop("amenities", None)
         tiers = data.pop("agent_discount_tiers", _MISSING)
+        policies = data.pop("policies", _MISSING)
 
         if "region_id" in data:
             await assert_fk(self.db, Region, data["region_id"], "region_id")
@@ -164,6 +168,11 @@ class SanatoriumService:
                 }
                 for t in (tiers or [])
             ]
+
+        if policies is not _MISSING:
+            sanatorium.policies = (
+                payload.policies.model_dump(mode="json") if payload.policies else {}
+            )
 
         if amenities_provided:
             sanatorium.amenity_links = await self._build_amenity_links(
@@ -271,9 +280,7 @@ class SanatoriumService:
                 )
                 base = base.where(Sanatorium.id.in_(sub))
 
-        total = await self.db.scalar(
-            select(func.count()).select_from(base.subquery())
-        )
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
 
         stmt = (
             base.options(
@@ -304,7 +311,6 @@ class SanatoriumService:
         )
 
 
-
 _MISSING: object = object()
 
 
@@ -316,6 +322,7 @@ _STATIC_SORT_CLAUSES = {
     "created_at": Sanatorium.created_at.asc(),
     "-created_at": Sanatorium.created_at.desc(),
 }
+
 
 def _name_locale_expr(locale: str):
     """Coalesce name across locales, preferring the request locale.

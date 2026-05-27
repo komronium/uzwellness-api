@@ -1,4 +1,5 @@
 import uuid
+import json
 from datetime import date
 
 from fastapi import (
@@ -49,6 +50,24 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
+def _json_form(value: str | None, *, default):
+    if value is None or value == "":
+        return default
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON form field",
+        ) from exc
+    if not isinstance(parsed, type(default)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="JSON form field has invalid type",
+        )
+    return parsed
+
+
 def _public_room(
     room: Room,
     pricing: dict,
@@ -76,7 +95,7 @@ def _admin_room(
     )
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=RoomList | RoomAdminList)
 async def list_rooms(
     current_user: OptionalUser,
     locale: LocaleDep,
@@ -167,7 +186,7 @@ async def search_rooms(
     return results
 
 
-@router.get("/{room_id}", response_model=None)
+@router.get("/{room_id}", response_model=RoomRead | RoomAdminRead)
 async def get_room(
     room_id: uuid.UUID,
     locale: LocaleDep,
@@ -322,6 +341,12 @@ async def upload_room_image(
     file: UploadFile = File(...),
     caption: str | None = Form(default=None, max_length=255),
     is_primary: bool = Form(default=False),
+    is_video: bool = Form(default=False),
+    is_360: bool = Form(default=False),
+    category: str | None = Form(default=None, max_length=40),
+    caption_i18n: str | None = Form(default=None),
+    alt_text: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
     order: int = Form(default=0, ge=0),
     rooms: RoomService = Depends(get_room_service),
     images: RoomImageService = Depends(get_room_image_service),
@@ -331,7 +356,10 @@ async def upload_room_image(
     if room is None:
         raise not_found("Room not found")
     await assert_sanatorium_access(
-        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+        rooms.db,
+        room.sanatorium_id,
+        current_user,
+        action="manage this sanatorium's rooms",
     )
     content, mime = await read_upload(
         file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
@@ -343,6 +371,12 @@ async def upload_room_image(
         storage=storage,
         caption=caption,
         is_primary=is_primary,
+        is_video=is_video,
+        is_360=is_360,
+        category=category,
+        caption_i18n=_json_form(caption_i18n, default={}),
+        alt_text=_json_form(alt_text, default={}),
+        tags=_json_form(tags, default=[]),
         order=order,
     )
     return RoomImageRead.model_validate(image)
@@ -368,13 +402,28 @@ async def update_room_image(
     if room is None:
         raise not_found("Room not found")
     await assert_sanatorium_access(
-        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+        rooms.db,
+        room.sanatorium_id,
+        current_user,
+        action="manage this sanatorium's rooms",
     )
     updated = await images.update(
         image,
         is_primary=payload.is_primary,
+        is_video=payload.is_video,
+        is_360=payload.is_360,
+        category=payload.category,
         order=payload.order,
         caption=payload.caption,
+        caption_i18n=(
+            payload.caption_i18n.model_dump(exclude_none=True)
+            if payload.caption_i18n
+            else None
+        ),
+        alt_text=(
+            payload.alt_text.model_dump(exclude_none=True) if payload.alt_text else None
+        ),
+        tags=payload.tags,
     )
     return RoomImageRead.model_validate(updated)
 
@@ -399,6 +448,9 @@ async def delete_room_image(
     if room is None:
         raise not_found("Room not found")
     await assert_sanatorium_access(
-        rooms.db, room.sanatorium_id, current_user, action="manage this sanatorium's rooms"
+        rooms.db,
+        room.sanatorium_id,
+        current_user,
+        action="manage this sanatorium's rooms",
     )
     await images.delete(image, storage)

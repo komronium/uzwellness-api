@@ -1,4 +1,5 @@
 """Integration tests for rooms, availability, exchange rates, and room search."""
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from tests.factories import make_room, make_sanatorium, make_user
 
 
 # ── Room CRUD ──────────────────────────────────────────────────────────────
+
 
 class TestRoomCRUD:
     def test_floor_input_is_normalized(self):
@@ -40,7 +42,11 @@ class TestRoomCRUD:
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
-                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
+                "description": {
+                    "uz": "Yaxshi xona",
+                    "ru": "Хорошая комната",
+                    "en": "Nice room",
+                },
                 "capacity": 2,
                 "inventory_count": 3,
                 "base_price": "150.00",
@@ -56,6 +62,86 @@ class TestRoomCRUD:
         assert data["base_currency"] == "USD"
         assert data["final_price"] == "150.00"
 
+    async def test_admin_creates_room_with_card_features(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        resp = await client.post(
+            "/api/rooms",
+            json={
+                "sanatorium_id": str(san.id),
+                "name": {"uz": "Suite", "ru": "Люкс", "en": "Suite"},
+                "capacity": 3,
+                "base_price": "220.00",
+                "base_currency": "USD",
+                "size_sqm": 34,
+                "floor": "2-4",
+                "view": "garden",
+                "beds": [
+                    {
+                        "label": "King + sofa",
+                        "beds": [
+                            {"type": "king", "count": 1, "size_cm": "180x200"},
+                            {"type": "sofa_bed", "count": 1},
+                        ],
+                    }
+                ],
+                "room_features": {
+                    "has_window": True,
+                    "bathroom": {
+                        "private": True,
+                        "type": "shower_and_bathtub",
+                        "hairdryer": True,
+                    },
+                    "climate": {"air_conditioning": True, "heating": True},
+                    "kitchen": {"refrigerator": True, "kettle": True},
+                    "accessibility": {"wheelchair_accessible": True},
+                    "safety": {"safe": True, "smart_lock": True},
+                    "entertainment": {"tv": True, "satellite_channels": True},
+                    "comfort": {"balcony": True, "desk": True},
+                    "highlights": ["spacious", "garden_view"],
+                },
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["size_sqm"] == 34
+        assert data["floor"] == "2-4"
+        assert data["view"] == "garden"
+        assert data["beds"][0]["beds"][0]["type"] == "king"
+        assert data["room_features"]["has_window"] is True
+        assert data["room_features"]["bathroom"]["private"] is True
+        assert data["room_features"]["kitchen"]["refrigerator"] is True
+        assert data["room_features"]["accessibility"]["wheelchair_accessible"] is True
+        assert data["room_features"]["highlights"] == ["spacious", "garden_view"]
+
+    async def test_admin_patches_room_features(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(db, sanatorium=san)
+        resp = await client.patch(
+            f"/api/rooms/{room.id}",
+            json={
+                "room_features": {
+                    "has_window": False,
+                    "bathroom": {"private": True, "type": "shower"},
+                    "comfort": {"carpet": True},
+                }
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        features = resp.json()["room_features"]
+        assert features["has_window"] is False
+        assert features["bathroom"]["type"] == "shower"
+        assert features["comfort"]["carpet"] is True
+
     async def test_admin_cannot_create_room_for_other_sanatorium(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
     ):
@@ -68,7 +154,11 @@ class TestRoomCRUD:
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
-                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
+                "description": {
+                    "uz": "Yaxshi xona",
+                    "ru": "Хорошая комната",
+                    "en": "Nice room",
+                },
                 "capacity": 2,
                 "base_price": "100.00",
                 "base_currency": "USD",
@@ -86,7 +176,11 @@ class TestRoomCRUD:
             json={
                 "sanatorium_id": str(san.id),
                 "name": {"uz": "Deluxe", "ru": "Делюкс", "en": "Deluxe"},
-                "description": {"uz": "Yaxshi xona", "ru": "Хорошая комната", "en": "Nice room"},
+                "description": {
+                    "uz": "Yaxshi xona",
+                    "ru": "Хорошая комната",
+                    "en": "Nice room",
+                },
                 "capacity": 2,
                 "base_price": "100.00",
                 "base_currency": "USD",
@@ -95,9 +189,7 @@ class TestRoomCRUD:
         )
         assert resp.status_code == 403
 
-    async def test_list_rooms_public(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_list_rooms_public(self, client: AsyncClient, db: AsyncSession):
         san = await make_sanatorium(db, status=SanatoriumStatus.APPROVED)
         await make_room(db, sanatorium=san)
         resp = await client.get(f"/api/rooms?sanatorium_id={san.id}")
@@ -176,6 +268,7 @@ class TestRoomCRUD:
 
 # ── Availability (lazy materialization) ────────────────────────────────────
 
+
 class TestAvailability:
     async def test_lazy_returns_full_inventory_when_no_rows(
         self,
@@ -251,10 +344,9 @@ class TestAvailability:
 
 # ── Room search ────────────────────────────────────────────────────────────
 
+
 class TestRoomSearch:
-    async def test_finds_available_room(
-        self, client, db, admin_user, admin_headers
-    ):
+    async def test_finds_available_room(self, client, db, admin_user, admin_headers):
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
@@ -268,9 +360,7 @@ class TestRoomSearch:
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) in ids
 
-    async def test_multi_unit_fits_via_multiple_rooms(
-        self, client, db, admin_user
-    ):
+    async def test_multi_unit_fits_via_multiple_rooms(self, client, db, admin_user):
         # 5 inventory, capacity 2; 3 guests need 2 rooms → still available
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
@@ -292,9 +382,7 @@ class TestRoomSearch:
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        room = await make_room(
-            db, sanatorium=san, capacity=2, inventory_count=1
-        )
+        room = await make_room(db, sanatorium=san, capacity=2, inventory_count=1)
         # 5 guests → need 3 rooms, only 1 exists → exceeds_inventory
         resp = await client.get(
             f"/api/rooms/search?sanatorium_id={san.id}"
@@ -330,9 +418,7 @@ class TestRoomSearch:
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
 
-    async def test_excludes_room_with_zero_inventory(
-        self, client, db, admin_user
-    ):
+    async def test_excludes_room_with_zero_inventory(self, client, db, admin_user):
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
@@ -355,10 +441,9 @@ class TestRoomSearch:
 
 # ── Exchange rates ─────────────────────────────────────────────────────────
 
+
 class TestExchangeRates:
-    async def test_super_admin_upserts_rate(
-        self, client, super_admin_headers
-    ):
+    async def test_super_admin_upserts_rate(self, client, super_admin_headers):
         resp = await client.patch(
             "/api/exchange-rates",
             json={
@@ -375,7 +460,11 @@ class TestExchangeRates:
         for rate in ("12000.000000", "12700.000000"):
             resp = await client.patch(
                 "/api/exchange-rates",
-                json={"pair": "USD_UZS", "rate": rate, "valid_from": "2026-05-01T00:00:00Z"},
+                json={
+                    "pair": "USD_UZS",
+                    "rate": rate,
+                    "valid_from": "2026-05-01T00:00:00Z",
+                },
                 headers=super_admin_headers,
             )
             assert resp.status_code == 200
@@ -392,7 +481,11 @@ class TestExchangeRates:
     async def test_customer_cannot_upsert(self, client, customer_headers):
         resp = await client.patch(
             "/api/exchange-rates",
-            json={"pair": "USD_UZS", "rate": "12000.000000", "valid_from": "2026-05-01T00:00:00Z"},
+            json={
+                "pair": "USD_UZS",
+                "rate": "12000.000000",
+                "valid_from": "2026-05-01T00:00:00Z",
+            },
             headers=customer_headers,
         )
         assert resp.status_code == 403
@@ -402,11 +495,17 @@ class TestExchangeRates:
     ):
         await client.patch(
             "/api/exchange-rates",
-            json={"pair": "USD_UZS", "rate": "12500.000000", "valid_from": "2026-05-01T00:00:00Z"},
+            json={
+                "pair": "USD_UZS",
+                "rate": "12500.000000",
+                "valid_from": "2026-05-01T00:00:00Z",
+            },
             headers=super_admin_headers,
         )
         san = await make_sanatorium(db, admin_user_id=admin_user.id)
-        room = await make_room(db, sanatorium=san, base_price="1.00", base_currency="USD")
+        room = await make_room(
+            db, sanatorium=san, base_price="1.00", base_currency="USD"
+        )
         resp = await client.get(f"/api/rooms/{room.id}")
         assert resp.status_code == 200
         body = resp.json()

@@ -129,12 +129,18 @@ class Sanatorium(Base):
     )
 
     treatment_focuses: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    treatment_profile: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
 
     year_opened: Mapped[int | None] = mapped_column(SmallInteger)
     languages_spoken: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     highlights: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    promo_badges: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     surroundings: Mapped[list] = mapped_column(
@@ -145,6 +151,15 @@ class Sanatorium(Base):
     )
     meal_schedule: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
+    )
+    service_matrix: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    medical_base: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    policies: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
     )
 
     platform_commission_percent: Mapped[Decimal] = mapped_column(
@@ -159,6 +174,9 @@ class Sanatorium(Base):
 
     avg_rating: Mapped[Decimal | None] = mapped_column(Numeric(3, 2))
     review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rating_breakdown: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
 
     status: Mapped[SanatoriumStatus] = mapped_column(
         SQLEnum(
@@ -222,7 +240,20 @@ class SanatoriumImage(Base):
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_360: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    category: Mapped[str | None] = mapped_column(String(40))
     caption: Mapped[str | None] = mapped_column(String(255))
+    caption_i18n: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    alt_text: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    tags: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
