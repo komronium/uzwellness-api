@@ -243,6 +243,23 @@ _NATURAL_RESOURCE: dict[str, Label] = {
         "ru": "Лечебный климат",
         "en": "Healing climate",
     },
+    "mountain_air": {"uz": "Tog' havosi", "ru": "Горный воздух", "en": "Mountain air"},
+    "spring_water": {
+        "uz": "Buloq suvi",
+        "ru": "Родниковая вода",
+        "en": "Spring water",
+    },
+    "forest_zone": {
+        "uz": "O'rmon zonasi",
+        "ru": "Лесная зона",
+        "en": "Forest zone",
+    },
+    "clean_air": {"uz": "Toza havo", "ru": "Чистый воздух", "en": "Clean air"},
+    "urban_wellness": {
+        "uz": "Shahar wellness muhiti",
+        "ru": "Городская wellness-среда",
+        "en": "Urban wellness setting",
+    },
     "salt_cave": {"uz": "Tuz g'ori", "ru": "Соляная пещера", "en": "Salt cave"},
 }
 
@@ -278,6 +295,7 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
         "en": "Circular shower",
     },
     "charcot_shower": {"uz": "Sharko dushi", "ru": "Душ Шарко", "en": "Charcot shower"},
+    "sharko_shower": {"uz": "Sharko dushi", "ru": "Душ Шарко", "en": "Charcot shower"},
     "cascade_shower": {
         "uz": "Kaskad dush",
         "ru": "Каскадный душ",
@@ -288,7 +306,17 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
         "ru": "Гидроколонотерапия",
         "en": "Hydrocolonotherapy",
     },
+    "colon_hydrotherapy": {
+        "uz": "Gidrokolonoterapiya",
+        "ru": "Гидроколонотерапия",
+        "en": "Colon hydrotherapy",
+    },
     "hydromassage_bath": {
+        "uz": "Tibbiy gidromassajli vanna",
+        "ru": "Медицинская гидромассажная ванна",
+        "en": "Medical hydromassage bath",
+    },
+    "medical_hydromassage_bath": {
         "uz": "Tibbiy gidromassajli vanna",
         "ru": "Медицинская гидромассажная ванна",
         "en": "Medical hydromassage bath",
@@ -355,6 +383,11 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
         "ru": "Механомассаж",
         "en": "Mechanotherapy",
     },
+    "mechanomassage": {
+        "uz": "Mexano-massaj",
+        "ru": "Механомассаж",
+        "en": "Mechanomassage",
+    },
     "ufo_tubus": {"uz": "UFO (tubus)", "ru": "УФО (тубус)", "en": "UFO (tubus)"},
     "inhalation": {"uz": "Ingalyatsiya", "ru": "Ингаляция", "en": "Inhalation"},
     "magnetotherapy": {
@@ -363,6 +396,7 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
         "en": "Magnetotherapy",
     },
     "infra_red": {"uz": "Infraruj (Infraqizil)", "ru": "Инфраруж", "en": "Infrared"},
+    "infrared": {"uz": "Infraruj", "ru": "Инфраруж", "en": "Infrared therapy"},
     "phonophoresis": {"uz": "Fonoforez", "ru": "Фонофорез", "en": "Phonophoresis"},
     "ozonotherapy": {"uz": "Ozonoterapiya", "ru": "Озонотерапия", "en": "Ozonotherapy"},
     "lymphatic_drainage": {
@@ -386,6 +420,7 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
         "ru": "Классический массаж",
         "en": "Classical massage",
     },
+    "massage": {"uz": "Massaj", "ru": "Массаж", "en": "Massage"},
     "local_massage": {
         "uz": "Lokal (mahalliy) massaj",
         "ru": "Лечебный массаж (локально)",
@@ -439,6 +474,130 @@ _MEDICAL_PROCEDURE: dict[str, Label] = {
     },
 }
 
+_STAY_DURATION: dict[str, Label] = {
+    "1_4": {"uz": "1-4 sutka", "ru": "1-4 суток", "en": "1-4 nights"},
+    "5": {"uz": "5 sutka", "ru": "5 суток", "en": "5 nights"},
+    "7": {"uz": "7 sutka", "ru": "7 суток", "en": "7 nights"},
+    "10": {"uz": "10 sutka", "ru": "10 суток", "en": "10 nights"},
+}
+
+_STAY_PROGRAM_CATEGORY: dict[str, Label] = {
+    "food": {"uz": "Ovqatlanish", "ru": "Питание", "en": "Food"},
+    "wellness": {"uz": "Wellness", "ru": "Wellness", "en": "Wellness"},
+    "leisure": {"uz": "Dam olish", "ru": "Досуг", "en": "Leisure"},
+    "service": {"uz": "Xizmatlar", "ru": "Услуги", "en": "Services"},
+    "children": {"uz": "Bolalar", "ru": "Дети", "en": "Children"},
+    "sport": {"uz": "Sport", "ru": "Спорт", "en": "Sport"},
+    "medical": {"uz": "Tibbiy", "ru": "Медицина", "en": "Medical"},
+}
+
+_STAY_PROGRAM_INCLUSION: dict[str, Label] = {
+    "meals_4x": {
+        "uz": "4 mahal ovqatlanish",
+        "ru": "4-х разовое питание",
+        "en": "4 meals per day",
+    },
+    "phyto_bar": {"uz": "Fito bar", "ru": "Фито бар", "en": "Phyto bar"},
+    "indoor_outdoor_pool": {
+        "uz": "Yopiq va ochiq basseyn",
+        "ru": "Крытый и открытый бассейн",
+        "en": "Indoor and outdoor pool",
+    },
+    "playstation_room": {
+        "uz": "PlayStation xonasi",
+        "ru": "Комната PlayStation",
+        "en": "PlayStation room",
+    },
+    "bicycles": {
+        "uz": "Hududdagi velosipedlar",
+        "ru": "Велосипеды на территории",
+        "en": "Bicycles on site",
+    },
+    "hippotherapy": {"uz": "Ippoterapiya", "ru": "Иппотерапия", "en": "Hippotherapy"},
+    "women_hairdresser": {
+        "uz": "Ayollar sartaroshxonasi",
+        "ru": "Парикмахерская для женщин",
+        "en": "Women's hairdresser",
+    },
+    "kids_animators": {
+        "uz": "Bolalar animatorlari",
+        "ru": "Аниматоры для детей",
+        "en": "Kids animators",
+    },
+    "nanny_service": {
+        "uz": "Enaga xizmati",
+        "ru": "Услуги няни",
+        "en": "Nanny service",
+    },
+    "gym": {"uz": "Trenajyor zal", "ru": "Тренажёрный зал", "en": "Gym"},
+    "billiards_tennis": {
+        "uz": "Bilyard va stol tennisi",
+        "ru": "Бильярд и настольный теннис",
+        "en": "Billiards and table tennis",
+    },
+    "sports_fields": {
+        "uz": "Sport maydonlari",
+        "ru": "Спортивные площадки",
+        "en": "Sports fields",
+    },
+    "cinema": {"uz": "Kinozal", "ru": "Кинотеатр", "en": "Cinema"},
+    "doctor_observation": {
+        "uz": "Shifokor ko'rigi va nazorati",
+        "ru": "Осмотр и наблюдение врачей",
+        "en": "Doctor check and observation",
+    },
+    "therapeutic_massage": {
+        "uz": "Davolovchi massaj",
+        "ru": "Лечебный массаж",
+        "en": "Therapeutic massage",
+    },
+    "physiotherapy": {
+        "uz": "Fizioterapevtik muolajalar",
+        "ru": "Физиотерапевтические процедуры",
+        "en": "Physiotherapy procedures",
+    },
+    "hydrotherapy": {
+        "uz": "Gidroterapevtik muolajalar",
+        "ru": "Гидротерапевтические процедуры",
+        "en": "Hydrotherapy procedures",
+    },
+    "ozonotherapy": {"uz": "Ozonoterapiya", "ru": "Озонотерапия", "en": "Ozonotherapy"},
+    "sauna_once": {
+        "uz": "Yashash davomida 1 marta sauna",
+        "ru": "Сауна 1 раз за проживание",
+        "en": "Sauna once per stay",
+    },
+}
+
+_POLICY_INCLUDE: dict[str, Label] = {
+    "meals": {"uz": "Ovqatlanish", "ru": "Питание", "en": "Meals"},
+    "extra_mattress": {
+        "uz": "Qo'shimcha matras",
+        "ru": "Дополнительный матрас",
+        "en": "Extra mattress",
+    },
+    "bedding": {
+        "uz": "Yotoq anjomlari",
+        "ru": "Постельные принадлежности",
+        "en": "Bedding",
+    },
+}
+
+_IMAGE_CATEGORY: dict[str, Label] = {
+    "exterior": {"uz": "Tashqi ko'rinish", "ru": "Экстерьер", "en": "Exterior"},
+    "treatment": {"uz": "Davolash", "ru": "Лечение", "en": "Treatment"},
+    "surroundings": {"uz": "Atrof-muhit", "ru": "Окружение", "en": "Surroundings"},
+    "bedroom": {"uz": "Yotoq xona", "ru": "Спальня", "en": "Bedroom"},
+    "tour": {"uz": "360 tur", "ru": "360 тур", "en": "360 tour"},
+}
+
+_PROMO_BADGE_KIND: dict[str, Label] = {
+    "deal": {"uz": "Aksiya", "ru": "Акция", "en": "Deal"},
+    "trust": {"uz": "Ishonch", "ru": "Доверие", "en": "Trust"},
+    "benefit": {"uz": "Afzallik", "ru": "Преимущество", "en": "Benefit"},
+    "info": {"uz": "Ma'lumot", "ru": "Информация", "en": "Info"},
+}
+
 
 def _default_label(value: str) -> Label:
     text = value.replace("_", " ").title()
@@ -480,4 +639,10 @@ META: dict[str, list[Option]] = {
     "natural_resources": _from_labels(_NATURAL_RESOURCE),
     "medical_procedure_categories": _from_labels(_MEDICAL_PROCEDURE_CATEGORY),
     "medical_procedures": _from_labels(_MEDICAL_PROCEDURE),
+    "stay_durations": _from_labels(_STAY_DURATION),
+    "stay_program_categories": _from_labels(_STAY_PROGRAM_CATEGORY),
+    "stay_program_inclusions": _from_labels(_STAY_PROGRAM_INCLUSION),
+    "policy_includes": _from_labels(_POLICY_INCLUDE),
+    "image_categories": _from_labels(_IMAGE_CATEGORY),
+    "promo_badge_kinds": _from_labels(_PROMO_BADGE_KIND),
 }

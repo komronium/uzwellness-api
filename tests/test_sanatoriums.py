@@ -532,6 +532,41 @@ MEDICAL_BASE_PAYLOAD = {
         {"min_days": 1, "inclusions": ["meals_4x", "pool_access"]},
         {"min_days": 5, "inclusions": ["doctor_consultation", "lab_tests"]},
     ],
+    "stay_duration_columns": [
+        {
+            "code": "1_4",
+            "label": {"uz": "1-4 sutka", "ru": "1-4 суток", "en": "1-4 nights"},
+            "min_days": 1,
+            "max_days": 4,
+        },
+        {
+            "code": "7",
+            "label": {"uz": "7 sutka", "ru": "7 суток", "en": "7 nights"},
+            "min_days": 7,
+        },
+    ],
+    "stay_program_inclusions": [
+        {
+            "code": "doctor_observation",
+            "title": {
+                "uz": "Shifokor ko'rigi",
+                "ru": "Осмотр и наблюдение врачей",
+                "en": "Doctor check and observation",
+            },
+            "category": "medical",
+            "included_for": {"1_4": False, "7": True},
+        },
+        {
+            "code": "pool_access",
+            "title": {
+                "uz": "Yopiq va ochiq basseyn",
+                "ru": "Крытый и открытый бассейн",
+                "en": "Indoor and outdoor pool",
+            },
+            "category": "leisure",
+            "included_for": {"1_4": True, "7": True},
+        },
+    ],
 }
 
 
@@ -556,6 +591,11 @@ async def test_create_with_medical_base(
     assert mb["procedures"]["hydrotherapy"][0]["code"] == "circular_shower"
     assert mb["procedures"]["hydrotherapy"][0]["image_url"].endswith("circular.jpg")
     assert len(mb["stay_inclusions"]) == 2
+    assert mb["stay_duration_columns"][0]["code"] == "1_4"
+    assert mb["stay_program_inclusions"][0]["included_for"] == {
+        "1_4": False,
+        "7": True,
+    }
 
 
 async def test_create_default_medical_base(
@@ -570,6 +610,8 @@ async def test_create_default_medical_base(
     assert mb["procedures"] == {}
     assert mb["natural_resources"] == []
     assert mb["stay_inclusions"] == []
+    assert mb["stay_duration_columns"] == []
+    assert mb["stay_program_inclusions"] == []
 
 
 async def test_patch_medical_base(
@@ -601,6 +643,8 @@ async def test_get_medical_base_public_locale(
     assert mb["description"] == "Davolash bazasi tavsifi"
     assert mb["procedures"]["hydrotherapy"][0]["description"] == "Sirkulyar dush"
     assert mb["procedures"]["hydrotherapy"][1]["description"] == "Marvaridli vannalar"
+    assert mb["stay_duration_columns"][0]["label"] == "1-4 sutka"
+    assert mb["stay_program_inclusions"][0]["title"] == "Shifokor ko'rigi"
 
 
 # ---------- policies ----------
@@ -626,6 +670,21 @@ POLICIES_PAYLOAD = {
         "crib_available": True,
         "price": "20.00",
         "currency": "USD",
+        "age_price_bands": [
+            {
+                "min_age": 4,
+                "max_age": 10,
+                "price_per_night": "500000.00",
+                "currency": "UZS",
+                "includes": ["meals", "extra_mattress", "bedding"],
+            },
+            {
+                "min_age": 11,
+                "price_per_night": "1000000.00",
+                "currency": "UZS",
+                "includes": ["meals", "extra_mattress", "bedding"],
+            },
+        ],
     },
     "breakfast": {
         "included": True,
@@ -662,6 +721,8 @@ async def test_create_with_policies(client: AsyncClient, super_admin_headers) ->
     policies = resp.json()["policies"]
     assert policies["children"]["allowed"] is True
     assert policies["children"]["treatment_min_age"] == 12
+    assert policies["extra_bed"]["age_price_bands"][0]["min_age"] == 4
+    assert policies["extra_bed"]["age_price_bands"][1]["price_per_night"] == "1000000.00"
     assert policies["breakfast"]["style"] == "buffet"
     assert policies["payment"]["deposit_percent"] == "20.00"
 

@@ -309,6 +309,72 @@ class StayInclusion(BaseModel):
     inclusions: list[str] = Field(default_factory=list)
 
 
+class StayDurationColumn(BaseModel):
+    code: str = Field(..., min_length=1, max_length=40)
+    label: Translations = Field(default_factory=Translations)
+    min_days: int = Field(..., ge=1)
+    max_days: int | None = Field(default=None, ge=1)
+
+
+class StayDurationColumnRead(BaseModel):
+    code: str
+    label: str
+    min_days: int
+    max_days: int | None = None
+
+    @classmethod
+    def from_obj(cls, obj: dict | BaseModel, locale: str) -> "StayDurationColumnRead":
+        if isinstance(obj, dict):
+            return cls(
+                code=obj.get("code", ""),
+                label=pick_locale(obj.get("label", {}) or {}, locale),
+                min_days=obj.get("min_days", 1),
+                max_days=obj.get("max_days"),
+            )
+        return cls(
+            code=getattr(obj, "code", ""),
+            label=pick_locale(getattr(obj, "label", {}) or {}, locale),
+            min_days=getattr(obj, "min_days", 1),
+            max_days=getattr(obj, "max_days", None),
+        )
+
+
+class StayProgramInclusion(BaseModel):
+    code: str = Field(..., min_length=1, max_length=80)
+    title: Translations = Field(default_factory=Translations)
+    category: str | None = Field(default=None, max_length=60)
+    included_for: dict[str, bool] = Field(default_factory=dict)
+    note: Translations = Field(default_factory=Translations)
+
+
+class StayProgramInclusionRead(BaseModel):
+    code: str
+    title: str
+    category: str | None = None
+    included_for: dict[str, bool] = Field(default_factory=dict)
+    note: str = ""
+
+    @classmethod
+    def from_obj(
+        cls, obj: dict | BaseModel, locale: str
+    ) -> "StayProgramInclusionRead":
+        if isinstance(obj, dict):
+            return cls(
+                code=obj.get("code", ""),
+                title=pick_locale(obj.get("title", {}) or {}, locale),
+                category=obj.get("category"),
+                included_for=obj.get("included_for") or {},
+                note=pick_locale(obj.get("note", {}) or {}, locale),
+            )
+        return cls(
+            code=getattr(obj, "code", ""),
+            title=pick_locale(getattr(obj, "title", {}) or {}, locale),
+            category=getattr(obj, "category", None),
+            included_for=getattr(obj, "included_for", {}) or {},
+            note=pick_locale(getattr(obj, "note", {}) or {}, locale),
+        )
+
+
 class MedicalProcedureItem(BaseModel):
     code: str = Field(..., min_length=1, max_length=60)
     image_url: str | None = Field(default=None, max_length=500)
@@ -323,6 +389,8 @@ class MedicalBase(BaseModel):
     natural_resources: list[str] = Field(default_factory=list)
     procedures: dict[str, list[MedicalProcedureItem]] = Field(default_factory=dict)
     stay_inclusions: list[StayInclusion] = Field(default_factory=list)
+    stay_duration_columns: list[StayDurationColumn] = Field(default_factory=list)
+    stay_program_inclusions: list[StayProgramInclusion] = Field(default_factory=list)
 
 
 class TreatmentProfileItem(BaseModel):
@@ -406,11 +474,21 @@ class ChildrenPolicy(PolicySection):
     treatment_min_age: int | None = Field(default=None, ge=0, le=120)
 
 
+class AgePriceBand(BaseModel):
+    min_age: int | None = Field(default=None, ge=0, le=120)
+    max_age: int | None = Field(default=None, ge=0, le=120)
+    price_per_night: Decimal = Field(ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    includes: list[str] = Field(default_factory=list)
+    notes: Translations = Field(default_factory=Translations)
+
+
 class ExtraBedPolicy(PolicySection):
     available: bool | None = None
     crib_available: bool | None = None
     price: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
+    age_price_bands: list[AgePriceBand] = Field(default_factory=list)
 
 
 class BreakfastPolicy(PolicySection):
@@ -497,6 +575,10 @@ class MedicalBaseRead(BaseModel):
     natural_resources: list[str] = Field(default_factory=list)
     procedures: dict[str, list[MedicalProcedureItemRead]] = Field(default_factory=dict)
     stay_inclusions: list[StayInclusion] = Field(default_factory=list)
+    stay_duration_columns: list[StayDurationColumnRead] = Field(default_factory=list)
+    stay_program_inclusions: list[StayProgramInclusionRead] = Field(
+        default_factory=list
+    )
 
     @classmethod
     def from_obj(cls, obj: dict | None, locale: str) -> "MedicalBaseRead":
@@ -506,6 +588,8 @@ class MedicalBaseRead(BaseModel):
                 natural_resources=[],
                 procedures={},
                 stay_inclusions=[],
+                stay_duration_columns=[],
+                stay_program_inclusions=[],
             )
         desc_dict = obj.get("description", {}) or {}
         desc_val = pick_locale(desc_dict, locale)
@@ -526,6 +610,14 @@ class MedicalBaseRead(BaseModel):
             procedures=proc_dict,
             stay_inclusions=[
                 StayInclusion(**t) for t in (obj.get("stay_inclusions") or [])
+            ],
+            stay_duration_columns=[
+                StayDurationColumnRead.from_obj(t, locale)
+                for t in (obj.get("stay_duration_columns") or [])
+            ],
+            stay_program_inclusions=[
+                StayProgramInclusionRead.from_obj(t, locale)
+                for t in (obj.get("stay_program_inclusions") or [])
             ],
         )
 
