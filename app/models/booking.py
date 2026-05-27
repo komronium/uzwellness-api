@@ -114,7 +114,6 @@ class Booking(Base):
     is_b2b: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    b2b_client_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     guest_details: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
@@ -167,9 +166,3 @@ class Booking(Base):
         lazy="raise",
         viewonly=True,
     )
-
-    @property
-    def b2b_commission(self) -> Decimal | None:
-        if not self.is_b2b or self.b2b_client_price is None:
-            return None
-        return self.b2b_client_price - self.final_price

@@ -3415,7 +3415,6 @@ async def create_bookings(
         final_price=base_total + extra_total,
         currency=room.base_currency,
         is_b2b=False,
-        b2b_client_price=None,
         guest_details=[
             {"full_name": "Ali Karimov", "age": 34},
             {"full_name": "Madina Karimova", "age": 32},
@@ -3506,7 +3505,6 @@ async def create_bookings(
         final_price=money("998.40"),
         currency=package.currency,
         is_b2b=True,
-        b2b_client_price=money("1120.00"),
         guest_details=[
             {"full_name": "B2B Client One"},
             {"full_name": "B2B Client Two"},

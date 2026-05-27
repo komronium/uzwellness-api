@@ -37,7 +37,6 @@ class BookingCreate(BaseModel):
     guests: int = Field(default=1, ge=1)
     extra_beds: list[ExtraBedItem] = Field(default_factory=list)
     guest_details: list[GuestDetail] = Field(default_factory=list)
-    b2b_client_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
 
     @model_validator(mode="after")
     def _validate(self):
@@ -82,8 +81,6 @@ class BookingRead(BaseModel):
     cancellation_penalty_amount: Decimal | None = None
     payment_timing: PaymentTiming | None = None
     is_b2b: bool
-    b2b_client_price: Decimal | None = None
-    b2b_commission: Decimal | None = None
     guest_details: list[GuestDetail] = Field(default_factory=list)
     extra_beds: list[BookingExtraBedRead] = []
     payments: list[BookingPaymentSummary] = Field(default_factory=list)

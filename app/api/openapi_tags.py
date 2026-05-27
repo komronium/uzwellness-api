@@ -11,6 +11,7 @@ OPENAPI_TAGS = [
     {"name": "exchange-rates", "description": "USD/UZS exchange rates"},
     {"name": "availability", "description": "Monthly availability calendar"},
     {"name": "payments", "description": "Payment initiation and webhooks"},
+    {"name": "finance", "description": "Role-based finance reports"},
     {"name": "admin", "description": "Admin dashboard stats"},
     {"name": "b2b", "description": "B2B agent dashboard and clients"},
     {"name": "health", "description": "Health check"},

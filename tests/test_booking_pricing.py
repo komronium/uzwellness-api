@@ -1,4 +1,4 @@
-"""Integration tests for commission snapshot, B2B tier discount, b2b_client_price."""
+"""Integration tests for commission snapshot and B2B tier discount."""
 from __future__ import annotations
 
 import uuid
@@ -182,8 +182,8 @@ class TestAgentTierDiscount:
         assert resp.json()["final_price"] == "100.00"
 
 
-class TestB2BClientPrice:
-    async def test_b2b_client_price_persisted(
+class TestB2BClientPriceRemoved:
+    async def test_b2b_client_price_is_ignored_and_not_exposed_for_agent(
         self, client: AsyncClient, db: AsyncSession
     ):
         san = await make_sanatorium(db, slug="cp-1")
@@ -201,15 +201,15 @@ class TestB2BClientPrice:
         )
         body = resp.json()
         assert resp.status_code == 201
-        assert Decimal(body["b2b_client_price"]) == Decimal("150.00")
-        assert Decimal(body["b2b_commission"]) == Decimal("50.00")
+        assert "b2b_client_price" not in body
+        assert "b2b_commission" not in body
 
-    async def test_b2b_client_price_below_agent_returns_400(
+    async def test_b2b_client_price_is_ignored_and_not_exposed_for_customer(
         self, client: AsyncClient, db: AsyncSession
     ):
         san = await make_sanatorium(db, slug="cp-2")
         program = await _seed_program(db, san.id, price="100.00")
-        headers, _ = await _agent_headers(client, db)
+        headers = await _customer_headers(client, db)
         resp = await client.post(
             "/api/bookings",
             json={
@@ -220,23 +220,7 @@ class TestB2BClientPrice:
             },
             headers=headers,
         )
-        assert resp.status_code == 400
-
-    async def test_b2b_client_price_ignored_for_customer(
-        self, client: AsyncClient, db: AsyncSession
-    ):
-        san = await make_sanatorium(db, slug="cp-3")
-        program = await _seed_program(db, san.id, price="100.00")
-        headers = await _customer_headers(client, db)
-        resp = await client.post(
-            "/api/bookings",
-            json={
-                "program_id": str(program.id),
-                "check_in": _FUTURE,
-                "guests": 1,
-                "b2b_client_price": "999.00",
-            },
-            headers=headers,
-        )
         body = resp.json()
-        assert body["b2b_client_price"] is None
+        assert resp.status_code == 201
+        assert "b2b_client_price" not in body
+        assert "b2b_commission" not in body

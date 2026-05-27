@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import Depends, Query
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -34,6 +34,11 @@ LargePagination = Annotated[PaginationParams, Depends(large_pagination_params)]
 async def paginated(
     db: AsyncSession, stmt: Select, *, limit: int, offset: int
 ) -> tuple[Sequence[Any], int]:
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    count_subquery = (
+        stmt.order_by(None)
+        .with_only_columns(literal_column("1"), maintain_column_froms=True)
+        .subquery()
+    )
+    total = await db.scalar(select(func.count()).select_from(count_subquery))
     rows = (await db.scalars(stmt.limit(limit).offset(offset))).all()
     return rows, total or 0

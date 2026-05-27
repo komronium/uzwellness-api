@@ -5,10 +5,11 @@ from decimal import Decimal
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.database import get_db
 from app.core.discount_tiers import best_tier_discount_percent, next_tier
-from app.core.sanatorium_lookup import sanatorium_name_for_booking
+from app.core.utils import pick_locale
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
 from app.models.program import TreatmentProgram
@@ -108,9 +109,33 @@ class B2BService:
 
         total = await self.db.scalar(select(func.count(Booking.id)).where(owned))
 
+        room_sanatorium = aliased(Sanatorium)
+        program_sanatorium = aliased(Sanatorium)
+        package_sanatorium = aliased(Sanatorium)
+
         rows = (
-            await self.db.scalars(
+            await self.db.execute(
                 select(Booking)
+                .add_columns(
+                    func.coalesce(
+                        room_sanatorium.name,
+                        program_sanatorium.name,
+                        package_sanatorium.name,
+                        Package.title,
+                    ).label("sanatorium_name")
+                )
+                .outerjoin(Room, Booking.room_id == Room.id)
+                .outerjoin(room_sanatorium, Room.sanatorium_id == room_sanatorium.id)
+                .outerjoin(TreatmentProgram, Booking.program_id == TreatmentProgram.id)
+                .outerjoin(
+                    program_sanatorium,
+                    TreatmentProgram.sanatorium_id == program_sanatorium.id,
+                )
+                .outerjoin(Package, Booking.package_id == Package.id)
+                .outerjoin(
+                    package_sanatorium,
+                    Package.sanatorium_id == package_sanatorium.id,
+                )
                 .where(owned)
                 .order_by(Booking.created_at.desc())
                 .limit(limit)
@@ -119,17 +144,14 @@ class B2BService:
         ).all()
 
         items: list[dict] = []
-        for booking in rows:
+        for booking, name_dict in rows:
             items.append(
                 {
                     "booking_id": booking.id,
                     "booking_code": booking.code,
-                    "sanatorium_name": await sanatorium_name_for_booking(
-                        self.db, booking
-                    ),
+                    "sanatorium_name": pick_locale(name_dict) if name_dict else None,
                     "price_paid": booking.final_price,
                     "agent_discount_percent": booking.agent_discount_percent_snapshot,
-                    "client_price": booking.b2b_client_price,
                     "currency": booking.currency,
                     "check_in": booking.check_in,
                     "check_out": booking.check_out,

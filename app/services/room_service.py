@@ -372,6 +372,13 @@ class RoomService:
         )
         if sanatorium_id is not None:
             stmt = stmt.where(Room.sanatorium_id == sanatorium_id)
+        else:
+            stmt = stmt.where(
+                Room.inventory_count >= 1,
+                Room.capacity >= 1,
+                Room.min_nights <= nights,
+                Room.capacity * Room.inventory_count >= guests,
+            )
         rooms = list((await self.db.scalars(stmt)).all())
         if not rooms:
             return []

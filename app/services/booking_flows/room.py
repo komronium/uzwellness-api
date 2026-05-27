@@ -87,7 +87,6 @@ class RoomBookingFlow(BookingFlowBase):
             sanatorium=sanatorium,
             user=user,
             is_b2b=is_b2b,
-            payload=payload,
         )
 
         booking = Booking(
@@ -105,7 +104,6 @@ class RoomBookingFlow(BookingFlowBase):
             promo_percent_snapshot=promo_percent if promo_percent > 0 else None,
             currency=room.base_currency,
             is_b2b=is_b2b,
-            b2b_client_price=pricing.b2b_client_price,
             guest_details=[g.model_dump() for g in payload.guest_details],
             commission_snapshot=pricing.commission_amount,
             commission_percent_snapshot=pricing.commission_percent,
@@ -217,8 +215,19 @@ class RoomBookingFlow(BookingFlowBase):
     ) -> list[BookingExtraBed]:
         records: list[BookingExtraBed] = []
         rate: ExchangeRate | None | object = _UNFETCHED
+        config_ids = [item.config_id for item in payload.extra_beds]
+        configs = {}
+        if config_ids:
+            configs = {
+                config.id: config
+                for config in (
+                    await self.db.scalars(
+                        select(ExtraBedConfig).where(ExtraBedConfig.id.in_(config_ids))
+                    )
+                ).all()
+            }
         for item in payload.extra_beds:
-            config = await self.db.get(ExtraBedConfig, item.config_id)
+            config = configs.get(item.config_id)
             if config is None or not config.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,

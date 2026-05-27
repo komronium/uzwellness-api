@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +11,6 @@ from app.core.discount_tiers import best_tier_discount_percent
 from app.models.booking import Booking, BookingStatus
 from app.models.sanatorium import Sanatorium
 from app.models.user import User
-from app.schemas.booking import BookingCreate
 
 _CENTS = Decimal("0.01")
 _ZERO = Decimal("0")
@@ -35,7 +33,6 @@ class BookingPricingPolicy:
         sanatorium: Sanatorium | None,
         user: User,
         is_b2b: bool,
-        payload: BookingCreate,
     ) -> "BookingPricing":
         agent_discount_percent = (
             await self._agent_tier_discount(user, sanatorium)
@@ -47,14 +44,12 @@ class BookingPricingPolicy:
             discounted = (
                 base_total * (Decimal("1") - agent_discount_percent / Decimal("100"))
             ).quantize(_CENTS, ROUND_HALF_UP)
-        b2b_client_price = self._resolve_b2b_client_price(payload, is_b2b, discounted)
         commission_percent, commission_amount = self._commission_snapshot(
             sanatorium, discounted, is_b2b
         )
         return BookingPricing(
             final_price=discounted,
             agent_discount_percent=agent_discount_percent,
-            b2b_client_price=b2b_client_price,
             commission_percent=commission_percent,
             commission_amount=commission_amount,
         )
@@ -88,26 +83,9 @@ class BookingPricingPolicy:
             sanatorium.agent_discount_tiers, int(count or 0)
         )
 
-    @staticmethod
-    def _resolve_b2b_client_price(
-        payload: BookingCreate, is_b2b: bool, agent_price: Decimal
-    ) -> Decimal | None:
-        if not is_b2b:
-            return None
-        if payload.b2b_client_price is None:
-            return None
-        if payload.b2b_client_price < agent_price:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="b2b_client_price cannot be lower than agent price",
-            )
-        return payload.b2b_client_price
-
-
 @dataclass(slots=True)
 class BookingPricing:
     final_price: Decimal
     agent_discount_percent: Decimal
-    b2b_client_price: Decimal | None
     commission_percent: Decimal
     commission_amount: Decimal

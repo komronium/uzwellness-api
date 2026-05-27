@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Integer,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
 
 class RoomAvailability(Base):
     __tablename__ = "room_availability"
+    __table_args__ = (
+        UniqueConstraint("room_id", "date", name="uq_room_availability_date"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(

@@ -59,7 +59,6 @@ class SessionBookingFlow(BookingFlowBase):
             sanatorium=sanatorium,
             user=user,
             is_b2b=is_b2b,
-            payload=payload,
         )
         booking = Booking(
             user_id=user.id,
@@ -72,7 +71,6 @@ class SessionBookingFlow(BookingFlowBase):
             final_price=pricing.final_price,
             currency=program.currency,
             is_b2b=is_b2b,
-            b2b_client_price=pricing.b2b_client_price,
             guest_details=[g.model_dump() for g in payload.guest_details],
             commission_snapshot=pricing.commission_amount,
             commission_percent_snapshot=pricing.commission_percent,

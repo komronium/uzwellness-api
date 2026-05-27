@@ -34,7 +34,6 @@ class B2BOrderItem(BaseModel):
     sanatorium_name: str | None
     price_paid: Decimal
     agent_discount_percent: Decimal | None
-    client_price: Decimal | None
     currency: str
     check_in: date
     check_out: date

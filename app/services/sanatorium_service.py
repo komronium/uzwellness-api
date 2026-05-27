@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -288,7 +288,12 @@ class SanatoriumService:
                 )
                 base = base.where(Sanatorium.id.in_(sub))
 
-        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
+        count_subquery = (
+            base.order_by(None)
+            .with_only_columns(literal_column("1"), maintain_column_froms=True)
+            .subquery()
+        )
+        total = await self.db.scalar(select(func.count()).select_from(count_subquery))
 
         stmt = (
             base.options(
