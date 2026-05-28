@@ -19,7 +19,7 @@ from app.schemas.booking import (
 from app.services.booking_invoice import build_invoice
 from app.services.booking_service import BookingService, get_booking_service
 
-router = APIRouter(prefix="/bookings", tags=["bookings"])
+router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 _ADMIN_ROLES = {UserRole.ADMIN, UserRole.SUPER_ADMIN}
 

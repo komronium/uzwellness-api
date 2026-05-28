@@ -19,6 +19,7 @@ from app.api.routers import (
     rate_plans,
     regions,
     reviews,
+    room_images,
     rooms,
     sanatoriums,
     transfers,
@@ -34,6 +35,7 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(sanatoriums.router)
 api_router.include_router(rooms.router)
+api_router.include_router(room_images.router)
 api_router.include_router(exchange_rates.router)
 api_router.include_router(bookings.router)
 api_router.include_router(amenities.router)

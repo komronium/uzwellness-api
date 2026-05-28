@@ -8,7 +8,7 @@ from app.models.user import UserRole
 from app.schemas.review import ReviewCreate, ReviewList, ReviewRead, ReviewUpdate
 from app.services.review_service import ReviewService, get_review_service
 
-router = APIRouter(prefix="/reviews", tags=["reviews"])
+router = APIRouter(prefix="/reviews", tags=["Sanatoriums"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 

@@ -8,7 +8,7 @@ from app.core.pagination import Pagination
 from app.schemas.finance import FinanceOrderItem, FinanceOrdersList, FinanceSummary
 from app.services.finance_service import FinanceService, get_finance_service
 
-router = APIRouter(prefix="/finance", tags=["finance"])
+router = APIRouter(prefix="/finance", tags=["Finance"])
 
 
 @router.get("/summary", response_model=FinanceSummary)

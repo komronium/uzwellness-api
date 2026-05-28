@@ -8,7 +8,7 @@ from app.models.user import User, UserRole
 from app.schemas.user import UserAdminCreate, UserList, UserRead, UserUpdate
 from app.services.user_service import UserService, get_user_service
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["Identity"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

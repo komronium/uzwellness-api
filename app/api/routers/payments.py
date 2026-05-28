@@ -7,7 +7,7 @@ from app.models.payment import PaymentMethod
 from app.schemas.payment import PaymentInitiateRequest, PaymentInitiateResponse
 from app.services.payment_service import PaymentService, get_payment_service
 
-router = APIRouter(prefix="/payments", tags=["payments"])
+router = APIRouter(prefix="/payments", tags=["Payments"])
 
 
 @router.post("/initiate", response_model=PaymentInitiateResponse)

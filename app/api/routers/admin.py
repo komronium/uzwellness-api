@@ -5,7 +5,7 @@ from app.models.user import UserRole
 from app.schemas.admin import AdminStats
 from app.services.admin_service import AdminService, get_admin_service
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 

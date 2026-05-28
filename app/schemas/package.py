@@ -52,8 +52,6 @@ class PackageItemRead(BaseModel):
 
 
 class PackageItemAdminRead(BaseModel):
-    """Admin read: i18n fields returned as {uz, ru, en} dicts."""
-
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -63,10 +61,6 @@ class PackageItemAdminRead(BaseModel):
     is_included: bool
     extra_price: Decimal | None
     display_order: int
-
-
-# ── Package ────────────────────────────────────────────────────────────────
-
 
 class PackageCreate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)

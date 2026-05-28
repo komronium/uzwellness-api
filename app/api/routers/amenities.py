@@ -15,7 +15,7 @@ from app.schemas.amenity import (
 )
 from app.services.amenity_service import AmenityService, get_amenity_service
 
-router = APIRouter(prefix="/amenities", tags=["amenities"])
+router = APIRouter(prefix="/amenities", tags=["Amenities"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

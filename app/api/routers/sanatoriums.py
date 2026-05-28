@@ -1,5 +1,4 @@
 import uuid
-import json
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -16,6 +15,7 @@ from fastapi import (
     status,
 )
 
+from app.api.form_parsing import json_form
 from app.api.deps import (
     CurrentUser,
     IncludeTranslationsDep,
@@ -26,14 +26,16 @@ from app.api.deps import (
 )
 from app.core.pagination import Pagination
 from app.core.policies import SanatoriumPolicy
-from app.core.storage import StorageBackend, detect_image_mime, get_storage
-from app.core.uploads import read_upload
+from app.core.storage import StorageBackend, get_storage
+from app.core.uploads import read_image_upload_as_webp
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
 from app.models.user import User, UserRole
 from app.schemas.search import StaySearchList
-from app.schemas.sanatorium import (
+from app.schemas.sanatorium_featured import (
     FeaturedSanatoriumCard,
     FeaturedSanatoriumList,
+)
+from app.schemas.sanatorium import (
     SanatoriumAdminList,
     SanatoriumAdminRead,
     SanatoriumCreate,
@@ -57,28 +59,10 @@ from app.services.sanatorium_service import (
 )
 from app.services.search_service import SearchService, get_search_service
 
-router = APIRouter(prefix="/sanatoriums", tags=["sanatoriums"])
+router = APIRouter(prefix="/sanatoriums", tags=["Sanatoriums"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-
-
-def _json_form(value: str | None, *, default):
-    if value is None or value == "":
-        return default
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON form field",
-        ) from exc
-    if not isinstance(parsed, type(default)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="JSON form field has invalid type",
-        )
-    return parsed
 
 
 def _ensure_can_edit(sanatorium, user: User) -> None:
@@ -335,9 +319,7 @@ async def upload_image(
         raise not_found("Sanatorium not found")
     _ensure_can_edit(sanatorium, current_user)
 
-    content, mime = await read_upload(
-        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
-    )
+    content, mime = await read_image_upload_as_webp(file)
 
     image = await images.add(
         sanatorium=sanatorium,
@@ -348,9 +330,9 @@ async def upload_image(
         is_primary=is_primary,
         is_360=is_360,
         category=category,
-        caption_i18n=_json_form(caption_i18n, default={}),
-        alt_text=_json_form(alt_text, default={}),
-        tags=_json_form(tags, default=[]),
+        caption_i18n=json_form(caption_i18n, default={}),
+        alt_text=json_form(alt_text, default={}),
+        tags=json_form(tags, default=[]),
         order=order,
     )
     return SanatoriumImageRead.model_validate(image)

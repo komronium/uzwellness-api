@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.core.meta import META, Option
 
-router = APIRouter(prefix="/meta", tags=["meta"])
+router = APIRouter(prefix="/meta", tags=["System"])
 
 
 @router.get("")

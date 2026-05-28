@@ -15,7 +15,7 @@ from app.schemas.region import (
 )
 from app.services.region_service import RegionService, get_region_service
 
-router = APIRouter(prefix="/regions", tags=["regions"])
+router = APIRouter(prefix="/regions", tags=["Destinations"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

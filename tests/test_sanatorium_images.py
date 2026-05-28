@@ -55,11 +55,12 @@ async def test_upload_as_super_admin(
     assert body["caption_i18n"]["uz"] == "Muolaja xonasi"
     assert body["alt_text"]["en"] == "Treatment bath room"
     assert body["tags"] == ["medical", "bath"]
-    assert body["url"].endswith(".png")
+    assert body["url"].endswith(".webp")
     # actually saved into the in-memory storage
     key = body["url"].removeprefix(storage.url_prefix + "/")
     assert key in storage.objects
-    assert storage.objects[key] == PNG
+    assert storage.objects[key].startswith(b"RIFF")
+    assert storage.objects[key][8:12] == b"WEBP"
 
 
 async def test_upload_as_owning_admin(

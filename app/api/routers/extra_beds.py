@@ -21,7 +21,7 @@ from app.schemas.extra_bed import (
 )
 from app.services.extra_bed_service import ExtraBedService, get_extra_bed_service
 
-router = APIRouter(prefix="/extra-beds", tags=["extra-beds"])
+router = APIRouter(prefix="/extra-beds", tags=["Rooms"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 

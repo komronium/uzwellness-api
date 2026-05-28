@@ -1,4 +1,3 @@
-import math
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -25,6 +24,7 @@ from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
 )
+from app.services.room_search import RoomSearchHit, search_rooms
 
 
 @dataclass(slots=True)
@@ -39,15 +39,6 @@ class RoomAvailabilityView:
         self.units_available = max(
             self.inventory_count - self.units_blocked - self.units_booked, 0
         )
-
-
-@dataclass(slots=True)
-class RoomSearchHit:
-    room: Room
-    pricing: dict
-    rooms_count_needed: int
-    available: bool
-    unavailable_reason: str | None
 
 
 class RoomService:
@@ -345,99 +336,14 @@ class RoomService:
         guests: int,
         sanatorium_id: uuid.UUID | None = None,
     ) -> list["RoomSearchHit"]:
-        """Find rooms for a date range.
-
-        - With `sanatorium_id`: returns ALL active rooms for that sanatorium,
-          flagged available/unavailable so the UI can disable rows.
-        - Without: returns only available rooms (cross-sanatorium browsing).
-
-        Multi-unit aware: a room is "available" if it has enough units to
-        cover ceil(guests / capacity) on every night in the range.
-        """
-        nights = (check_out - check_in).days
-        if nights <= 0:
-            return []
-
-        all_dates = list(date_range(check_in, check_out))
-
-        # 1. Candidate rooms — active, approved sanatorium
-        stmt = (
-            select(Room)
-            .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
-            .where(
-                Sanatorium.status == SanatoriumStatus.APPROVED,
-                Room.is_active.is_(True),
-            )
-            .order_by(Room.base_price.asc())
+        return await search_rooms(
+            self.db,
+            self.rates,
+            check_in=check_in,
+            check_out=check_out,
+            guests=guests,
+            sanatorium_id=sanatorium_id,
         )
-        if sanatorium_id is not None:
-            stmt = stmt.where(Room.sanatorium_id == sanatorium_id)
-        else:
-            stmt = stmt.where(
-                Room.inventory_count >= 1,
-                Room.capacity >= 1,
-                Room.min_nights <= nights,
-                Room.capacity * Room.inventory_count >= guests,
-            )
-        rooms = list((await self.db.scalars(stmt)).all())
-        if not rooms:
-            return []
-
-        # 2. Per-(room, date) usage in one query, then collapse to per-room
-        # worst-case usage across the requested nights.
-        usage_rows = (
-            await self.db.execute(
-                select(
-                    RoomAvailability.room_id,
-                    func.max(
-                        RoomAvailability.units_blocked + RoomAvailability.units_booked
-                    ).label("max_used"),
-                )
-                .where(
-                    RoomAvailability.room_id.in_([r.id for r in rooms]),
-                    RoomAvailability.date.in_(all_dates),
-                )
-                .group_by(RoomAvailability.room_id)
-            )
-        ).all()
-        max_used_by_room: dict[uuid.UUID, int] = {
-            row.room_id: int(row.max_used) for row in usage_rows
-        }
-
-        # 3. Per-room verdict
-        rate = await self.rates.get_usd_uzs()
-        hits: list[RoomSearchHit] = []
-        for room in rooms:
-            rooms_needed = math.ceil(guests / room.capacity) if room.capacity > 0 else 0
-            used = max_used_by_room.get(room.id, 0)
-            free_worst_case = max(room.inventory_count - used, 0)
-
-            reason: str | None = None
-            if room.inventory_count < 1:
-                reason = "no_inventory"
-            elif room.capacity < 1:
-                reason = "no_capacity"
-            elif nights < room.min_nights:
-                reason = "below_min_nights"
-            elif rooms_needed > room.inventory_count:
-                reason = "exceeds_inventory"
-            elif rooms_needed > free_worst_case:
-                reason = "insufficient_availability"
-
-            available = reason is None
-            if not available and sanatorium_id is None:
-                continue  # cross-sanatorium browse hides unavailable rows
-
-            hits.append(
-                RoomSearchHit(
-                    room=room,
-                    pricing=enrich_room(room, rate),
-                    rooms_count_needed=rooms_needed,
-                    available=available,
-                    unavailable_reason=reason,
-                )
-            )
-        return hits
 
     async def _assert_inventory_safe(self, room_id: uuid.UUID, new_count: int) -> None:
         """Block lowering inventory_count below any date's (blocked+booked)."""

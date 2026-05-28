@@ -10,8 +10,8 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.pagination import LargePagination
-from app.core.storage import StorageBackend, detect_image_mime, get_storage
-from app.core.uploads import read_upload
+from app.core.storage import StorageBackend, get_storage
+from app.core.uploads import read_image_upload_as_webp
 from app.models.user import UserRole
 from app.schemas.destination import (
     DestinationAdminList,
@@ -32,7 +32,7 @@ from app.services.exchange_rate_service import (
     get_exchange_rate_service,
 )
 
-router = APIRouter(prefix="/destinations", tags=["destinations"])
+router = APIRouter(prefix="/destinations", tags=["Destinations"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
@@ -148,9 +148,7 @@ async def upload_hero_image(
     destination = await destinations.get_by_id(destination_id)
     if destination is None:
         raise not_found("Destination not found")
-    content, mime = await read_upload(
-        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
-    )
+    content, mime = await read_image_upload_as_webp(file)
     updated = await destinations.update_hero_image(
         destination,
         content=content,

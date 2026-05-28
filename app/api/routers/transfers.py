@@ -17,7 +17,7 @@ from app.services.transfer_request_service import (
     get_transfer_request_service,
 )
 
-router = APIRouter(prefix="/transfers", tags=["transfers"])
+router = APIRouter(prefix="/transfers", tags=["Travel Services"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

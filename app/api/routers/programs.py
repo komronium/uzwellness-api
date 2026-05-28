@@ -21,7 +21,7 @@ from app.schemas.program import (
 )
 from app.services.program_service import ProgramService, get_program_service
 
-router = APIRouter(prefix="/programs", tags=["programs"])
+router = APIRouter(prefix="/programs", tags=["Treatments"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 

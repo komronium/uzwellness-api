@@ -127,11 +127,6 @@ class PackageService:
                 exclude_id=package.id,
             )
 
-        # Re-validate the room↔currency invariant whenever either side
-        # changes. If only `currency` is patched (no `room_id`), we must
-        # still check the existing room still matches the new currency,
-        # or every future booking through this package mis-records its
-        # `booking.currency`.
         new_room_id = data.get("room_id", package.room_id)
         new_currency = data.get("currency", package.currency)
         if "room_id" in data or "currency" in data:
@@ -174,8 +169,6 @@ class PackageService:
         await self.db.commit()
         return await self._reload_required(package.id)
 
-    # ---- Items ----------------------------------------------------------------
-
     async def get_item(self, item_id: uuid.UUID) -> PackageItem | None:
         return await self.db.get(PackageItem, item_id)
 
@@ -203,8 +196,6 @@ class PackageService:
     async def delete_item(self, item: PackageItem) -> None:
         await self.db.delete(item)
         await self.db.commit()
-
-    # ---- helpers --------------------------------------------------------------
 
     async def _require_room(
         self,

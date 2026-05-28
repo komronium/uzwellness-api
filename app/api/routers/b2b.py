@@ -13,7 +13,7 @@ from app.schemas.b2b import (
 )
 from app.services.b2b_service import B2BService, get_b2b_service
 
-router = APIRouter(prefix="/b2b", tags=["b2b"])
+router = APIRouter(prefix="/b2b", tags=["B2B"])
 
 
 def _require_b2b(user) -> None:

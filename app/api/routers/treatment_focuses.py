@@ -20,8 +20,8 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.pagination import LargePagination
-from app.core.storage import StorageBackend, detect_image_mime, get_storage
-from app.core.uploads import read_upload
+from app.core.storage import StorageBackend, get_storage
+from app.core.uploads import read_image_upload_as_webp
 from app.models.user import UserRole
 from app.schemas.treatment_focus import (
     TreatmentFocusAdminList,
@@ -38,7 +38,7 @@ from app.services.treatment_focus_service import (
     get_treatment_focus_service,
 )
 
-router = APIRouter(prefix="/treatment-focuses", tags=["treatment-focuses"])
+router = APIRouter(prefix="/treatment-focuses", tags=["Treatments"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
@@ -162,9 +162,7 @@ async def upload_treatment_focus_image(
     if focus is None:
         raise not_found("Treatment focus not found")
     try:
-        content, content_type = await read_upload(
-            file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
-        )
+        content, content_type = await read_image_upload_as_webp(file)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

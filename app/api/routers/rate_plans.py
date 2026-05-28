@@ -21,7 +21,7 @@ from app.schemas.rate_plan import (
 )
 from app.services.rate_plan_service import RatePlanService, get_rate_plan_service
 
-router = APIRouter(prefix="/rate-plans", tags=["rate-plans"])
+router = APIRouter(prefix="/rate-plans", tags=["Rooms"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 

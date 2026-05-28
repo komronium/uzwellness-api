@@ -148,10 +148,11 @@ async def test_upload_hero_image_as_super_admin(
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["hero_image_url"].endswith(".png")
+    assert body["hero_image_url"].endswith(".webp")
     key = body["hero_image_url"].removeprefix(storage.url_prefix + "/")
     assert key in storage.objects
-    assert storage.objects[key] == PNG
+    assert storage.objects[key].startswith(b"RIFF")
+    assert storage.objects[key][8:12] == b"WEBP"
 
 
 async def test_upload_hero_image_replaces_previous_file(

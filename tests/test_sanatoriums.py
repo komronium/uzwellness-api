@@ -152,6 +152,7 @@ async def test_featured_sanatoriums_returns_homepage_cards(
         base_currency="UZS",
         markup_percent="10",
     )
+    await make_room(db, sanatorium=first, base_price="90.00", base_currency="USD")
     await make_room(db, sanatorium=second, base_price="80.00", base_currency="USD")
     await make_room(db, sanatorium=hidden, base_price="50.00", base_currency="USD")
 
@@ -168,6 +169,10 @@ async def test_featured_sanatoriums_returns_homepage_cards(
     assert first_card["sanatorium_slug"] == "first-resort"
     assert first_card["primary_image_url"] == "https://cdn.test/first.jpg"
     assert first_card["photos_count"] == 2
+    assert Decimal(first_card["min_price"]).quantize(Decimal("0.01")) == Decimal(
+        "1100000.00"
+    )
+    assert first_card["min_price_currency"] == "UZS"
     assert Decimal(first_card["min_price_usd"]).quantize(Decimal("0.01")) == Decimal(
         "88.00"
     )

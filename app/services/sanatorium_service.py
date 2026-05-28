@@ -318,15 +318,35 @@ class SanatoriumService:
         price_expr = _customer_price_expr()
         usd_expr = _usd_price_expr(price_expr, usd_uzs_rate)
 
-        price_subquery = (
+        ranked_room_prices = (
             select(
                 Room.sanatorium_id.label("sanatorium_id"),
-                func.min(price_expr).label("min_price"),
-                func.min(Room.base_currency).label("min_price_currency"),
-                func.min(usd_expr).label("min_price_usd"),
+                price_expr.label("min_price"),
+                Room.base_currency.label("min_price_currency"),
+                usd_expr.label("min_price_usd"),
+                func.row_number()
+                .over(
+                    partition_by=Room.sanatorium_id,
+                    order_by=(
+                        usd_expr.asc().nullslast(),
+                        price_expr.asc(),
+                        Room.created_at.asc(),
+                        Room.id.asc(),
+                    ),
+                )
+                .label("rank"),
             )
             .where(Room.is_active.is_(True), Room.inventory_count > 0)
-            .group_by(Room.sanatorium_id)
+            .subquery()
+        )
+        price_subquery = (
+            select(
+                ranked_room_prices.c.sanatorium_id,
+                ranked_room_prices.c.min_price,
+                ranked_room_prices.c.min_price_currency,
+                ranked_room_prices.c.min_price_usd,
+            )
+            .where(ranked_room_prices.c.rank == 1)
             .subquery()
         )
 

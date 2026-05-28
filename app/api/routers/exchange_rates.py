@@ -8,7 +8,7 @@ from app.services.exchange_rate_service import (
     get_exchange_rate_service,
 )
 
-router = APIRouter(prefix="/exchange-rates", tags=["exchange-rates"])
+router = APIRouter(prefix="/exchange-rates", tags=["Payments"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 

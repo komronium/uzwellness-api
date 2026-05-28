@@ -3,6 +3,8 @@ from collections.abc import Callable
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
+from app.core.image_processing import to_webp
+from app.core.storage import detect_image_mime
 
 
 async def read_upload(
@@ -29,3 +31,10 @@ async def read_upload(
             detail=f"Unsupported file type (allowed: {allowed_label})",
         )
     return content, mime
+
+
+async def read_image_upload_as_webp(file: UploadFile) -> tuple[bytes, str]:
+    content, _mime = await read_upload(
+        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
+    )
+    return to_webp(content)

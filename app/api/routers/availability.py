@@ -13,7 +13,7 @@ from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 
-router = APIRouter(prefix="/availability", tags=["availability"])
+router = APIRouter(prefix="/availability", tags=["Availability"])
 
 _MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 

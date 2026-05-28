@@ -38,31 +38,30 @@ class Settings(BaseSettings):
 
     UPLOAD_DIR: str = "uploads"
     UPLOAD_URL_PREFIX: str = "/uploads"
-    MAX_UPLOAD_SIZE_MB: int = 10
+    MAX_UPLOAD_SIZE_MB: int = 50
+    IMAGE_MAX_PIXELS: int = 64_000_000
+    IMAGE_MAX_DIMENSION: int = 1920
+    IMAGE_WEBP_QUALITY: int = 85
 
-    # Payment provider configuration (production values come from .env)
     PAYME_CHECKOUT_URL: str = "https://checkout.paycom.uz/"
     PAYME_MERCHANT_ID: str = ""
-    PAYME_MERCHANT_KEY: str = ""  # used for HMAC webhook verification
+    PAYME_MERCHANT_KEY: str = ""
     CLICK_CHECKOUT_URL: str = "https://my.click.uz/services/pay"
     CLICK_SERVICE_ID: str = ""
     CLICK_MERCHANT_ID: str = ""
-    CLICK_SECRET_KEY: str = ""  # used for webhook signature verification
+    CLICK_SECRET_KEY: str = ""
 
-    # Outbound email
     EMAIL_FROM: str = "noreply@uzwellness.com"
-    EMAIL_BACKEND: str = "log"  # "log" or "smtp"
+    EMAIL_BACKEND: str = "log"
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: str | None = None
     SMTP_USE_TLS: bool = True
 
-    # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
-    TRUSTED_PROXY_IPS: list[str] = []  # only trust X-Forwarded-For from these IPs
+    TRUSTED_PROXY_IPS: list[str] = []
 
-    # DB pool
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 3600

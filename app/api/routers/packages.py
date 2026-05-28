@@ -11,8 +11,8 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.pagination import Pagination
-from app.core.storage import StorageBackend, detect_image_mime, get_storage
-from app.core.uploads import read_upload
+from app.core.storage import StorageBackend, get_storage
+from app.core.uploads import read_image_upload_as_webp
 from app.models.user import UserRole
 from app.schemas.package import (
     PackageAdminList,
@@ -27,7 +27,7 @@ from app.schemas.package import (
 )
 from app.services.package_service import PackageService, get_package_service
 
-router = APIRouter(prefix="/packages", tags=["packages"])
+router = APIRouter(prefix="/packages", tags=["Packages"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
@@ -162,9 +162,7 @@ async def upload_package_hero_image(
     package = await packages.get_by_id(package_id)
     if package is None:
         raise not_found("Package not found")
-    content, mime = await read_upload(
-        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
-    )
+    content, mime = await read_image_upload_as_webp(file)
     updated = await packages.update_hero_image(
         package,
         content=content,
@@ -204,10 +202,6 @@ async def delete_package(
     if package is None:
         raise not_found("Package not found")
     await packages.delete(package)
-
-
-# ── Package items ──────────────────────────────────────────────────────────
-
 
 @router.post(
     "/{package_id}/items",

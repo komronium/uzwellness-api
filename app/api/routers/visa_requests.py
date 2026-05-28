@@ -26,7 +26,7 @@ from app.services.visa_request_service import (
     get_visa_request_service,
 )
 
-router = APIRouter(prefix="/visa-requests", tags=["visa-requests"])
+router = APIRouter(prefix="/visa-requests", tags=["Travel Services"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
@@ -137,5 +137,4 @@ async def upload_issued_document(
         visa, content=content, content_type=mime, storage=storage
     )
     return VisaRequestRead.model_validate(updated)
-
 
