@@ -1,11 +1,12 @@
 import uuid
+from decimal import Decimal
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sanatorium import SanatoriumStatus
+from app.models.sanatorium import SanatoriumImage, SanatoriumStatus
 from app.models.user import UserRole
-from tests.factories import make_sanatorium, make_user
+from tests.factories import make_exchange_rate, make_room, make_sanatorium, make_user
 
 # ---------- helpers ----------
 
@@ -98,6 +99,96 @@ async def test_create_invalid_stars_returns_422(
         headers=super_admin_headers,
     )
     assert resp.status_code == 422
+
+
+async def test_featured_sanatoriums_returns_homepage_cards(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await make_exchange_rate(db, rate="12500")
+    second = await make_sanatorium(
+        db,
+        name={"uz": "Ikkinchi", "en": "Second Resort"},
+        slug="second-resort",
+        city="Zaamin",
+    )
+    first = await make_sanatorium(
+        db,
+        name={"uz": "Birinchi", "en": "First Resort"},
+        slug="first-resort",
+        city="Chimgan",
+    )
+    hidden = await make_sanatorium(
+        db,
+        name={"en": "Hidden Resort"},
+        slug="hidden-resort",
+    )
+    second.is_featured = True
+    second.display_order = 2
+    second.avg_rating = Decimal("4.70")
+    second.review_count = 9
+    first.is_featured = True
+    first.display_order = 1
+    first.avg_rating = Decimal("4.90")
+    first.review_count = 12
+    hidden.is_featured = False
+    db.add_all(
+        [
+            SanatoriumImage(
+                sanatorium_id=first.id,
+                url="https://cdn.test/first.jpg",
+                is_primary=True,
+            ),
+            SanatoriumImage(
+                sanatorium_id=first.id,
+                url="https://cdn.test/first-gallery.jpg",
+            ),
+        ]
+    )
+    await db.commit()
+    await make_room(
+        db,
+        sanatorium=first,
+        base_price="1000000.00",
+        base_currency="UZS",
+        markup_percent="10",
+    )
+    await make_room(db, sanatorium=second, base_price="80.00", base_currency="USD")
+    await make_room(db, sanatorium=hidden, base_price="50.00", base_currency="USD")
+
+    resp = await client.get("/api/sanatoriums/featured?lang=en")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 2
+    assert [item["sanatorium_name"] for item in body["items"]] == [
+        "First Resort",
+        "Second Resort",
+    ]
+    first_card = body["items"][0]
+    assert first_card["sanatorium_slug"] == "first-resort"
+    assert first_card["primary_image_url"] == "https://cdn.test/first.jpg"
+    assert first_card["photos_count"] == 2
+    assert Decimal(first_card["min_price_usd"]).quantize(Decimal("0.01")) == Decimal(
+        "88.00"
+    )
+
+
+async def test_featured_sanatoriums_excludes_pending(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    pending = await make_sanatorium(
+        db,
+        name={"en": "Pending Resort"},
+        slug="pending-resort",
+        status=SanatoriumStatus.PENDING,
+    )
+    pending.is_featured = True
+    await db.commit()
+
+    resp = await client.get("/api/sanatoriums/featured")
+
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
 
 
 async def test_create_with_unknown_region_id_returns_400(

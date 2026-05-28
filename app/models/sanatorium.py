@@ -140,6 +140,12 @@ class Sanatorium(Base):
     highlights: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    is_featured: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    display_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0", index=True
+    )
     promo_badges: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )

@@ -13,6 +13,8 @@ SANATORIUM_SUPER_ADMIN_ONLY_FIELDS = frozenset(
         "agent_discount_tiers",
         "admin_user_id",
         "destination_id",
+        "is_featured",
+        "display_order",
     }
 )
 

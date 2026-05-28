@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import Numeric, case, cast, func, literal, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.core.utils import merge_translation_fields, pick_locale
 from app.models.amenity import Amenity, SanatoriumAmenity
 from app.models.destination import Destination
 from app.models.region import Region
+from app.models.room import Room
 from app.models.sanatorium import (
     PropertyType,
     Sanatorium,
@@ -307,6 +308,83 @@ class SanatoriumService:
         rows = (await self.db.scalars(stmt)).all()
         return rows, total or 0
 
+    async def list_featured(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        usd_uzs_rate: Decimal | None,
+    ) -> tuple[list[tuple[Sanatorium, Decimal | None, str | None, Decimal | None]], int]:
+        price_expr = _customer_price_expr()
+        usd_expr = _usd_price_expr(price_expr, usd_uzs_rate)
+
+        price_subquery = (
+            select(
+                Room.sanatorium_id.label("sanatorium_id"),
+                func.min(price_expr).label("min_price"),
+                func.min(Room.base_currency).label("min_price_currency"),
+                func.min(usd_expr).label("min_price_usd"),
+            )
+            .where(Room.is_active.is_(True), Room.inventory_count > 0)
+            .group_by(Room.sanatorium_id)
+            .subquery()
+        )
+
+        base = (
+            select(Sanatorium)
+            .where(
+                Sanatorium.status == SanatoriumStatus.APPROVED,
+                Sanatorium.is_featured.is_(True),
+            )
+            .outerjoin(
+                price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id
+            )
+        )
+        count_subquery = (
+            base.order_by(None)
+            .with_only_columns(literal_column("1"), maintain_column_froms=True)
+            .subquery()
+        )
+        total = await self.db.scalar(select(func.count()).select_from(count_subquery))
+
+        stmt = (
+            select(
+                Sanatorium,
+                price_subquery.c.min_price,
+                price_subquery.c.min_price_currency,
+                price_subquery.c.min_price_usd,
+            )
+            .where(
+                Sanatorium.status == SanatoriumStatus.APPROVED,
+                Sanatorium.is_featured.is_(True),
+            )
+            .outerjoin(
+                price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id
+            )
+            .options(
+                selectinload(Sanatorium.images),
+                selectinload(Sanatorium.region),
+                selectinload(Sanatorium.destination),
+            )
+            .order_by(
+                Sanatorium.display_order.asc(),
+                Sanatorium.avg_rating.desc().nullslast(),
+                Sanatorium.created_at.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self.db.execute(stmt)).all()
+        return [
+            (
+                sanatorium,
+                Decimal(str(min_price)) if min_price is not None else None,
+                currency,
+                Decimal(str(min_price_usd)) if min_price_usd is not None else None,
+            )
+            for sanatorium, min_price, currency, min_price_usd in rows
+        ], total or 0
+
     async def _reload_required(self, sanatorium_id: uuid.UUID) -> Sanatorium:
         result = await self._reload(sanatorium_id)
         if result is None:
@@ -367,6 +445,25 @@ def _apply_visibility(stmt, user: User | None):
             | (Sanatorium.admin_user_id == user.id)
         )
     return stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
+
+
+def _customer_price_expr():
+    markup_factor = literal(1) + Room.markup_percent / literal(100)
+    discount_factor = literal(1) - func.coalesce(
+        Room.discount_percent, literal(0)
+    ) / literal(100)
+    return Room.base_price * markup_factor * discount_factor
+
+
+def _usd_price_expr(price_expr, usd_uzs_rate: Decimal | None):
+    if usd_uzs_rate and usd_uzs_rate > 0:
+        rate_expr = cast(literal(usd_uzs_rate), Numeric(18, 6))
+        return case(
+            (Room.base_currency == "USD", price_expr),
+            (Room.base_currency == "UZS", price_expr / rate_expr),
+            else_=None,
+        )
+    return case((Room.base_currency == "USD", price_expr), else_=None)
 
 
 def get_sanatorium_service(db: AsyncSession = Depends(get_db)) -> SanatoriumService:
