@@ -11,6 +11,7 @@ from app.schemas.common import Translations, TranslationsCreate
 
 class TreatmentProgramCreate(BaseModel):
     sanatorium_id: uuid.UUID
+    focus_id: uuid.UUID | None = None
     name: TranslationsCreate
     description: TranslationsCreate
     min_nights: int | None = Field(default=None, ge=1)
@@ -27,6 +28,7 @@ class TreatmentProgramCreate(BaseModel):
 
 
 class TreatmentProgramUpdate(BaseModel):
+    focus_id: uuid.UUID | None = None
     name: Translations | None = None
     description: Translations | None = None
     min_nights: int | None = Field(default=None, ge=1)
@@ -46,6 +48,7 @@ class TreatmentProgramUpdate(BaseModel):
 class TreatmentProgramRead(BaseModel):
     id: uuid.UUID
     sanatorium_id: uuid.UUID
+    focus_id: uuid.UUID | None
     name: str
     description: str
     min_nights: int | None
@@ -68,6 +71,7 @@ class TreatmentProgramRead(BaseModel):
         return cls(
             id=obj.id,
             sanatorium_id=obj.sanatorium_id,
+            focus_id=obj.focus_id,
             name=pick_locale(obj.name, locale),
             description=pick_locale(obj.description, locale),
             min_nights=obj.min_nights,
@@ -92,6 +96,7 @@ class TreatmentProgramAdminRead(BaseModel):
 
     id: uuid.UUID
     sanatorium_id: uuid.UUID
+    focus_id: uuid.UUID | None
     name: dict
     description: dict
     min_nights: int | None

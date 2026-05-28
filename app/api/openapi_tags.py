@@ -4,6 +4,7 @@ OPENAPI_TAGS = [
     {"name": "sanatoriums", "description": "Sanatoriums and wellness centers"},
     {"name": "amenities", "description": "Amenity catalog"},
     {"name": "programs", "description": "Treatment and wellness programs"},
+    {"name": "treatment-focuses", "description": "Treatment focus catalog"},
     {"name": "rooms", "description": "Rooms, availability, seasonal pricing"},
     {"name": "extra-beds", "description": "Extra bed configurations"},
     {"name": "bookings", "description": "Booking creation and management"},

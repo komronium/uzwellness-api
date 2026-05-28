@@ -22,6 +22,7 @@ from app.api.routers import (
     rooms,
     sanatoriums,
     transfers,
+    treatment_focuses,
     users,
     visa_requests,
 )
@@ -48,5 +49,6 @@ api_router.include_router(admin.router)
 api_router.include_router(b2b.router)
 api_router.include_router(visa_requests.router)
 api_router.include_router(transfers.router)
+api_router.include_router(treatment_focuses.router)
 api_router.include_router(regions.router)
 api_router.include_router(destinations.router)

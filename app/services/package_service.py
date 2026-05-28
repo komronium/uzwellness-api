@@ -9,8 +9,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.db_utils import assert_fk
+from app.core.config import settings
+from app.core.ids import uuid7
 from app.core.pagination import paginated
 from app.core.slug import resolve_unique_slug, slugify
+from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.package import Package, PackageItem
 from app.models.room import Room
@@ -51,6 +54,7 @@ class PackageService:
         limit: int,
         offset: int,
         active_only: bool = True,
+        featured_only: bool = False,
         sanatorium_id: uuid.UUID | None = None,
         duration_min: int | None = None,
         duration_max: int | None = None,
@@ -60,6 +64,8 @@ class PackageService:
         stmt = select(Package).options(selectinload(Package.items))
         if active_only:
             stmt = stmt.where(Package.is_active.is_(True))
+        if featured_only:
+            stmt = stmt.where(Package.is_featured.is_(True))
         if sanatorium_id is not None:
             stmt = stmt.where(Package.sanatorium_id == sanatorium_id)
         if duration_min is not None:
@@ -70,7 +76,10 @@ class PackageService:
             stmt = stmt.where(Package.base_price >= price_min)
         if price_max is not None:
             stmt = stmt.where(Package.base_price <= price_max)
-        stmt = stmt.order_by(Package.created_at.desc())
+        stmt = stmt.order_by(
+            Package.display_order.asc(),
+            Package.created_at.desc(),
+        )
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def create(self, payload: PackageCreate) -> Package:
@@ -87,12 +96,13 @@ class PackageService:
             slug=slug,
             title=title_dict,
             description=payload.description.model_dump(),
-            hero_image_url=payload.hero_image_url,
             duration_nights=payload.duration_nights,
             base_price=payload.base_price,
             currency=payload.currency,
             sanatorium_id=payload.sanatorium_id,
             room_id=payload.room_id,
+            is_featured=payload.is_featured,
+            display_order=payload.display_order,
         )
         for item_payload in payload.items:
             package.items.append(self._build_item(item_payload))
@@ -137,6 +147,32 @@ class PackageService:
     async def delete(self, package: Package) -> None:
         await self.db.delete(package)
         await self.db.commit()
+
+    async def update_hero_image(
+        self,
+        package: Package,
+        *,
+        content: bytes,
+        content_type: str,
+        storage: StorageBackend,
+    ) -> Package:
+        await self._delete_local_hero_image(package, storage)
+        ext = MIME_EXTENSIONS[content_type]
+        image_id = uuid7()
+        key = f"packages/{package.id}/{image_id}.{ext}"
+        package.hero_image_url = await storage.save(
+            key=key, content=content, content_type=content_type
+        )
+        await self.db.commit()
+        return await self._reload_required(package.id)
+
+    async def delete_hero_image(
+        self, package: Package, storage: StorageBackend
+    ) -> Package:
+        await self._delete_local_hero_image(package, storage)
+        package.hero_image_url = None
+        await self.db.commit()
+        return await self._reload_required(package.id)
 
     # ---- Items ----------------------------------------------------------------
 
@@ -217,6 +253,15 @@ class PackageService:
         if package is None:
             raise RuntimeError(f"Package {package_id} not found after write")
         return package
+
+    @staticmethod
+    async def _delete_local_hero_image(
+        package: Package, storage: StorageBackend
+    ) -> None:
+        url = package.hero_image_url
+        prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
+        if url and url.startswith(prefix):
+            await storage.delete(key=url_to_key(url))
 
 
 def get_package_service(db: AsyncSession = Depends(get_db)) -> PackageService:

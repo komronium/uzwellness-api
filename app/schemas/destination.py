@@ -13,8 +13,6 @@ class DestinationCreate(BaseModel):
     name: TranslationsCreate
     tagline: TranslationsCreate
     description: Translations = Field(default_factory=Translations)
-    hero_image: str | None = Field(default=None, max_length=500)
-    country: str = Field(default="Uzbekistan", max_length=80)
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     is_active: bool = True
@@ -25,8 +23,6 @@ class DestinationUpdate(BaseModel):
     name: Translations | None = None
     tagline: Translations | None = None
     description: Translations | None = None
-    hero_image: str | None = Field(default=None, max_length=500)
-    country: str | None = Field(default=None, max_length=80)
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     is_active: bool | None = None
@@ -35,8 +31,7 @@ class DestinationUpdate(BaseModel):
 class _DestinationReadCommon(BaseModel):
     id: uuid.UUID
     slug: str
-    hero_image: str | None
-    country: str
+    hero_image_url: str | None
     lat: Decimal | None
     lng: Decimal | None
     is_active: bool
@@ -57,8 +52,7 @@ class DestinationRead(_DestinationReadCommon):
             name=pick_locale(obj.name, locale),
             tagline=pick_locale(obj.tagline, locale),
             description=pick_locale(obj.description, locale),
-            hero_image=obj.hero_image,
-            country=obj.country,
+            hero_image_url=obj.hero_image_url,
             lat=obj.lat,
             lng=obj.lng,
             is_active=obj.is_active,

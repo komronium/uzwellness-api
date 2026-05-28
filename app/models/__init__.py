@@ -7,7 +7,7 @@ from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
-from app.models.program import TreatmentProgram
+from app.models.program import TreatmentFocus, TreatmentProgram
 from app.models.rate_plan import (
     BoardType,
     ConfirmationType,
@@ -71,6 +71,7 @@ __all__ = [
     "TransferDirection",
     "TransferRequest",
     "TransferStatus",
+    "TreatmentFocus",
     "TreatmentProgram",
     "User",
     "UserRole",

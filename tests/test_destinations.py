@@ -5,11 +5,15 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.destination import Destination
 from app.models.exchange_rate import ExchangeRate
 from app.models.region import Region
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
+from tests.factories import make_png
+
+PNG = make_png()
 
 
 async def _make_destination(
@@ -130,6 +134,109 @@ async def test_customer_cannot_create_destination(
     assert resp.status_code == 403
 
 
+# ── hero image upload ──────────────────────────────────────────────────────
+
+
+async def test_upload_hero_image_as_super_admin(
+    client: AsyncClient, db: AsyncSession, super_admin_headers, storage
+) -> None:
+    destination = await _make_destination(db, slug="hero", name_en="Hero")
+    resp = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", PNG, "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["hero_image_url"].endswith(".png")
+    key = body["hero_image_url"].removeprefix(storage.url_prefix + "/")
+    assert key in storage.objects
+    assert storage.objects[key] == PNG
+
+
+async def test_upload_hero_image_replaces_previous_file(
+    client: AsyncClient, db: AsyncSession, super_admin_headers, storage
+) -> None:
+    destination = await _make_destination(db, slug="replace-hero", name_en="Hero")
+    first = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("first.png", PNG, "image/png")},
+    )
+    assert first.status_code == 200, first.text
+    first_key = first.json()["hero_image_url"].removeprefix(storage.url_prefix + "/")
+
+    second = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("second.png", PNG, "image/png")},
+    )
+    assert second.status_code == 200, second.text
+    second_key = second.json()["hero_image_url"].removeprefix(storage.url_prefix + "/")
+    assert first_key not in storage.objects
+    assert second_key in storage.objects
+
+
+async def test_upload_hero_image_as_customer_returns_403(
+    client: AsyncClient, db: AsyncSession, customer_headers
+) -> None:
+    destination = await _make_destination(db, slug="hero-blocked", name_en="Hero")
+    resp = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=customer_headers,
+        files={"file": ("hero.png", PNG, "image/png")},
+    )
+    assert resp.status_code == 403
+
+
+async def test_upload_hero_image_invalid_mime_returns_415(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    destination = await _make_destination(db, slug="hero-mime", name_en="Hero")
+    resp = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", b"not an image", "image/png")},
+    )
+    assert resp.status_code == 415
+
+
+async def test_upload_hero_image_too_large_returns_413(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    destination = await _make_destination(db, slug="hero-large", name_en="Hero")
+    oversized = b"\x89PNG\r\n\x1a\n" + b"A" * (
+        settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    )
+    resp = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", oversized, "image/png")},
+    )
+    assert resp.status_code == 413
+
+
+async def test_delete_hero_image_as_super_admin(
+    client: AsyncClient, db: AsyncSession, super_admin_headers, storage
+) -> None:
+    destination = await _make_destination(db, slug="delete-hero", name_en="Hero")
+    uploaded = await client.post(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", PNG, "image/png")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    key = uploaded.json()["hero_image_url"].removeprefix(storage.url_prefix + "/")
+
+    resp = await client.delete(
+        f"/api/destinations/{destination.id}/hero-image",
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["hero_image_url"] is None
+    assert key not in storage.objects
+
+
 # ── list / detail ──────────────────────────────────────────────────────────
 
 
@@ -139,11 +246,50 @@ async def test_anonymous_can_list(client: AsyncClient, db: AsyncSession) -> None
     assert resp.json()["total"] == 1
 
 
+async def test_public_list_hides_inactive_even_when_requested(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await _make_destination(db, slug="off", name_en="Off", is_active=False)
+    resp = await client.get("/api/destinations?active_only=false")
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+async def test_super_admin_can_list_inactive_destinations(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    await _make_destination(db, slug="off", name_en="Off", is_active=False)
+    resp = await client.get(
+        "/api/destinations?active_only=false", headers=super_admin_headers
+    )
+    assert resp.status_code == 200
+    assert [item["slug"] for item in resp.json()["items"]] == ["off"]
+
+
 async def test_get_by_slug(client: AsyncClient, db: AsyncSession) -> None:
     await _make_destination(db, slug="chimgan", name_en="Chimgan Mountains")
     resp = await client.get("/api/destinations/chimgan?lang=en")
     assert resp.status_code == 200
     assert resp.json()["name"] == "Chimgan Mountains"
+
+
+async def test_public_detail_hides_inactive_destination(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    await _make_destination(db, slug="off", name_en="Off", is_active=False)
+    resp = await client.get("/api/destinations/off?lang=en")
+    assert resp.status_code == 404
+
+
+async def test_super_admin_can_get_inactive_destination(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    await _make_destination(db, slug="off", name_en="Off", is_active=False)
+    resp = await client.get(
+        "/api/destinations/off?lang=en", headers=super_admin_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["slug"] == "off"
 
 
 async def test_unknown_destination_404(client: AsyncClient) -> None:
@@ -185,6 +331,42 @@ async def test_tiles_count_and_min_price(client: AsyncClient, db: AsyncSession) 
     assert Decimal(tiles["d1"]["min_price_usd"]) == Decimal("48")
     assert tiles["d2"]["sanatoriums_count"] == 0
     assert tiles["d2"]["min_price_usd"] is None
+
+
+async def test_tiles_order_by_sanatorium_count_desc(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    d1 = await _make_destination(db, slug="one", name_en="One")
+    d2 = await _make_destination(db, slug="two", name_en="Two")
+    await _make_destination(db, slug="zero", name_en="Zero")
+    await _make_sanatorium(db, slug="one-1", destination_id=d1.id)
+    await _make_sanatorium(db, slug="two-1", destination_id=d2.id)
+    await _make_sanatorium(db, slug="two-2", destination_id=d2.id)
+
+    resp = await client.get("/api/destinations/tiles")
+    assert resp.status_code == 200
+    assert [item["slug"] for item in resp.json()["items"]] == [
+        "two",
+        "one",
+        "zero",
+    ]
+
+
+async def test_tiles_min_price_ignores_zero_inventory_rooms(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    d = await _make_destination(db, slug="inventory", name_en="Inventory")
+    s = await _make_sanatorium(db, slug="inventory-san", destination_id=d.id)
+    zero_inventory = await _make_room(
+        db, sanatorium_id=s.id, base_price=Decimal("10.00")
+    )
+    zero_inventory.inventory_count = 0
+    await _make_room(db, sanatorium_id=s.id, base_price=Decimal("99.00"))
+    await db.commit()
+
+    resp = await client.get("/api/destinations/tiles")
+    assert resp.status_code == 200
+    assert Decimal(resp.json()["items"][0]["min_price_usd"]) == Decimal("99.00")
 
 
 async def test_tiles_min_price_applies_markup_and_discount(

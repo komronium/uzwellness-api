@@ -12,7 +12,7 @@ from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
 from app.core.utils import merge_translation_fields
 from app.models.amenity import Amenity
-from app.models.program import TreatmentProgram
+from app.models.program import TreatmentFocus, TreatmentProgram
 from app.models.user import User
 from app.schemas.program import TreatmentProgramCreate, TreatmentProgramUpdate
 
@@ -54,6 +54,8 @@ class ProgramService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="price and currency must be set together",
             )
+        if payload.focus_id is not None:
+            await self._assert_focus_exists(payload.focus_id)
 
         amenities = await fetch_by_ids(
             self.db, Amenity, payload.amenity_ids, label="amenity"
@@ -61,6 +63,7 @@ class ProgramService:
 
         program = TreatmentProgram(
             sanatorium_id=payload.sanatorium_id,
+            focus_id=payload.focus_id,
             name=payload.name.model_dump(),
             description=payload.description.model_dump(),
             min_nights=payload.min_nights,
@@ -108,6 +111,8 @@ class ProgramService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="price and currency must be set together",
             )
+        if "focus_id" in data and data["focus_id"] is not None:
+            await self._assert_focus_exists(data["focus_id"])
 
         for field, value in data.items():
             setattr(program, field, value)
@@ -136,6 +141,15 @@ class ProgramService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="max_nights must be >= min_nights",
+            )
+
+
+    async def _assert_focus_exists(self, focus_id: uuid.UUID) -> None:
+        focus = await self.db.get(TreatmentFocus, focus_id)
+        if focus is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Treatment focus not found",
             )
 
 

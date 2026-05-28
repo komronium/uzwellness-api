@@ -72,12 +72,13 @@ class PackageCreate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)
     title: TranslationsCreate
     description: TranslationsCreate
-    hero_image_url: str | None = Field(default=None, max_length=500)
     duration_nights: int = Field(ge=1)
     base_price: Decimal = Field(ge=0, decimal_places=2)
     currency: str = Field(pattern=r"^(UZS|USD)$")
     sanatorium_id: uuid.UUID
     room_id: uuid.UUID
+    is_featured: bool = False
+    display_order: int = Field(default=0, ge=0)
     items: list[PackageItemCreate] = Field(default_factory=list)
 
 
@@ -85,12 +86,13 @@ class PackageUpdate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)
     title: Translations | None = None
     description: Translations | None = None
-    hero_image_url: str | None = Field(default=None, max_length=500)
     duration_nights: int | None = Field(default=None, ge=1)
     base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
     room_id: uuid.UUID | None = None
     is_active: bool | None = None
+    is_featured: bool | None = None
+    display_order: int | None = Field(default=None, ge=0)
 
 
 class _PackageReadCommon(BaseModel):
@@ -103,6 +105,8 @@ class _PackageReadCommon(BaseModel):
     sanatorium_id: uuid.UUID
     room_id: uuid.UUID
     is_active: bool
+    is_featured: bool
+    display_order: int
     created_at: datetime
     updated_at: datetime
 
@@ -128,6 +132,8 @@ class PackageRead(_PackageReadCommon):
             sanatorium_id=obj.sanatorium_id,
             room_id=obj.room_id,
             is_active=obj.is_active,
+            is_featured=obj.is_featured,
+            display_order=obj.display_order,
             created_at=obj.created_at,
             updated_at=obj.updated_at,
             items=[PackageItemRead.from_obj(i, locale) for i in obj.items],

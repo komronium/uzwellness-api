@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Uuid,
     func,
@@ -22,6 +23,38 @@ from app.core.ids import uuid7
 from app.models.amenity import Amenity, program_amenities
 
 
+class TreatmentFocus(Base):
+    __tablename__ = "treatment_focuses"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    slug: Mapped[str] = mapped_column(
+        String(120), unique=True, nullable=False, index=True
+    )
+    name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    description: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    image_url: Mapped[str | None] = mapped_column(String(500))
+    icon: Mapped[str | None] = mapped_column(String(80))
+    display_order: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0", index=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true", index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    programs: Mapped[list["TreatmentProgram"]] = relationship(back_populates="focus")
+
+
 class TreatmentProgram(Base):
     __tablename__ = "treatment_programs"
 
@@ -30,6 +63,11 @@ class TreatmentProgram(Base):
         Uuid,
         ForeignKey("sanatoriums.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    focus_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("treatment_focuses.id", ondelete="SET NULL"),
         index=True,
     )
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -70,3 +108,4 @@ class TreatmentProgram(Base):
     amenities: Mapped[list[Amenity]] = relationship(
         secondary=program_amenities, back_populates="programs"
     )
+    focus: Mapped[TreatmentFocus | None] = relationship(back_populates="programs")

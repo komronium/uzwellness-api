@@ -136,7 +136,7 @@ DESTINATIONS = [
             "Санатории и курорты недалеко от Ташкента.",
             "Sanatoriums and resorts a short drive from Tashkent.",
         ),
-        "hero_image": "/uploads/demo/destinations/chimgan.svg",
+        "hero_image_url": "/uploads/demo/destinations/chimgan.svg",
         "lat": money("41.550000"),
         "lng": money("70.016700"),
     },
@@ -153,7 +153,7 @@ DESTINATIONS = [
             "Направление, сочетающее экскурсии и wellness-программы.",
             "A destination combining city touring with wellness programs.",
         ),
-        "hero_image": "/uploads/demo/destinations/samarkand.svg",
+        "hero_image_url": "/uploads/demo/destinations/samarkand.svg",
         "lat": money("39.654200"),
         "lng": money("66.959700"),
     },
@@ -170,7 +170,7 @@ DESTINATIONS = [
             "Респираторные и реабилитационные программы в горах Джизака.",
             "Respiratory and rehabilitation programs in the Jizzakh mountains.",
         ),
-        "hero_image": "/uploads/demo/destinations/zaamin.svg",
+        "hero_image_url": "/uploads/demo/destinations/zaamin.svg",
         "lat": money("39.950000"),
         "lng": money("68.400000"),
     },
@@ -187,7 +187,7 @@ DESTINATIONS = [
             "Санатории, спа и семейные курорты долины.",
             "Valley sanatoriums, spas, and family resorts.",
         ),
-        "hero_image": "/uploads/demo/destinations/fergana.svg",
+        "hero_image_url": "/uploads/demo/destinations/fergana.svg",
         "lat": money("40.389200"),
         "lng": money("71.783300"),
     },
@@ -2710,16 +2710,15 @@ async def ensure_destinations(db) -> dict[str, Destination]:
     }
     for data in DESTINATIONS:
         if data["slug"] not in existing:
-            demo_media_file(data["hero_image"], data["name"]["en"])
+            demo_media_file(data["hero_image_url"], data["name"]["en"])
             destination = Destination(
                 slug=data["slug"],
                 name=data["name"],
                 tagline=data["tagline"],
                 description=data["description"],
-                hero_image=data["hero_image"],
+                hero_image_url=data["hero_image_url"],
                 lat=data["lat"],
                 lng=data["lng"],
-                country="Uzbekistan",
                 is_active=True,
             )
             db.add(destination)
@@ -3056,7 +3055,10 @@ async def create_rooms(
 
 
 async def create_programs(
-    db, *, sanatoriums: dict[str, Sanatorium], amenities: dict[str, Amenity]
+    db,
+    *,
+    sanatoriums: dict[str, Sanatorium],
+    amenities: dict[str, Amenity],
 ) -> dict[str, list[TreatmentProgram]]:
     programs_by_slug = {}
     for san_slug, templates in PROGRAMS.items():
@@ -3171,6 +3173,8 @@ async def create_packages(
             "base_price": money("6800000.00"),
             "currency": "UZS",
             "hero": "/uploads/demo/packages/zaamin-retreat.svg",
+            "is_featured": True,
+            "display_order": 1,
         },
         {
             "slug": "chinobod-diagnostics-weekend",
@@ -3190,6 +3194,8 @@ async def create_packages(
             "base_price": money("520.00"),
             "currency": "USD",
             "hero": "/uploads/demo/packages/chinobod-weekend.svg",
+            "is_featured": True,
+            "display_order": 2,
         },
     ]
     packages = {}
@@ -3207,6 +3213,8 @@ async def create_packages(
             sanatorium_id=sanatoriums[spec["sanatorium"]].id,
             room_id=room.id,
             is_active=True,
+            is_featured=spec["is_featured"],
+            display_order=spec["display_order"],
         )
         db.add(package)
         await db.flush()
@@ -3608,7 +3616,9 @@ async def main() -> None:
             db, sanatoriums=sanatoriums, amenities=amenities, today=today
         )
         programs_by_slug = await create_programs(
-            db, sanatoriums=sanatoriums, amenities=amenities
+            db,
+            sanatoriums=sanatoriums,
+            amenities=amenities,
         )
         extra_beds = await create_extra_beds(db, sanatoriums)
         packages = await create_packages(

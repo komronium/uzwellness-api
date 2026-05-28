@@ -1,9 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.api.deps import (
+    IncludeTranslationsDep,
+    LocaleDep,
+    OptionalUser,
+    not_found,
+    require_roles,
+)
 from app.core.pagination import LargePagination
+from app.core.storage import StorageBackend, detect_image_mime, get_storage
+from app.core.uploads import read_upload
 from app.models.user import UserRole
 from app.schemas.destination import (
     DestinationAdminList,
@@ -29,14 +37,17 @@ router = APIRouter(prefix="/destinations", tags=["destinations"])
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=DestinationList | DestinationAdminList)
 async def list_destinations(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     page: LargePagination,
-    active_only: bool = Query(default=False),
+    current_user: OptionalUser,
+    active_only: bool = Query(default=True),
     destinations: DestinationService = Depends(get_destination_service),
 ) -> DestinationList | DestinationAdminList:
+    if current_user is None or current_user.role != UserRole.SUPER_ADMIN:
+        active_only = True
     items, total = await destinations.list_all(
         limit=page.limit, offset=page.offset, active_only=active_only
     )
@@ -83,11 +94,12 @@ async def list_destination_tiles(
     return DestinationTileList(items=tiles, total=len(tiles))
 
 
-@router.get("/{slug_or_id}", response_model=None)
+@router.get("/{slug_or_id}", response_model=DestinationRead | DestinationAdminRead)
 async def get_destination(
     slug_or_id: str,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    current_user: OptionalUser,
     destinations: DestinationService = Depends(get_destination_service),
 ) -> DestinationRead | DestinationAdminRead:
     destination = None
@@ -97,7 +109,10 @@ async def get_destination(
         destination = await destinations.get_by_slug(slug_or_id)
     else:
         destination = await destinations.get_by_id(dest_uuid)
-    if destination is None:
+    can_view_inactive = (
+        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    )
+    if destination is None or (not destination.is_active and not can_view_inactive):
         raise not_found("Destination not found")
     if include_translations:
         return DestinationAdminRead.model_validate(destination)
@@ -119,6 +134,32 @@ async def create_destination(
     )
 
 
+@router.post(
+    "/{destination_id}/hero-image",
+    response_model=DestinationAdminRead,
+    dependencies=[Depends(require_super_admin)],
+)
+async def upload_hero_image(
+    destination_id: uuid.UUID,
+    file: UploadFile = File(...),
+    destinations: DestinationService = Depends(get_destination_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> DestinationAdminRead:
+    destination = await destinations.get_by_id(destination_id)
+    if destination is None:
+        raise not_found("Destination not found")
+    content, mime = await read_upload(
+        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
+    )
+    updated = await destinations.update_hero_image(
+        destination,
+        content=content,
+        content_type=mime,
+        storage=storage,
+    )
+    return DestinationAdminRead.model_validate(updated)
+
+
 @router.patch(
     "/{destination_id}",
     response_model=DestinationAdminRead,
@@ -135,6 +176,23 @@ async def update_destination(
     return DestinationAdminRead.model_validate(
         await destinations.update(destination, payload)
     )
+
+
+@router.delete(
+    "/{destination_id}/hero-image",
+    response_model=DestinationAdminRead,
+    dependencies=[Depends(require_super_admin)],
+)
+async def delete_hero_image(
+    destination_id: uuid.UUID,
+    destinations: DestinationService = Depends(get_destination_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> DestinationAdminRead:
+    destination = await destinations.get_by_id(destination_id)
+    if destination is None:
+        raise not_found("Destination not found")
+    updated = await destinations.delete_hero_image(destination, storage)
+    return DestinationAdminRead.model_validate(updated)
 
 
 @router.delete(

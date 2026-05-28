@@ -48,10 +48,7 @@ class Destination(Base):
         JSONB, nullable=False, default=dict, server_default="{}"
     )
 
-    hero_image: Mapped[str | None] = mapped_column(String(500))
-    country: Mapped[str] = mapped_column(
-        String(80), nullable=False, default="Uzbekistan", server_default="Uzbekistan"
-    )
+    hero_image_url: Mapped[str | None] = mapped_column(String(500))
     lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
 

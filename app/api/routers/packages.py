@@ -1,10 +1,18 @@
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
-from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
+from app.api.deps import (
+    IncludeTranslationsDep,
+    LocaleDep,
+    OptionalUser,
+    not_found,
+    require_roles,
+)
 from app.core.pagination import Pagination
+from app.core.storage import StorageBackend, detect_image_mime, get_storage
+from app.core.uploads import read_upload
 from app.models.user import UserRole
 from app.schemas.package import (
     PackageAdminList,
@@ -26,6 +34,7 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
 @router.get("", response_model=None)
 async def list_packages(
+    current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     page: Pagination,
@@ -37,17 +46,18 @@ async def list_packages(
     price_max: Decimal | None = Query(default=None, ge=0),
     packages: PackageService = Depends(get_package_service),
 ) -> PackageList | PackageAdminList:
+    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
     items, total = await packages.list_packages(
         limit=page.limit,
         offset=page.offset,
-        active_only=active_only,
+        active_only=active_only or not is_super_admin,
         sanatorium_id=sanatorium_id,
         duration_min=duration_min,
         duration_max=duration_max,
         price_min=price_min,
         price_max=price_max,
     )
-    if include_translations:
+    if include_translations and is_super_admin:
         return PackageAdminList(
             items=[PackageAdminRead.model_validate(p) for p in items],
             total=total,
@@ -62,9 +72,30 @@ async def list_packages(
     )
 
 
+@router.get("/featured", response_model=PackageList)
+async def list_featured_packages(
+    locale: LocaleDep,
+    page: Pagination,
+    packages: PackageService = Depends(get_package_service),
+) -> PackageList:
+    items, total = await packages.list_packages(
+        limit=page.limit,
+        offset=page.offset,
+        active_only=True,
+        featured_only=True,
+    )
+    return PackageList(
+        items=[PackageRead.from_obj(p, locale) for p in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
 @router.get("/{package_id_or_slug}", response_model=None)
 async def get_package(
     package_id_or_slug: str,
+    current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     packages: PackageService = Depends(get_package_service),
@@ -80,7 +111,10 @@ async def get_package(
         package = await packages.get_by_slug(package_id_or_slug)
     if package is None:
         raise not_found("Package not found")
-    if include_translations:
+    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    if not package.is_active and not is_super_admin:
+        raise not_found("Package not found")
+    if include_translations and is_super_admin:
         return PackageAdminRead.model_validate(package)
     return PackageRead.from_obj(package, locale)
 
@@ -112,6 +146,49 @@ async def update_package(
     if package is None:
         raise not_found("Package not found")
     return PackageAdminRead.model_validate(await packages.update(package, payload))
+
+
+@router.post(
+    "/{package_id}/hero-image",
+    response_model=PackageAdminRead,
+    dependencies=[Depends(require_super_admin)],
+)
+async def upload_package_hero_image(
+    package_id: uuid.UUID,
+    file: UploadFile = File(...),
+    packages: PackageService = Depends(get_package_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> PackageAdminRead:
+    package = await packages.get_by_id(package_id)
+    if package is None:
+        raise not_found("Package not found")
+    content, mime = await read_upload(
+        file, detect_mime=detect_image_mime, allowed_label="JPEG, PNG, WebP"
+    )
+    updated = await packages.update_hero_image(
+        package,
+        content=content,
+        content_type=mime,
+        storage=storage,
+    )
+    return PackageAdminRead.model_validate(updated)
+
+
+@router.delete(
+    "/{package_id}/hero-image",
+    response_model=PackageAdminRead,
+    dependencies=[Depends(require_super_admin)],
+)
+async def delete_package_hero_image(
+    package_id: uuid.UUID,
+    packages: PackageService = Depends(get_package_service),
+    storage: StorageBackend = Depends(get_storage),
+) -> PackageAdminRead:
+    package = await packages.get_by_id(package_id)
+    if package is None:
+        raise not_found("Package not found")
+    updated = await packages.delete_hero_image(package, storage)
+    return PackageAdminRead.model_validate(updated)
 
 
 @router.delete(

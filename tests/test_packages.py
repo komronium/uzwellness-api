@@ -4,7 +4,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_room, make_sanatorium
+from tests.factories import make_png, make_room, make_sanatorium
+
+PNG = make_png()
 
 
 @pytest.fixture
@@ -78,6 +80,8 @@ async def test_super_admin_creates_package(
     assert body["base_price"] == "1290.00"
     assert body["sanatorium_id"] == str(package_sanatorium.id)
     assert body["room_id"] == str(usd_room.id)
+    assert body["is_featured"] is False
+    assert body["display_order"] == 0
     assert len(body["items"]) == 3
 
 
@@ -254,9 +258,109 @@ async def test_include_translations_returns_dict(
 ) -> None:
     payload = _payload(package_sanatorium.id, usd_room.id)
     await client.post("/api/packages", json=payload, headers=super_admin_headers)
-    resp = await client.get("/api/packages?include_translations=true")
+    resp = await client.get(
+        "/api/packages?include_translations=true", headers=super_admin_headers
+    )
     item = resp.json()["items"][0]
     assert item["title"] == payload["title"]
+
+
+async def test_public_list_hides_inactive_even_if_requested(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+) -> None:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+    await client.patch(
+        f"/api/packages/{pid}",
+        json={"is_active": False},
+        headers=super_admin_headers,
+    )
+
+    resp = await client.get("/api/packages?active_only=false")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+async def test_super_admin_can_list_inactive_packages(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+) -> None:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+    await client.patch(
+        f"/api/packages/{pid}",
+        json={"is_active": False},
+        headers=super_admin_headers,
+    )
+
+    resp = await client.get(
+        "/api/packages?active_only=false", headers=super_admin_headers
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+async def test_public_detail_hides_inactive_package(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+) -> None:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+    await client.patch(
+        f"/api/packages/{pid}",
+        json={"is_active": False},
+        headers=super_admin_headers,
+    )
+
+    resp = await client.get("/api/packages/toshkent-wellness-sayohati")
+
+    assert resp.status_code == 404
+
+
+async def test_featured_packages_endpoint_orders_by_display_order(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+) -> None:
+    second = _payload(
+        package_sanatorium.id,
+        usd_room.id,
+        title={"uz": "Ikkinchi", "ru": "Второй", "en": "Second"},
+        is_featured=True,
+        display_order=2,
+    )
+    first = _payload(
+        package_sanatorium.id,
+        usd_room.id,
+        title={"uz": "Birinchi", "ru": "Первый", "en": "First"},
+        is_featured=True,
+        display_order=1,
+    )
+    hidden = _payload(
+        package_sanatorium.id,
+        usd_room.id,
+        title={"uz": "Oddiy", "ru": "Обычный", "en": "Regular"},
+        is_featured=False,
+        display_order=0,
+    )
+    await client.post("/api/packages", json=second, headers=super_admin_headers)
+    await client.post("/api/packages", json=first, headers=super_admin_headers)
+    await client.post("/api/packages", json=hidden, headers=super_admin_headers)
+
+    resp = await client.get("/api/packages/featured?lang=en")
+
+    assert resp.status_code == 200
+    assert [item["title"] for item in resp.json()["items"]] == ["First", "Second"]
 
 
 async def test_list_filters_by_duration(
@@ -314,6 +418,55 @@ async def test_get_by_slug_works(
     resp = await client.get("/api/packages/toshkent-wellness-sayohati")
     assert resp.status_code == 200
     assert resp.json()["slug"] == "toshkent-wellness-sayohati"
+
+
+async def test_upload_package_hero_image_as_super_admin(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers, storage
+) -> None:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+
+    resp = await client.post(
+        f"/api/packages/{pid}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", PNG, "image/png")},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["hero_image_url"].endswith(".png")
+    key = body["hero_image_url"].removeprefix(storage.url_prefix + "/")
+    assert key in storage.objects
+    assert storage.objects[key] == PNG
+
+
+async def test_delete_package_hero_image(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers, storage
+) -> None:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(package_sanatorium.id, usd_room.id),
+        headers=super_admin_headers,
+    )
+    pid = created.json()["id"]
+    uploaded = await client.post(
+        f"/api/packages/{pid}/hero-image",
+        headers=super_admin_headers,
+        files={"file": ("hero.png", PNG, "image/png")},
+    )
+    key = uploaded.json()["hero_image_url"].removeprefix(storage.url_prefix + "/")
+
+    resp = await client.delete(
+        f"/api/packages/{pid}/hero-image", headers=super_admin_headers
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["hero_image_url"] is None
+    assert key not in storage.objects
 
 
 async def test_get_not_found_returns_404(client: AsyncClient) -> None:

@@ -7,8 +7,11 @@ from sqlalchemy import Numeric, case, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.pagination import paginated
 from app.core.slug import resolve_unique_slug, slugify
+from app.core.ids import uuid7
+from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.destination import Destination
 from app.models.room import Room
@@ -72,11 +75,16 @@ class DestinationService:
             )
             .outerjoin(
                 Room,
-                (Room.sanatorium_id == Sanatorium.id) & (Room.is_active.is_(True)),
+                (Room.sanatorium_id == Sanatorium.id)
+                & (Room.is_active.is_(True))
+                & (Room.inventory_count > 0),
             )
             .where(Destination.is_active.is_(True))
             .group_by(Destination.id)
-            .order_by(Destination.created_at.asc())
+            .order_by(
+                func.count(func.distinct(Sanatorium.id)).desc(),
+                Destination.created_at.asc(),
+            )
         )
         rows = (await self.db.execute(stmt)).all()
         return [
@@ -109,8 +117,6 @@ class DestinationService:
             name=name_dict,
             tagline=payload.tagline.model_dump(),
             description=payload.description.model_dump(exclude_none=True),
-            hero_image=payload.hero_image,
-            country=payload.country,
             lat=payload.lat,
             lng=payload.lng,
             is_active=payload.is_active,
@@ -144,9 +150,46 @@ class DestinationService:
         await self.db.refresh(destination)
         return destination
 
+    async def update_hero_image(
+        self,
+        destination: Destination,
+        *,
+        content: bytes,
+        content_type: str,
+        storage: StorageBackend,
+    ) -> Destination:
+        await self._delete_local_hero_image(destination, storage)
+        ext = MIME_EXTENSIONS[content_type]
+        image_id = uuid7()
+        key = f"destinations/{destination.id}/{image_id}.{ext}"
+        destination.hero_image_url = await storage.save(
+            key=key, content=content, content_type=content_type
+        )
+        await self.db.commit()
+        await self.db.refresh(destination)
+        return destination
+
+    async def delete_hero_image(
+        self, destination: Destination, storage: StorageBackend
+    ) -> Destination:
+        await self._delete_local_hero_image(destination, storage)
+        destination.hero_image_url = None
+        await self.db.commit()
+        await self.db.refresh(destination)
+        return destination
+
     async def delete(self, destination: Destination) -> None:
         await self.db.delete(destination)
         await self.db.commit()
+
+    @staticmethod
+    async def _delete_local_hero_image(
+        destination: Destination, storage: StorageBackend
+    ) -> None:
+        url = destination.hero_image_url
+        prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
+        if url and url.startswith(prefix):
+            await storage.delete(key=url_to_key(url))
 
 
 def get_destination_service(
