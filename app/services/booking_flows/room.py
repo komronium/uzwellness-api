@@ -332,12 +332,10 @@ class RoomBookingFlow(BookingFlowBase):
             rate = await self.db.scalar(
                 select(ExchangeRate).where(ExchangeRate.pair == USD_UZS)
             )
+        if rate is not None and not isinstance(rate, ExchangeRate):
+            raise RuntimeError("Unexpected exchange rate sentinel")
         converter = convert_to_usd if room_currency == "USD" else convert_to_uzs
-        converted = converter(
-            config.price_per_night,
-            config.currency,
-            rate,  # type: ignore[arg-type]
-        )
+        converted = converter(config.price_per_night, config.currency, rate)
         if converted is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

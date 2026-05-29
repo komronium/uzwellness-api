@@ -20,16 +20,12 @@ from app.services.email_service import BookingEmailContext, send_booking_receive
 
 
 class BookingFlow(Protocol):
-    """Each booking type (ROOM, SESSION, PACKAGE…) is its own flow."""
-
     def matches(self, payload: BookingCreate) -> bool: ...
 
     async def create(self, payload: BookingCreate, user: User) -> Booking: ...
 
 
 class BookingFlowBase:
-    """Shared state + helpers used by every concrete booking flow."""
-
     def __init__(
         self,
         db: AsyncSession,
@@ -59,10 +55,6 @@ class BookingFlowBase:
         )
 
     async def _reserve_units(self, room: Room, dates: list, rooms_count: int) -> None:
-        """Lazy-materialize availability rows; bump units_booked by rooms_count.
-
-        409s if any night has fewer than `rooms_count` free units.
-        """
         if room.inventory_count < 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -131,14 +123,12 @@ class BookingFlowBase:
 
 
 def rooms_needed_for(guests: int, capacity: int) -> int:
-    """How many same-type rooms fit `guests`, given per-room `capacity`."""
     if capacity < 1:
         return 0
     return math.ceil(guests / capacity)
 
 
 def rooms_count_for_guests(room: Room, guests: int) -> int:
-    """Validate room has usable capacity and return how many units `guests` need."""
     if room.capacity < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

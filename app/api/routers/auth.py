@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 
 from app.api.deps import CurrentUser
-from app.core.rate_limit import login_rate_limit, register_rate_limit
+from app.api.rate_limits import login_rate_limit, register_rate_limit
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,

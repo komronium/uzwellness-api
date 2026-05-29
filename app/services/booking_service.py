@@ -37,8 +37,6 @@ _LOAD_OPTIONS = (
 
 
 class BookingService:
-    """Routes booking requests to a matching flow; handles cancel/list/visibility."""
-
     def __init__(
         self,
         db: AsyncSession,
@@ -137,7 +135,7 @@ class BookingService:
         sanatorium_name = await sanatorium_name_for_booking(self.db, booking)
         if sanatorium_name is not None:
             self._notify_cancelled(booking, user, sanatorium_name)
-        return await self._load(booking.id)  # type: ignore[return-value]
+        return await self._load_required(booking.id)
 
     async def _assert_can_cancel(self, booking: Booking, user: User) -> None:
         admin_owns = False
@@ -173,6 +171,12 @@ class BookingService:
         return await self.db.scalar(
             select(Booking).options(*_LOAD_OPTIONS).where(Booking.id == booking_id)
         )
+
+    async def _load_required(self, booking_id: uuid.UUID) -> Booking:
+        booking = await self._load(booking_id)
+        if booking is None:
+            raise RuntimeError(f"Booking {booking_id} not found after write")
+        return booking
 
     @staticmethod
     def _notify_cancelled(

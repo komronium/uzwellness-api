@@ -286,3 +286,52 @@ Round 2 final audit:
 - Longest function/method: 58 lines
 - Ruff: passed
 - Compile: passed
+
+## Full Code Audit Round 3
+
+Goal: verify architecture boundaries and remove low-value comments/type ignores without changing behavior.
+
+### Phase 1: Type Ignore And Dead Marker Cleanup
+
+1. Remove avoidable `type: ignore` comments - Done.
+   - Replaced locale casts with explicit locale narrowing.
+   - Replaced post-write return ignores with required-load helpers.
+   - Replaced UUIDv7 ignore with `getattr`.
+   - Replaced extra-bed exchange-rate ignore with runtime sentinel guard.
+2. Remove `pass`, TODO, and FIXME markers - Done.
+   - `Base` now uses `__abstract__ = True`.
+   - No `pass`, TODO, FIXME, or `type: ignore` remains in `app`.
+
+### Phase 2: Layer Boundary Check
+
+1. Ensure `models` do not import API, services, or schemas - Done.
+2. Ensure `schemas` do not import API or services - Done.
+3. Ensure `core` does not import API or services - Done.
+   - Moved FastAPI auth-aware rate-limit wrappers to `app/api/rate_limits.py`.
+   - Kept `app/core/rate_limit.py` as pure rate-limit logic.
+4. Ensure services do not import API routers - Done.
+
+### Phase 3: Comment Cleanup
+
+1. Remove low-value docstrings/comments from touched utility files - Done.
+2. Keep only business/security/money/invariant comments - Done.
+   - Remaining comments are around refunds, currency/package invariants,
+     auth replay defense, rate-plan snapshots, and route-specific ownership.
+
+### Phase 4: Verification
+
+1. Ruff and compile targeted files - Done.
+2. Layer check - Done.
+3. Focused tests - Done:
+   - Auth, booking flow, booking constraints, booking pricing,
+     package bookings, session bookings, locale resolution: 72 passed.
+4. Full suite before commit - Done.
+
+Round 3 final verification:
+
+- Ruff: passed
+- Compile: passed
+- Layer check: passed
+- `type: ignore`, `pass`, TODO, FIXME scan: clean
+- Focused tests: 72 passed
+- Full suite: 428 passed

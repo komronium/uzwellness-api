@@ -75,11 +75,6 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 
 def _parse_accept_language(header: str) -> str | None:
-    """Parse an Accept-Language header and return the first supported locale.
-
-    Handles formats like "en-US,en;q=0.9,ru;q=0.8" by stripping region tags
-    and q-values, then matching against SUPPORTED_LOCALES in order of preference.
-    """
     for part in header.split(","):
         tag = part.split(";", 1)[0].strip().lower()
         primary = tag.split("-", 1)[0]
@@ -92,20 +87,25 @@ def get_locale(
     lang: Annotated[str | None, Query(description="Locale (uz, ru, en)")] = None,
     accept_language: Annotated[str | None, Header()] = None,
 ) -> Locale:
-    """Resolve the request locale.
-
-    Priority: ?lang= query > Accept-Language header > DEFAULT_LOCALE.
-    Unsupported values fall through to the next source.
-    """
     if lang:
-        candidate = lang.strip().lower()
-        if candidate in SUPPORTED_LOCALES:
-            return candidate  # type: ignore[return-value]
+        candidate = _as_locale(lang.strip().lower())
+        if candidate is not None:
+            return candidate
     if accept_language:
-        resolved = _parse_accept_language(accept_language)
+        resolved = _as_locale(_parse_accept_language(accept_language))
         if resolved is not None:
-            return resolved  # type: ignore[return-value]
-    return DEFAULT_LOCALE  # type: ignore[return-value]
+            return resolved
+    return DEFAULT_LOCALE
+
+
+def _as_locale(value: str | None) -> Locale | None:
+    if value == "uz":
+        return "uz"
+    if value == "ru":
+        return "ru"
+    if value == "en":
+        return "en"
+    return None
 
 
 def get_include_translations(

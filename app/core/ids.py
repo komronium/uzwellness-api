@@ -1,18 +1,13 @@
-"""UUIDv7 generator with a stdlib-first polyfill.
-
-Python 3.14 added :func:`uuid.uuid7`. We prefer the stdlib implementation
-when available and fall back to an RFC 9562-compliant pure-Python version
-so older interpreters (3.13 in our prod Docker image) keep working.
-"""
-
 from __future__ import annotations
 
 import os
 import time
 import uuid
 
-if hasattr(uuid, "uuid7"):
-    uuid7 = uuid.uuid7  # type: ignore[attr-defined]
+_stdlib_uuid7 = getattr(uuid, "uuid7", None)
+
+if _stdlib_uuid7 is not None:
+    uuid7 = _stdlib_uuid7
 else:
 
     def uuid7() -> uuid.UUID:

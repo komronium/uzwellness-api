@@ -76,7 +76,7 @@ class ProgramService:
         )
         self.db.add(program)
         await self.db.commit()
-        return await self.get_by_id(program.id)  # type: ignore[return-value]
+        return await self._get_required(program.id)
 
     async def update(
         self,
@@ -111,7 +111,7 @@ class ProgramService:
             )
 
         await self.db.commit()
-        return await self.get_by_id(program.id)  # type: ignore[return-value]
+        return await self._get_required(program.id)
 
     async def delete(self, program: TreatmentProgram, user: User) -> None:
         await assert_sanatorium_access(
@@ -147,6 +147,12 @@ class ProgramService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Treatment focus not found",
             )
+
+    async def _get_required(self, program_id: uuid.UUID) -> TreatmentProgram:
+        program = await self.get_by_id(program_id)
+        if program is None:
+            raise RuntimeError(f"TreatmentProgram {program_id} not found after write")
+        return program
 
 
 def get_program_service(db: AsyncSession = Depends(get_db)) -> ProgramService:

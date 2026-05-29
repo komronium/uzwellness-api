@@ -1,10 +1,3 @@
-"""Lightweight email service.
-
-For development the backend is `log` — emails are written to the application
-logger rather than dispatched over SMTP. To switch on real delivery, set
-`EMAIL_BACKEND=smtp` plus the SMTP_* settings in `.env`.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -56,7 +49,6 @@ def _send_smtp(*, to: str, subject: str, body: str) -> None:
                 client.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             client.send_message(message)
     except Exception:
-        # Log and swallow — booking flows must not fail on email delivery.
         logger.exception("Failed to send email to %s", to)
 
 

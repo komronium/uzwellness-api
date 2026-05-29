@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, not_found
+from app.api.rate_limits import booking_rate_limit
 from app.core.database import get_db
 from app.core.pagination import Pagination
-from app.core.rate_limit import booking_rate_limit
 from app.models.booking import Booking
 from app.models.user import User, UserRole
 from app.schemas.booking import (
