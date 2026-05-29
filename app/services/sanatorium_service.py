@@ -51,52 +51,7 @@ class SanatoriumService:
         amenity_links = await self._build_amenity_links(payload.amenities)
 
         sanatorium = Sanatorium(
-            name=name_dict,
-            slug=slug,
-            description=payload.description.model_dump(),
-            city=payload.city,
-            region_id=payload.region_id,
-            destination_id=payload.destination_id,
-            address=payload.address.model_dump(),
-            lat=payload.lat,
-            lng=payload.lng,
-            phones=payload.phones,
-            website=payload.website,
-            check_in_time=payload.check_in_time,
-            check_out_time=payload.check_out_time,
-            pets_allowed=payload.pets_allowed,
-            service_animals_allowed=payload.service_animals_allowed,
-            min_checkin_age=payload.min_checkin_age,
-            quiet_hours_from=payload.quiet_hours_from,
-            quiet_hours_to=payload.quiet_hours_to,
-            payment_methods=payload.payment_methods,
-            house_rules=payload.house_rules.model_dump(exclude_none=True),
-            cancellation_policy=payload.cancellation_policy.model_dump(
-                exclude_none=True
-            ),
-            weekly_schedule=payload.weekly_schedule,
-            stars=payload.stars,
-            property_type=payload.property_type,
-            wellness_category=payload.wellness_category,
-            treatment_focuses=payload.treatment_focuses,
-            treatment_profile=payload.treatment_profile.model_dump(),
-            year_opened=payload.year_opened,
-            languages_spoken=payload.languages_spoken,
-            highlights=payload.highlights,
-            promo_badges=[b.model_dump(mode="json") for b in payload.promo_badges],
-            surroundings=[s.model_dump() for s in payload.surroundings],
-            venues=[v.model_dump() for v in payload.venues],
-            meal_schedule=[m.model_dump() for m in payload.meal_schedule],
-            service_matrix=payload.service_matrix.model_dump(mode="json"),
-            medical_base=payload.medical_base.model_dump(),
-            policies=payload.policies.model_dump(mode="json"),
-            platform_commission_percent=payload.platform_commission_percent,
-            b2b_commission_percent=payload.b2b_commission_percent,
-            agent_discount_tiers=_agent_discount_tiers_json(
-                payload.agent_discount_tiers
-            ),
-            admin_user_id=payload.admin_user_id,
-            status=SanatoriumStatus.PENDING,
+            **_create_values(payload, name=name_dict, slug=slug),
             amenity_links=amenity_links,
         )
         self.db.add(sanatorium)
@@ -121,6 +76,23 @@ class SanatoriumService:
         tiers = data.pop("agent_discount_tiers", _MISSING)
         policies = data.pop("policies", _MISSING)
 
+        await self._assert_update_fks(data)
+        merge_translation_fields(sanatorium, data, _TRANSLATION_FIELDS)
+        await self._resolve_update_slug(sanatorium, data)
+
+        for field, value in data.items():
+            setattr(sanatorium, field, value)
+
+        _apply_json_updates(sanatorium, payload, tiers=tiers, policies=policies)
+        if amenities_provided:
+            sanatorium.amenity_links = await self._build_amenity_links(
+                payload.amenities or []
+            )
+
+        await self.db.commit()
+        return await self._reload_required(sanatorium.id)
+
+    async def _assert_update_fks(self, data: dict) -> None:
         if "region_id" in data:
             await assert_fk(self.db, Region, data["region_id"], "region_id")
         if "destination_id" in data:
@@ -128,12 +100,9 @@ class SanatoriumService:
                 self.db, Destination, data["destination_id"], "destination_id"
             )
 
-        merge_translation_fields(
-            sanatorium,
-            data,
-            ("name", "description", "address", "house_rules", "cancellation_policy"),
-        )
-
+    async def _resolve_update_slug(
+        self, sanatorium: Sanatorium, data: dict
+    ) -> None:
         if "slug" in data and data["slug"] is not None:
             data["slug"] = await resolve_unique_slug(
                 self.db, Sanatorium, _slug(data["slug"]), exclude_id=sanatorium.id
@@ -145,25 +114,6 @@ class SanatoriumService:
                 _slug(pick_locale(data["name"])),
                 exclude_id=sanatorium.id,
             )
-
-        for field, value in data.items():
-            setattr(sanatorium, field, value)
-
-        if tiers is not _MISSING:
-            sanatorium.agent_discount_tiers = _agent_discount_tiers_json(tiers)
-
-        if policies is not _MISSING:
-            sanatorium.policies = (
-                payload.policies.model_dump(mode="json") if payload.policies else {}
-            )
-
-        if amenities_provided:
-            sanatorium.amenity_links = await self._build_amenity_links(
-                payload.amenities or []
-            )
-
-        await self.db.commit()
-        return await self._reload_required(sanatorium.id)
 
     async def _build_amenity_links(self, items) -> list[SanatoriumAmenity]:
         if not items:
@@ -212,6 +162,80 @@ class SanatoriumService:
                 selectinload(Sanatorium.images),
                 selectinload(Sanatorium.amenity_links),
             )
+        )
+
+
+_TRANSLATION_FIELDS = (
+    "name",
+    "description",
+    "address",
+    "house_rules",
+    "cancellation_policy",
+)
+
+
+def _create_values(
+    payload: SanatoriumCreate, *, name: dict, slug: str
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "slug": slug,
+        "description": payload.description.model_dump(),
+        "city": payload.city,
+        "region_id": payload.region_id,
+        "destination_id": payload.destination_id,
+        "address": payload.address.model_dump(),
+        "lat": payload.lat,
+        "lng": payload.lng,
+        "phones": payload.phones,
+        "website": payload.website,
+        "check_in_time": payload.check_in_time,
+        "check_out_time": payload.check_out_time,
+        "pets_allowed": payload.pets_allowed,
+        "service_animals_allowed": payload.service_animals_allowed,
+        "min_checkin_age": payload.min_checkin_age,
+        "quiet_hours_from": payload.quiet_hours_from,
+        "quiet_hours_to": payload.quiet_hours_to,
+        "payment_methods": payload.payment_methods,
+        "house_rules": payload.house_rules.model_dump(exclude_none=True),
+        "cancellation_policy": payload.cancellation_policy.model_dump(
+            exclude_none=True
+        ),
+        "weekly_schedule": payload.weekly_schedule,
+        "stars": payload.stars,
+        "property_type": payload.property_type,
+        "wellness_category": payload.wellness_category,
+        "treatment_focuses": payload.treatment_focuses,
+        "treatment_profile": payload.treatment_profile.model_dump(),
+        "year_opened": payload.year_opened,
+        "languages_spoken": payload.languages_spoken,
+        "highlights": payload.highlights,
+        "promo_badges": [b.model_dump(mode="json") for b in payload.promo_badges],
+        "surroundings": [s.model_dump() for s in payload.surroundings],
+        "venues": [v.model_dump() for v in payload.venues],
+        "meal_schedule": [m.model_dump() for m in payload.meal_schedule],
+        "service_matrix": payload.service_matrix.model_dump(mode="json"),
+        "medical_base": payload.medical_base.model_dump(),
+        "policies": payload.policies.model_dump(mode="json"),
+        "platform_commission_percent": payload.platform_commission_percent,
+        "b2b_commission_percent": payload.b2b_commission_percent,
+        "agent_discount_tiers": _agent_discount_tiers_json(
+            payload.agent_discount_tiers
+        ),
+        "admin_user_id": payload.admin_user_id,
+        "status": SanatoriumStatus.PENDING,
+    }
+
+
+def _apply_json_updates(
+    sanatorium: Sanatorium, payload: SanatoriumUpdate, *, tiers, policies
+) -> None:
+    if tiers is not _MISSING:
+        sanatorium.agent_discount_tiers = _agent_discount_tiers_json(tiers)
+
+    if policies is not _MISSING:
+        sanatorium.policies = (
+            payload.policies.model_dump(mode="json") if payload.policies else {}
         )
 
 

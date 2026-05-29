@@ -181,3 +181,108 @@ Verification run:
 - Tests pass.
 - OpenAPI remains clean and understandable.
 - No unrelated local changes are committed.
+
+## Full Code Audit Round 2
+
+Goal: inspect every backend module, not just previously touched files, and keep reducing methods that mix query construction, business rules, and response formatting.
+
+### Phase 1: Long Methods
+
+1. Split `FinanceService.summary` and `FinanceService.orders` - Done.
+   - Issue: both methods build filters, SQL, money rollups, and response dicts inline.
+   - Target:
+     - service methods read as orchestration only
+     - query construction helpers are named by report type
+     - row serialization helpers own API dict shape
+   - Tests: `tests/test_finance.py`, `tests/test_sanatorium_commission.py`, booking pricing tests.
+
+2. Split `RoomBookingFlow.create` - Done.
+   - Issue: validation, reservation, rate-plan adjustment, extra-bed pricing, booking creation, notification, and email are in one method.
+   - Target:
+     - clear pricing quote helper
+     - booking object builder
+     - side effects remain explicit
+   - Tests: room booking flow, constraints, pricing, availability.
+
+3. Split `RoomBookingFlow._build_extra_beds` - Done.
+   - Issue: config loading, ownership validation, currency conversion, and model building are together.
+   - Target:
+     - load configs once
+     - validate config per item
+     - convert extra-bed price in one helper
+   - Tests: booking flow and pricing.
+
+4. Split stay search internals - Done.
+   - Issue: `SearchService.search_stays`, `_find_candidates`, and `room_search.search_rooms` contain query logic and availability/pricing logic together.
+   - Target:
+     - search query builder helpers
+     - availability calculation helpers
+     - result ranking helpers
+   - Tests: sanatorium search, wellness listing, availability.
+
+### Phase 2: Router Boundary Audit
+
+1. Review routers over 120 lines:
+   - `packages.py`
+   - `treatment_focuses.py`
+   - `destinations.py`
+   - `room_images.py`
+   - `sanatorium_images.py`
+   - Status: audited with function-length scan; endpoint bodies are under the
+     current threshold and no behavior-neutral split is needed now.
+2. Move repeated upload/form parsing into helpers only when it reduces duplication.
+   - Status: existing upload helpers stay as-is; no new abstraction added.
+3. Keep endpoint functions below 40 lines unless they are purely parameter declarations.
+   - Status: no endpoint currently requires immediate extraction for business logic.
+
+### Phase 3: Service Boundary Audit
+
+1. Review services over 180 lines:
+   - `package_service.py`
+   - `destination_service.py`
+   - `user_service.py`
+   - `payment_service.py`
+   - `b2b_service.py`
+   - `review_service.py`
+   - Status: high-risk long methods were reduced first; remaining services have
+     cohesive methods under the current threshold.
+2. Extract helpers only when a method has a stable business name.
+   - Status: applied to finance reports, booking flows, room availability,
+     sanatorium list filters, and search.
+3. Avoid abstract base classes unless there are at least two real implementations.
+   - Status: no new abstract layer added.
+
+### Phase 4: Schema And Model Audit
+
+1. Review schemas over 250 lines:
+   - `room.py`
+   - `sanatorium.py`
+   - Status: `SanatoriumRead.from_obj` split into named mapping helpers.
+2. Split only if a section can be named by business concept.
+   - Status: no extra schema split added beyond named mapping helpers.
+3. Keep backward-compatible imports where existing tests or callers depend on them.
+   - Status: kept.
+
+### Phase 5: Verification
+
+1. Run function-length audit again and keep every non-schema method near 60 lines or document why it stays larger - Done.
+2. Run Ruff and compile - Done.
+3. Run focused tests for every touched area - Done.
+4. Run full suite before commit - Done.
+
+Round 2 focused verification:
+
+- Finance/commission/pricing: 22 passed
+- Booking flows, package bookings, session bookings: 44 passed
+- Availability and booking flow: 54 passed
+- Search and availability: 45 passed
+- Sanatorium/destination: 96 passed
+- Sanatorium/locale/policy: 100 passed
+- Full suite: 428 passed
+
+Round 2 final audit:
+
+- Longest backend file: 350 lines
+- Longest function/method: 58 lines
+- Ruff: passed
+- Compile: passed

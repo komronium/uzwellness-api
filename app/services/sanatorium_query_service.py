@@ -67,52 +67,24 @@ class SanatoriumQueryService:
         property_type: PropertyType | None = None,
         wellness_category: WellnessCategory | None = None,
     ) -> tuple[Sequence[Sanatorium], int]:
-        base = select(Sanatorium)
-        base = _apply_visibility(base, user)
-
-        if property_type is not None:
-            base = base.where(Sanatorium.property_type == property_type)
-        if wellness_category is not None:
-            base = base.where(Sanatorium.wellness_category == wellness_category)
-        if city is not None:
-            base = base.where(Sanatorium.city == city)
-        if region_id is not None:
-            base = base.where(Sanatorium.region_id == region_id)
-        if destination_id is not None:
-            base = base.where(Sanatorium.destination_id == destination_id)
-        if status_filter is not None:
-            base = base.where(Sanatorium.status == status_filter)
-        if stars is not None:
-            base = base.where(Sanatorium.stars == stars)
-        if min_rating is not None:
-            base = base.where(Sanatorium.avg_rating >= min_rating)
-        if q is not None and q.strip():
-            term = q.strip()
-            base = base.where(
-                Sanatorium.name["uz"].astext.icontains(term, autoescape=True)
-                | Sanatorium.name["ru"].astext.icontains(term, autoescape=True)
-                | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
-            )
-        if treatment_focus is not None:
-            base = base.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
-        if amenity_ids:
-            for amenity_id in amenity_ids:
-                subquery = (
-                    select(SanatoriumAmenity.sanatorium_id)
-                    .where(SanatoriumAmenity.amenity_id == amenity_id)
-                    .scalar_subquery()
-                )
-                base = base.where(Sanatorium.id.in_(subquery))
-
+        base = _apply_visibility(select(Sanatorium), user)
+        base = _apply_list_filters(
+            base,
+            city=city,
+            region_id=region_id,
+            destination_id=destination_id,
+            status_filter=status_filter,
+            stars=stars,
+            min_rating=min_rating,
+            q=q,
+            amenity_ids=amenity_ids,
+            treatment_focus=treatment_focus,
+            property_type=property_type,
+            wellness_category=wellness_category,
+        )
         total = await self._count(base)
-        stmt = (
-            base.options(
-                selectinload(Sanatorium.images),
-                selectinload(Sanatorium.amenity_links),
-            )
-            .order_by(_resolve_sort(sort, locale))
-            .limit(limit)
-            .offset(offset)
+        stmt = _list_statement(
+            base, sort=sort, locale=locale, limit=limit, offset=offset
         )
         rows = (await self.db.scalars(stmt)).all()
         return rows, total
@@ -123,7 +95,9 @@ class SanatoriumQueryService:
         limit: int,
         offset: int,
         usd_uzs_rate: Decimal | None,
-    ) -> tuple[list[tuple[Sanatorium, Decimal | None, str | None, Decimal | None]], int]:
+    ) -> tuple[
+        list[tuple[Sanatorium, Decimal | None, str | None, Decimal | None]], int
+    ]:
         price_subquery = _featured_price_subquery(usd_uzs_rate)
         base = (
             select(Sanatorium)
@@ -131,9 +105,7 @@ class SanatoriumQueryService:
                 Sanatorium.status == SanatoriumStatus.APPROVED,
                 Sanatorium.is_featured.is_(True),
             )
-            .outerjoin(
-                price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id
-            )
+            .outerjoin(price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id)
         )
         total = await self._count(base)
 
@@ -148,9 +120,7 @@ class SanatoriumQueryService:
                 Sanatorium.status == SanatoriumStatus.APPROVED,
                 Sanatorium.is_featured.is_(True),
             )
-            .outerjoin(
-                price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id
-            )
+            .outerjoin(price_subquery, price_subquery.c.sanatorium_id == Sanatorium.id)
             .options(
                 selectinload(Sanatorium.images),
                 selectinload(Sanatorium.region),
@@ -230,6 +200,81 @@ def _apply_visibility(stmt, user: User | None):
             | (Sanatorium.admin_user_id == user.id)
         )
     return stmt.where(Sanatorium.status == SanatoriumStatus.APPROVED)
+
+
+def _apply_list_filters(
+    stmt,
+    *,
+    city: str | None,
+    region_id: uuid.UUID | None,
+    destination_id: uuid.UUID | None,
+    status_filter: SanatoriumStatus | None,
+    stars: int | None,
+    min_rating: Decimal | None,
+    q: str | None,
+    amenity_ids: list[uuid.UUID] | None,
+    treatment_focus: str | None,
+    property_type: PropertyType | None,
+    wellness_category: WellnessCategory | None,
+):
+    filters = [
+        Sanatorium.property_type == property_type
+        if property_type is not None
+        else None,
+        Sanatorium.wellness_category == wellness_category
+        if wellness_category is not None
+        else None,
+        Sanatorium.city == city if city is not None else None,
+        Sanatorium.region_id == region_id if region_id is not None else None,
+        Sanatorium.destination_id == destination_id
+        if destination_id is not None
+        else None,
+        Sanatorium.status == status_filter if status_filter is not None else None,
+        Sanatorium.stars == stars if stars is not None else None,
+        Sanatorium.avg_rating >= min_rating if min_rating is not None else None,
+        Sanatorium.treatment_focuses.contains([treatment_focus])
+        if treatment_focus is not None
+        else None,
+        _name_search_clause(q),
+    ]
+    for clause in filters:
+        if clause is not None:
+            stmt = stmt.where(clause)
+    return _apply_amenity_filters(stmt, amenity_ids)
+
+
+def _name_search_clause(q: str | None):
+    if q is None or not q.strip():
+        return None
+    term = q.strip()
+    return (
+        Sanatorium.name["uz"].astext.icontains(term, autoescape=True)
+        | Sanatorium.name["ru"].astext.icontains(term, autoescape=True)
+        | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
+    )
+
+
+def _apply_amenity_filters(stmt, amenity_ids: list[uuid.UUID] | None):
+    for amenity_id in amenity_ids or []:
+        subquery = (
+            select(SanatoriumAmenity.sanatorium_id)
+            .where(SanatoriumAmenity.amenity_id == amenity_id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(Sanatorium.id.in_(subquery))
+    return stmt
+
+
+def _list_statement(stmt, *, sort: str, locale: str, limit: int, offset: int):
+    return (
+        stmt.options(
+            selectinload(Sanatorium.images),
+            selectinload(Sanatorium.amenity_links),
+        )
+        .order_by(_resolve_sort(sort, locale))
+        .limit(limit)
+        .offset(offset)
+    )
 
 
 def _featured_price_subquery(usd_uzs_rate: Decimal | None):

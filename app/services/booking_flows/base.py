@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking
+from app.models.notification import Notification
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
@@ -23,9 +24,7 @@ class BookingFlow(Protocol):
 
     def matches(self, payload: BookingCreate) -> bool: ...
 
-    async def create(
-        self, payload: BookingCreate, user: User
-    ) -> Booking: ...
+    async def create(self, payload: BookingCreate, user: User) -> Booking: ...
 
 
 class BookingFlowBase:
@@ -59,9 +58,7 @@ class BookingFlowBase:
             .where(Booking.id == booking_id)
         )
 
-    async def _reserve_units(
-        self, room: Room, dates: list, rooms_count: int
-    ) -> None:
+    async def _reserve_units(self, room: Room, dates: list, rooms_count: int) -> None:
         """Lazy-materialize availability rows; bump units_booked by rooms_count.
 
         409s if any night has fewer than `rooms_count` free units.
@@ -102,11 +99,16 @@ class BookingFlowBase:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Only {max(free, 0)} unit(s) free on {d}, "
-                        f"need {rooms_count}"
+                        f"Only {max(free, 0)} unit(s) free on {d}, need {rooms_count}"
                     ),
                 )
             row.units_booked += rooms_count
+
+    @staticmethod
+    def _queue_created_notification(booking: Booking) -> Notification:
+        return Notification(
+            booking_id=booking.id, type="booking_created", channel="email"
+        )
 
     @staticmethod
     def _send_received_email(

@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
-from app.models.notification import Notification
 from app.models.package import Package
 from app.models.room import Room
 from app.models.user import User, UserRole
@@ -19,16 +18,6 @@ _CENTS = Decimal("0.01")
 
 
 class PackageBookingFlow(BookingFlowBase):
-    """Package booking — the room is fixed at package-creation time.
-
-    The customer just picks a package and a check-in date. The flow:
-      1. Resolve package + its assigned room (locked) + sanatorium (approved).
-      2. Derive `check_out = check_in + package.duration_nights`. An explicit
-         `check_out` from the client must match.
-      3. Lock per-night availability rows and decrement units.
-      4. `final_price = package.base_price * guests`, snapshot.
-    """
-
     booking_type = BookingType.PACKAGE
 
     def matches(self, payload: BookingCreate) -> bool:
@@ -37,10 +26,50 @@ class PackageBookingFlow(BookingFlowBase):
     async def create(self, payload: BookingCreate, user: User) -> Booking:
         package = await self._load_package(payload.package_id)
         sanatorium = await self._approved_sanatorium(package.sanatorium_id)
+        check_out = self._check_out(payload, package)
+        room = await self._lock_room(package.room_id)
+        rooms_count = rooms_count_for_guests(room, payload.guests)
+        all_dates = list(date_range(payload.check_in, check_out))
+        await self._reserve_units(room, all_dates, rooms_count)
 
-        expected_out = payload.check_in + timedelta(days=package.duration_nights)
-        check_out = payload.check_out or expected_out
-        if check_out != expected_out:
+        is_b2b = user.role == UserRole.AGENT
+        pricing = await self.pricing.apply(
+            base_total=self._base_total(package, payload.guests),
+            sanatorium=sanatorium,
+            user=user,
+            is_b2b=is_b2b,
+        )
+        booking = self._build_booking(
+            payload,
+            package=package,
+            room=room,
+            check_out=check_out,
+            rooms_count=rooms_count,
+            pricing=pricing,
+            is_b2b=is_b2b,
+            user=user,
+        )
+        self.db.add(booking)
+        await self.db.flush()
+        self.db.add(self._queue_created_notification(booking))
+        await self.db.commit()
+
+        self._send_received_email(booking, user, pick_locale(sanatorium.name))
+        return await self._load(booking.id)
+
+    async def _load_package(self, package_id) -> Package:
+        package = await self.db.get(Package, package_id)
+        if package is None or not package.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
+            )
+        return package
+
+    @staticmethod
+    def _check_out(payload: BookingCreate, package: Package):
+        expected = payload.check_in + timedelta(days=package.duration_nights)
+        check_out = payload.check_out or expected
+        if check_out != expected:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -48,24 +77,25 @@ class PackageBookingFlow(BookingFlowBase):
                     "nights for this package"
                 ),
             )
-        all_dates = list(date_range(payload.check_in, check_out))
+        return check_out
 
-        room = await self._lock_room(package.room_id)
-        rooms_count = rooms_count_for_guests(room, payload.guests)
-        await self._reserve_units(room, all_dates, rooms_count)
+    @staticmethod
+    def _base_total(package: Package, guests: int) -> Decimal:
+        return (package.base_price * guests).quantize(_CENTS, ROUND_HALF_UP)
 
-        is_b2b = user.role == UserRole.AGENT
-        base_total = (package.base_price * payload.guests).quantize(
-            _CENTS, ROUND_HALF_UP
-        )
-        pricing = await self.pricing.apply(
-            base_total=base_total,
-            sanatorium=sanatorium,
-            user=user,
-            is_b2b=is_b2b,
-        )
-
-        booking = Booking(
+    @staticmethod
+    def _build_booking(
+        payload: BookingCreate,
+        *,
+        package: Package,
+        room: Room,
+        check_out,
+        rooms_count: int,
+        pricing,
+        is_b2b: bool,
+        user: User,
+    ) -> Booking:
+        return Booking(
             user_id=user.id,
             package_id=package.id,
             room_id=room.id,
@@ -85,25 +115,6 @@ class PackageBookingFlow(BookingFlowBase):
                 pricing.agent_discount_percent if is_b2b else None
             ),
         )
-        self.db.add(booking)
-        await self.db.flush()
-        self.db.add(
-            Notification(
-                booking_id=booking.id, type="booking_created", channel="email"
-            )
-        )
-        await self.db.commit()
-
-        self._send_received_email(booking, user, pick_locale(sanatorium.name))
-        return await self._load(booking.id)
-
-    async def _load_package(self, package_id) -> Package:
-        package = await self.db.get(Package, package_id)
-        if package is None or not package.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
-            )
-        return package
 
     async def _lock_room(self, room_id) -> Room:
         room = await self.db.scalar(

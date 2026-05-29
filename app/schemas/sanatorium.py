@@ -33,10 +33,7 @@ from app.schemas.sanatorium_service_matrix import (
 )
 from app.schemas.sanatorium_policies import SanatoriumPolicies
 
-__all__ = (
-    "SanatoriumImageRead",
-    "SanatoriumImageUpdate",
-)
+__all__ = ("SanatoriumImageRead", "SanatoriumImageUpdate")
 
 
 class AgentDiscountTier(BaseModel):
@@ -151,8 +148,6 @@ class SanatoriumUpdate(BaseModel):
 
 
 class _SanatoriumReadCommon(BaseModel):
-    """Shared non-i18n fields between public and admin sanatorium reads."""
-
     id: uuid.UUID
     slug: str
     city: str
@@ -200,8 +195,6 @@ class _SanatoriumReadCommon(BaseModel):
 
 
 class SanatoriumRead(_SanatoriumReadCommon):
-    """Public read: i18n fields resolved to a single locale string."""
-
     name: str
     description: str
     address: str
@@ -216,81 +209,13 @@ class SanatoriumRead(_SanatoriumReadCommon):
     @classmethod
     def from_obj(cls, obj, locale: str) -> "SanatoriumRead":
         return cls(
-            id=obj.id,
-            slug=obj.slug,
-            name=pick_locale(obj.name, locale),
-            description=pick_locale(obj.description, locale),
-            city=obj.city,
-            region_id=obj.region_id,
-            region=(RegionRead.from_obj(obj.region, locale) if obj.region else None),
-            destination_id=obj.destination_id,
-            destination=(
-                DestinationRead.from_obj(obj.destination, locale)
-                if obj.destination
-                else None
-            ),
-            address=pick_locale(obj.address, locale),
-            lat=obj.lat,
-            lng=obj.lng,
-            phones=obj.phones,
-            website=obj.website,
-            check_in_time=obj.check_in_time,
-            check_out_time=obj.check_out_time,
-            pets_allowed=obj.pets_allowed,
-            service_animals_allowed=obj.service_animals_allowed,
-            min_checkin_age=obj.min_checkin_age,
-            quiet_hours_from=obj.quiet_hours_from,
-            quiet_hours_to=obj.quiet_hours_to,
-            payment_methods=obj.payment_methods,
-            house_rules=pick_locale(obj.house_rules, locale),
-            cancellation_policy=pick_locale(obj.cancellation_policy, locale),
-            weekly_schedule=obj.weekly_schedule,
-            stars=obj.stars,
-            status=obj.status,
-            property_type=obj.property_type,
-            wellness_category=obj.wellness_category,
-            treatment_focuses=obj.treatment_focuses,
-            treatment_profile=TreatmentProfileRead.from_obj(
-                obj.treatment_profile, locale
-            ),
-            year_opened=obj.year_opened,
-            languages_spoken=obj.languages_spoken,
-            highlights=obj.highlights,
-            is_featured=obj.is_featured,
-            display_order=obj.display_order,
-            promo_badges=[
-                PromoBadgeRead.from_obj(badge, locale)
-                for badge in (obj.promo_badges or [])
-                if (badge.get("is_active", True) if isinstance(badge, dict) else True)
-            ],
-            surroundings=obj.surroundings,
-            venues=obj.venues,
-            meal_schedule=obj.meal_schedule,
-            service_matrix=ServiceMatrixRead.from_obj(obj.service_matrix, locale),
-            avg_rating=obj.avg_rating,
-            review_count=obj.review_count,
-            rating_breakdown=RatingBreakdown(**(obj.rating_breakdown or {})),
-            admin_user_id=obj.admin_user_id,
-            platform_commission_percent=obj.platform_commission_percent,
-            b2b_commission_percent=obj.b2b_commission_percent,
-            agent_discount_tiers=[
-                AgentDiscountTier(**t) for t in (obj.agent_discount_tiers or [])
-            ],
-            created_at=obj.created_at,
-            updated_at=obj.updated_at,
-            images=[SanatoriumImageRead.model_validate(i) for i in obj.images],
-            amenities=[
-                SanatoriumAmenityRead.from_obj(link, locale)
-                for link in obj.amenity_links
-            ],
-            medical_base=MedicalBaseRead.from_obj(obj.medical_base, locale),
-            policies=SanatoriumPolicies.model_validate(obj.policies or {}),
+            **_public_core(obj, locale),
+            **_public_detail(obj, locale),
+            **_public_relations(obj, locale),
         )
 
 
 class SanatoriumAdminRead(_SanatoriumReadCommon):
-    """Admin read: i18n fields returned as {uz, ru, en} dicts."""
-
     model_config = ConfigDict(from_attributes=True)
 
     name: dict
@@ -322,6 +247,94 @@ class SanatoriumAdminList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+def _public_core(obj, locale: str) -> dict:
+    return {
+        "id": obj.id,
+        "slug": obj.slug,
+        "name": pick_locale(obj.name, locale),
+        "description": pick_locale(obj.description, locale),
+        "city": obj.city,
+        "region_id": obj.region_id,
+        "destination_id": obj.destination_id,
+        "address": pick_locale(obj.address, locale),
+        "lat": obj.lat,
+        "lng": obj.lng,
+        "phones": obj.phones,
+        "website": obj.website,
+        "stars": obj.stars,
+        "status": obj.status,
+        "created_at": obj.created_at,
+        "updated_at": obj.updated_at,
+    }
+
+
+def _public_detail(obj, locale: str) -> dict:
+    return {
+        "check_in_time": obj.check_in_time,
+        "check_out_time": obj.check_out_time,
+        "pets_allowed": obj.pets_allowed,
+        "service_animals_allowed": obj.service_animals_allowed,
+        "min_checkin_age": obj.min_checkin_age,
+        "quiet_hours_from": obj.quiet_hours_from,
+        "quiet_hours_to": obj.quiet_hours_to,
+        "payment_methods": obj.payment_methods,
+        "house_rules": pick_locale(obj.house_rules, locale),
+        "cancellation_policy": pick_locale(obj.cancellation_policy, locale),
+        "weekly_schedule": obj.weekly_schedule,
+        "property_type": obj.property_type,
+        "wellness_category": obj.wellness_category,
+        "treatment_focuses": obj.treatment_focuses,
+        "year_opened": obj.year_opened,
+        "languages_spoken": obj.languages_spoken,
+        "highlights": obj.highlights,
+        "is_featured": obj.is_featured,
+        "display_order": obj.display_order,
+        "surroundings": obj.surroundings,
+        "venues": obj.venues,
+        "meal_schedule": obj.meal_schedule,
+        "avg_rating": obj.avg_rating,
+        "review_count": obj.review_count,
+        "admin_user_id": obj.admin_user_id,
+        "platform_commission_percent": obj.platform_commission_percent,
+        "b2b_commission_percent": obj.b2b_commission_percent,
+    }
+
+
+def _public_relations(obj, locale: str) -> dict:
+    return {
+        "region": RegionRead.from_obj(obj.region, locale) if obj.region else None,
+        "destination": (
+            DestinationRead.from_obj(obj.destination, locale)
+            if obj.destination
+            else None
+        ),
+        "treatment_profile": TreatmentProfileRead.from_obj(
+            obj.treatment_profile, locale
+        ),
+        "promo_badges": _active_promo_badges(obj, locale),
+        "service_matrix": ServiceMatrixRead.from_obj(obj.service_matrix, locale),
+        "rating_breakdown": RatingBreakdown(**(obj.rating_breakdown or {})),
+        "agent_discount_tiers": [
+            AgentDiscountTier(**t) for t in (obj.agent_discount_tiers or [])
+        ],
+        "images": [SanatoriumImageRead.model_validate(i) for i in obj.images],
+        "amenities": [
+            SanatoriumAmenityRead.from_obj(link, locale)
+            for link in obj.amenity_links
+        ],
+        "medical_base": MedicalBaseRead.from_obj(obj.medical_base, locale),
+        "policies": SanatoriumPolicies.model_validate(obj.policies or {}),
+    }
+
+
+def _active_promo_badges(obj, locale: str) -> list[PromoBadgeRead]:
+    return [
+        PromoBadgeRead.from_obj(badge, locale)
+        for badge in (obj.promo_badges or [])
+        if (badge.get("is_active", True) if isinstance(badge, dict) else True)
+    ]
 
 
 def _normalize_tiers(value: list[AgentDiscountTier]) -> list[AgentDiscountTier]:

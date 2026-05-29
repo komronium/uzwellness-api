@@ -34,6 +34,18 @@ class _Candidate:
     region: Region | None
 
 
+@dataclass(slots=True)
+class _SearchContext:
+    locale: str
+    check_in: date
+    check_out: date
+    nights: int
+    adults: int
+    children: int
+    guests: int
+    dates: list[date]
+
+
 class SearchService:
     def __init__(self, db: AsyncSession, rates: ExchangeRateService) -> None:
         self.db = db
@@ -58,11 +70,19 @@ class SearchService:
         if nights <= 0:
             return [], 0
 
-        guests = adults + children
-        all_dates = list(date_range(check_in, check_out))
+        context = _SearchContext(
+            locale=locale,
+            check_in=check_in,
+            check_out=check_out,
+            nights=nights,
+            adults=adults,
+            children=children,
+            guests=adults + children,
+            dates=list(date_range(check_in, check_out)),
+        )
         candidates = await self._find_candidates(
             nights=nights,
-            guests=guests,
+            guests=context.guests,
             location=location,
             sanatorium_id=sanatorium_id,
             destination_id=destination_id,
@@ -71,46 +91,8 @@ class SearchService:
         if not candidates:
             return [], 0
 
-        max_used_by_room = await self._max_used_by_room(
-            room_ids=[candidate.room.id for candidate in candidates],
-            dates=all_dates,
-        )
-        rate = await self.rates.get_usd_uzs()
-
-        best_by_sanatorium: dict[uuid.UUID, tuple[StaySearchItem, Decimal | None]] = {}
-        for candidate in candidates:
-            room = candidate.room
-            rooms_needed = math.ceil(guests / room.capacity)
-            free_worst_case = max(
-                room.inventory_count - max_used_by_room.get(room.id, 0),
-                0,
-            )
-            if rooms_needed > free_worst_case:
-                continue
-
-            total = calculate_stay_total(room, all_dates, room.price_periods)
-            total *= rooms_needed
-            total = total.quantize(Decimal("0.01"))
-            total_usd = convert_to_usd(total, room.base_currency, rate)
-            item = self._to_item(
-                candidate,
-                room=room,
-                locale=locale,
-                check_in=check_in,
-                check_out=check_out,
-                nights=nights,
-                adults=adults,
-                children=children,
-                guests=guests,
-                rooms_needed=rooms_needed,
-                total=total,
-                total_usd=total_usd,
-            )
-            current = best_by_sanatorium.get(candidate.sanatorium.id)
-            if current is None or self._is_cheaper(item, current[0]):
-                best_by_sanatorium[candidate.sanatorium.id] = (item, total_usd)
-
-        items = [row[0] for row in best_by_sanatorium.values()]
+        available_items = await self._available_items(context, candidates)
+        items = self._cheapest_by_sanatorium(available_items)
         items.sort(
             key=lambda item: (
                 *self._comparison_price(item),
@@ -131,6 +113,35 @@ class SearchService:
         destination_id: uuid.UUID | None,
         treatment_focus: str | None,
     ) -> list[_Candidate]:
+        stmt = self._candidate_statement(
+            nights=nights,
+            guests=guests,
+            location=location,
+            sanatorium_id=sanatorium_id,
+            destination_id=destination_id,
+            treatment_focus=treatment_focus,
+        )
+        rows = (await self.db.execute(stmt)).all()
+        return [
+            _Candidate(
+                room=row[0],
+                sanatorium=row[1],
+                destination=row[2],
+                region=row[3],
+            )
+            for row in rows
+        ]
+
+    def _candidate_statement(
+        self,
+        *,
+        nights: int,
+        guests: int,
+        location: str | None,
+        sanatorium_id: uuid.UUID | None,
+        destination_id: uuid.UUID | None,
+        treatment_focus: str | None,
+    ):
         stmt = (
             select(Room, Sanatorium, Destination, Region)
             .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
@@ -157,33 +168,51 @@ class SearchService:
         if treatment_focus:
             stmt = stmt.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
         if location and location.strip():
-            term = location.strip()
-            stmt = stmt.where(
-                Sanatorium.name["uz"].astext.icontains(term, autoescape=True)
-                | Sanatorium.name["ru"].astext.icontains(term, autoescape=True)
-                | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
-                | Sanatorium.city.icontains(term, autoescape=True)
-                | Sanatorium.slug.icontains(term, autoescape=True)
-                | Destination.slug.icontains(term, autoescape=True)
-                | Destination.name["uz"].astext.icontains(term, autoescape=True)
-                | Destination.name["ru"].astext.icontains(term, autoescape=True)
-                | Destination.name["en"].astext.icontains(term, autoescape=True)
-                | Region.slug.icontains(term, autoescape=True)
-                | Region.name["uz"].astext.icontains(term, autoescape=True)
-                | Region.name["ru"].astext.icontains(term, autoescape=True)
-                | Region.name["en"].astext.icontains(term, autoescape=True)
-            )
+            stmt = stmt.where(_location_clause(location.strip()))
+        return stmt
 
-        rows = (await self.db.execute(stmt)).all()
-        return [
-            _Candidate(
-                room=row[0],
-                sanatorium=row[1],
-                destination=row[2],
-                region=row[3],
-            )
-            for row in rows
-        ]
+    async def _available_items(
+        self, context: _SearchContext, candidates: list[_Candidate]
+    ) -> list[StaySearchItem]:
+        max_used_by_room = await self._max_used_by_room(
+            room_ids=[candidate.room.id for candidate in candidates],
+            dates=context.dates,
+        )
+        rate = await self.rates.get_usd_uzs()
+        items: list[StaySearchItem] = []
+        for candidate in candidates:
+            item = self._candidate_item(candidate, context, max_used_by_room, rate)
+            if item is not None:
+                items.append(item)
+        return items
+
+    def _candidate_item(
+        self,
+        candidate: _Candidate,
+        context: _SearchContext,
+        max_used_by_room: dict[uuid.UUID, int],
+        rate,
+    ) -> StaySearchItem | None:
+        room = candidate.room
+        rooms_needed = math.ceil(context.guests / room.capacity)
+        free_worst_case = max(
+            room.inventory_count - max_used_by_room.get(room.id, 0),
+            0,
+        )
+        if rooms_needed > free_worst_case:
+            return None
+
+        total = calculate_stay_total(room, context.dates, room.price_periods)
+        total = (total * rooms_needed).quantize(Decimal("0.01"))
+        total_usd = convert_to_usd(total, room.base_currency, rate)
+        return self._to_item(
+            candidate,
+            context=context,
+            room=room,
+            rooms_needed=rooms_needed,
+            total=total,
+            total_usd=total_usd,
+        )
 
     async def _max_used_by_room(
         self, *, room_ids: list[uuid.UUID], dates: list[date]
@@ -209,14 +238,8 @@ class SearchService:
         self,
         candidate: _Candidate,
         *,
+        context: _SearchContext,
         room: Room,
-        locale: str,
-        check_in: date,
-        check_out: date,
-        nights: int,
-        adults: int,
-        children: int,
-        guests: int,
         rooms_needed: int,
         total: Decimal,
         total_usd: Decimal | None,
@@ -225,14 +248,14 @@ class SearchService:
         return StaySearchItem(
             sanatorium_id=sanatorium.id,
             sanatorium_slug=sanatorium.slug,
-            sanatorium_name=pick_locale(sanatorium.name, locale),
+            sanatorium_name=pick_locale(sanatorium.name, context.locale),
             city=sanatorium.city,
             region_id=sanatorium.region_id,
-            region_name=pick_locale(candidate.region.name, locale)
+            region_name=pick_locale(candidate.region.name, context.locale)
             if candidate.region
             else None,
             destination_id=sanatorium.destination_id,
-            destination_name=pick_locale(candidate.destination.name, locale)
+            destination_name=pick_locale(candidate.destination.name, context.locale)
             if candidate.destination
             else None,
             primary_image_url=_primary_image_url(sanatorium.images),
@@ -242,19 +265,29 @@ class SearchService:
             property_type=sanatorium.property_type,
             wellness_category=sanatorium.wellness_category,
             treatment_focuses=sanatorium.treatment_focuses,
-            check_in=check_in,
-            check_out=check_out,
-            nights=nights,
-            adults=adults,
-            children=children,
-            guests=guests,
+            check_in=context.check_in,
+            check_out=context.check_out,
+            nights=context.nights,
+            adults=context.adults,
+            children=context.children,
+            guests=context.guests,
             available_room_id=room.id,
-            available_room_name=pick_locale(room.name, locale),
+            available_room_name=pick_locale(room.name, context.locale),
             rooms_count_needed=rooms_needed,
             min_total_price=total,
             min_total_price_currency=room.base_currency,
             min_total_price_usd=total_usd,
         )
+
+    def _cheapest_by_sanatorium(
+        self, items: list[StaySearchItem]
+    ) -> list[StaySearchItem]:
+        best_by_sanatorium: dict[uuid.UUID, StaySearchItem] = {}
+        for item in items:
+            current = best_by_sanatorium.get(item.sanatorium_id)
+            if current is None or self._is_cheaper(item, current):
+                best_by_sanatorium[item.sanatorium_id] = item
+        return list(best_by_sanatorium.values())
 
     def _is_cheaper(self, candidate: StaySearchItem, current: StaySearchItem) -> bool:
         return self._comparison_price(candidate) < self._comparison_price(current)
@@ -271,6 +304,24 @@ def _primary_image_url(images: list[SanatoriumImage]) -> str | None:
         return None
     primary = next((image for image in images if image.is_primary), None)
     return (primary or images[0]).url
+
+
+def _location_clause(term: str):
+    return (
+        Sanatorium.name["uz"].astext.icontains(term, autoescape=True)
+        | Sanatorium.name["ru"].astext.icontains(term, autoescape=True)
+        | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
+        | Sanatorium.city.icontains(term, autoescape=True)
+        | Sanatorium.slug.icontains(term, autoescape=True)
+        | Destination.slug.icontains(term, autoescape=True)
+        | Destination.name["uz"].astext.icontains(term, autoescape=True)
+        | Destination.name["ru"].astext.icontains(term, autoescape=True)
+        | Destination.name["en"].astext.icontains(term, autoescape=True)
+        | Region.slug.icontains(term, autoescape=True)
+        | Region.name["uz"].astext.icontains(term, autoescape=True)
+        | Region.name["ru"].astext.icontains(term, autoescape=True)
+        | Region.name["en"].astext.icontains(term, autoescape=True)
+    )
 
 
 def get_search_service(
