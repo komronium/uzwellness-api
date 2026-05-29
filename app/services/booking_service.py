@@ -13,11 +13,7 @@ from app.core.utils import today_tashkent
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
-from app.models.package import Package
 from app.models.payment import Payment, PaymentStatus
-from app.models.program import TreatmentProgram
-from app.models.room import Room
-from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
 from app.services.booking_flows import (
@@ -27,6 +23,10 @@ from app.services.booking_flows import (
     SessionBookingFlow,
 )
 from app.services.booking_pricing_policy import BookingPricingPolicy
+from app.services.booking_visibility import (
+    admin_owns_booking_sanatorium,
+    booking_visibility_clauses,
+)
 from app.services.email_service import BookingEmailContext, send_booking_cancelled
 
 _LOAD_OPTIONS = (
@@ -70,7 +70,7 @@ class BookingService:
         is_b2b: bool | None = None,
         agent_id: uuid.UUID | None = None,
     ) -> tuple[Sequence[Booking], int]:
-        filters = self._visibility_clauses(user)
+        filters = booking_visibility_clauses(user)
         if is_b2b is not None:
             filters.append(Booking.is_b2b.is_(is_b2b))
         if agent_id is not None and user.role == UserRole.SUPER_ADMIN:
@@ -97,7 +97,7 @@ class BookingService:
             .options(*_LOAD_OPTIONS)
             .where(Booking.id == booking_id)
         )
-        for clause in self._visibility_clauses(user):
+        for clause in booking_visibility_clauses(user):
             stmt = stmt.where(clause)
         return await self.db.scalar(stmt)
 
@@ -139,39 +139,12 @@ class BookingService:
             self._notify_cancelled(booking, user, sanatorium_name)
         return await self._load(booking.id)  # type: ignore[return-value]
 
-    def _visibility_clauses(self, user: User) -> list:
-        if user.role == UserRole.SUPER_ADMIN:
-            return []
-        if user.role == UserRole.ADMIN:
-            room_sub = (
-                select(Room.id)
-                .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
-                .where(Sanatorium.admin_user_id == user.id)
-                .scalar_subquery()
-            )
-            program_sub = (
-                select(TreatmentProgram.id)
-                .join(Sanatorium, TreatmentProgram.sanatorium_id == Sanatorium.id)
-                .where(Sanatorium.admin_user_id == user.id)
-                .scalar_subquery()
-            )
-            package_sub = (
-                select(Package.id)
-                .join(Sanatorium, Package.sanatorium_id == Sanatorium.id)
-                .where(Sanatorium.admin_user_id == user.id)
-                .scalar_subquery()
-            )
-            return [
-                Booking.room_id.in_(room_sub)
-                | Booking.program_id.in_(program_sub)
-                | Booking.package_id.in_(package_sub)
-            ]
-        return [Booking.user_id == user.id]
-
     async def _assert_can_cancel(self, booking: Booking, user: User) -> None:
         admin_owns = False
         if user.role == UserRole.ADMIN:
-            admin_owns = await self._admin_owns_booking_sanatorium(booking, user)
+            admin_owns = await admin_owns_booking_sanatorium(
+                self.db, booking, user.id
+            )
         reason = BookingPolicy.cancel_block_reason(
             booking, user, admin_owns_target=admin_owns
         )
@@ -183,41 +156,6 @@ class BookingService:
             else status.HTTP_403_FORBIDDEN
         )
         raise HTTPException(status_code=status_code, detail=reason)
-
-    async def _admin_owns_booking_sanatorium(
-        self, booking: Booking, user: User
-    ) -> bool:
-        """Does the admin actor own the sanatorium this booking belongs to?
-
-        Resolves the booking's sanatorium via whichever link is set
-        (room/program/package). Returns False if no link survives — a
-        cancelled-and-detached booking can't be re-cancelled by an admin
-        whose ownership can't be traced.
-        """
-        sanatorium_id: uuid.UUID | None = None
-        if booking.room_id is not None:
-            sanatorium_id = await self.db.scalar(
-                select(Room.sanatorium_id).where(Room.id == booking.room_id)
-            )
-        elif booking.program_id is not None:
-            sanatorium_id = await self.db.scalar(
-                select(TreatmentProgram.sanatorium_id).where(
-                    TreatmentProgram.id == booking.program_id
-                )
-            )
-        elif booking.package_id is not None:
-            sanatorium_id = await self.db.scalar(
-                select(Package.sanatorium_id).where(
-                    Package.id == booking.package_id
-                )
-            )
-
-        if sanatorium_id is None:
-            return False
-        admin_id = await self.db.scalar(
-            select(Sanatorium.admin_user_id).where(Sanatorium.id == sanatorium_id)
-        )
-        return admin_id == user.id
 
     async def _mark_payments_for_refund(self, booking_id: uuid.UUID) -> None:
         payments = (

@@ -5,193 +5,43 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
-from app.models.amenity import AmenityCost
 from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
-from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
 from app.schemas.destination import DestinationAdminRead, DestinationRead
 from app.schemas.region import RegionAdminRead, RegionRead
+from app.schemas.sanatorium_components import (
+    MealService,
+    PromoBadge,
+    PromoBadgeRead,
+    RatingBreakdown,
+    SanatoriumAmenityAdminRead,
+    SanatoriumAmenityItem,
+    SanatoriumAmenityRead,
+    Surrounding,
+    Venue,
+)
+from app.schemas.sanatorium_media import SanatoriumImageRead, SanatoriumImageUpdate
 from app.schemas.sanatorium_medical import (
     MedicalBase,
     MedicalBaseRead,
-    ServiceMatrix,
-    ServiceMatrixRead,
     TreatmentProfile,
     TreatmentProfileRead,
 )
+from app.schemas.sanatorium_service_matrix import (
+    ServiceMatrix,
+    ServiceMatrixRead,
+)
 from app.schemas.sanatorium_policies import SanatoriumPolicies
+
+__all__ = (
+    "SanatoriumImageRead",
+    "SanatoriumImageUpdate",
+)
 
 
 class AgentDiscountTier(BaseModel):
     min_bookings: int = Field(ge=1, le=10000)
     discount_percent: Decimal = Field(ge=0, le=100)
-
-
-TREATMENT_FOCUS_VALUES = frozenset(
-    {
-        "cardiovascular",
-        "digestive",
-        "musculoskeletal",
-        "respiratory",
-        "neurological",
-        "dermatology",
-        "endocrine",
-        "wellness",
-    }
-)
-
-PAYMENT_METHOD_VALUES = frozenset(
-    {
-        "cash",
-        "bank_transfer",
-        "uzcard",
-        "visa",
-        "mastercard",
-        "jcb",
-        "unionpay",
-        "mir",
-    }
-)
-
-
-class SanatoriumImageRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    url: str
-    order: int
-    is_primary: bool
-    is_360: bool
-    category: str | None
-    caption: str | None
-    caption_i18n: dict
-    alt_text: dict
-    tags: list[str]
-    created_at: datetime
-
-
-class SanatoriumImageUpdate(BaseModel):
-    is_primary: bool | None = None
-    is_360: bool | None = None
-    category: str | None = Field(default=None, max_length=40)
-    order: int | None = Field(default=None, ge=0)
-    caption: str | None = Field(default=None, max_length=255)
-    caption_i18n: Translations | None = None
-    alt_text: Translations | None = None
-    tags: list[str] | None = None
-
-
-class SanatoriumAmenityItem(BaseModel):
-    amenity_id: uuid.UUID
-    cost: AmenityCost = AmenityCost.FREE
-    is_available: bool = True
-
-
-class SanatoriumAmenityRead(BaseModel):
-    cost: AmenityCost
-    is_available: bool
-    amenity: AmenityRead
-
-    @classmethod
-    def from_obj(cls, link, locale: str) -> "SanatoriumAmenityRead":
-        return cls(
-            cost=link.cost,
-            is_available=link.is_available,
-            amenity=AmenityRead.from_obj(link.amenity, locale),
-        )
-
-
-class SanatoriumAmenityAdminRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    cost: AmenityCost
-    is_available: bool
-    amenity: AmenityAdminRead
-
-
-class Surrounding(BaseModel):
-    """A nearby point of interest, e.g. 'Chor Minor Monument, attraction, 440m'."""
-
-    name: str = Field(min_length=1, max_length=200)
-    type: str = Field(min_length=1, max_length=40)
-    distance_m: int = Field(ge=0)
-
-
-class Venue(BaseModel):
-    """An on-site venue, e.g. 'Charlston restaurant (buffet) in Blue House'."""
-
-    name: str = Field(min_length=1, max_length=120)
-    type: str = Field(min_length=1, max_length=40)
-    building: str | None = Field(default=None, max_length=120)
-    hours: str | None = Field(default=None, max_length=120)
-
-
-_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
-
-
-class MealService(BaseModel):
-    """A meal serving window, e.g. 'breakfast 07:30-10:30 buffet'."""
-
-    meal: str = Field(min_length=1, max_length=40)
-    time_from: str = Field(pattern=_HHMM)
-    time_to: str = Field(pattern=_HHMM)
-    style: str | None = Field(default=None, max_length=40)
-
-
-class PromoBadge(BaseModel):
-    code: str = Field(..., min_length=1, max_length=80)
-    kind: str = Field(default="info", min_length=1, max_length=40)
-    title: Translations = Field(default_factory=Translations)
-    description: Translations = Field(default_factory=Translations)
-    icon: str | None = Field(default=None, max_length=100)
-    is_active: bool = True
-    priority: int = Field(default=0, ge=0)
-    valid_until: datetime | None = None
-
-
-class PromoBadgeRead(BaseModel):
-    code: str
-    kind: str
-    title: str
-    description: str
-    icon: str | None = None
-    is_active: bool
-    priority: int
-    valid_until: datetime | None = None
-
-    @classmethod
-    def from_obj(cls, obj: dict | BaseModel, locale: str) -> "PromoBadgeRead":
-        if isinstance(obj, dict):
-            return cls(
-                code=obj.get("code", ""),
-                kind=obj.get("kind", "info"),
-                title=pick_locale(obj.get("title", {}) or {}, locale),
-                description=pick_locale(obj.get("description", {}) or {}, locale),
-                icon=obj.get("icon"),
-                is_active=obj.get("is_active", True),
-                priority=obj.get("priority", 0),
-                valid_until=obj.get("valid_until"),
-            )
-        return cls(
-            code=getattr(obj, "code", ""),
-            kind=getattr(obj, "kind", "info"),
-            title=pick_locale(getattr(obj, "title", {}) or {}, locale),
-            description=pick_locale(getattr(obj, "description", {}) or {}, locale),
-            icon=getattr(obj, "icon", None),
-            is_active=getattr(obj, "is_active", True),
-            priority=getattr(obj, "priority", 0),
-            valid_until=getattr(obj, "valid_until", None),
-        )
-
-
-class RatingBreakdown(BaseModel):
-    cleanliness: Decimal | None = None
-    amenities: Decimal | None = None
-    location: Decimal | None = None
-    service: Decimal | None = None
-    treatment: Decimal | None = None
-    value: Decimal | None = None
-    food: Decimal | None = None
 
 
 class SanatoriumCreate(BaseModel):

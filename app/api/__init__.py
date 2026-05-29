@@ -19,8 +19,12 @@ from app.api.routers import (
     rate_plans,
     regions,
     reviews,
+    room_availability,
     room_images,
     rooms,
+    sanatorium_featured,
+    sanatorium_images,
+    sanatorium_search,
     sanatoriums,
     transfers,
     treatment_focuses,
@@ -33,8 +37,12 @@ api_router.include_router(health.router)
 api_router.include_router(meta.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
+api_router.include_router(sanatorium_search.router)
+api_router.include_router(sanatorium_featured.router)
 api_router.include_router(sanatoriums.router)
+api_router.include_router(sanatorium_images.router)
 api_router.include_router(rooms.router)
+api_router.include_router(room_availability.router)
 api_router.include_router(room_images.router)
 api_router.include_router(exchange_rates.router)
 api_router.include_router(bookings.router)

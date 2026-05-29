@@ -86,7 +86,6 @@ class TransferRequestService:
         self, transfer: TransferRequest, payload: TransferRequestUpdate
     ) -> TransferRequest:
         data = payload.model_dump(exclude_unset=True)
-        # If price is being set but currency would still be NULL, reject.
         new_price = data.get("price", transfer.price)
         new_currency = data.get("currency", transfer.currency)
         if new_price is not None and new_currency is None:

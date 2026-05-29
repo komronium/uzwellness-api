@@ -9,8 +9,22 @@ from app.core.utils import pick_locale
 from app.models.room import RoomView
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.room_availability import (
+    AvailabilityBlock,
+    AvailabilityRead,
+    AvailabilityUpsert,
+)
+from app.schemas.room_image import RoomImageRead, RoomImageUpdate
 
 BedType = Literal["single", "double", "twin", "queen", "king", "sofa_bed", "bunk"]
+
+__all__ = (
+    "AvailabilityBlock",
+    "AvailabilityRead",
+    "AvailabilityUpsert",
+    "RoomImageRead",
+    "RoomImageUpdate",
+)
 
 
 def normalize_floor(value) -> str | None:
@@ -133,35 +147,6 @@ class RoomFeatures(BaseModel):
     )
     comfort: RoomComfortFeatures = Field(default_factory=RoomComfortFeatures)
     highlights: list[str] = Field(default_factory=list)
-
-
-class RoomImageRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    url: str
-    order: int
-    is_primary: bool
-    is_video: bool
-    is_360: bool
-    category: str | None
-    caption: str | None
-    caption_i18n: dict
-    alt_text: dict
-    tags: list[str]
-    created_at: datetime
-
-
-class RoomImageUpdate(BaseModel):
-    is_primary: bool | None = None
-    is_video: bool | None = None
-    is_360: bool | None = None
-    category: str | None = Field(default=None, max_length=40)
-    order: int | None = Field(default=None, ge=0)
-    caption: str | None = Field(default=None, max_length=255)
-    caption_i18n: Translations | None = None
-    alt_text: Translations | None = None
-    tags: list[str] | None = None
 
 
 class RoomCreate(BaseModel):
@@ -322,34 +307,6 @@ class RoomSearchResult(RoomRead):
     available: bool
     rooms_count_needed: int
     unavailable_reason: str | None = None
-
-
-class AvailabilityBlock(BaseModel):
-    """Block (close) units across a date range — e.g. for maintenance.
-
-    `date_to` is exclusive (matches booking semantics).
-    """
-
-    date_from: date
-    date_to: date
-    units_blocked: int = Field(ge=0, description="Units to mark blocked per day")
-
-
-class AvailabilityUpsert(BaseModel):
-    units_blocked: int = Field(ge=0)
-
-
-class AvailabilityRead(BaseModel):
-    """Per-day availability row (computed view).
-
-    `units_available = inventory_count - units_blocked - units_booked`.
-    """
-
-    date: date
-    inventory_count: int
-    units_blocked: int
-    units_booked: int
-    units_available: int
 
 
 class RoomPricePeriodCreate(BaseModel):

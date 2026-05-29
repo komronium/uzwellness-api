@@ -57,8 +57,6 @@ class TransferRequestCreate(BaseModel):
 
 
 class TransferRequestUpdate(BaseModel):
-    """Super-admin patch: dispatch + pricing fields."""
-
     status: TransferStatus | None = None
     vehicle_type: VehicleType | None = None
     price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
@@ -66,15 +64,6 @@ class TransferRequestUpdate(BaseModel):
     driver_name: str | None = Field(default=None, max_length=255)
     driver_phone: str | None = Field(default=None, max_length=32)
     admin_notes: str | None = Field(default=None, max_length=2000)
-
-    @model_validator(mode="after")
-    def _price_pair(self):
-        # If price is set, currency must be set in the same patch (or be already present on the row).
-        # We can't see the row here, so only enforce co-arrival of price + currency when both are nullable.
-        if (self.price is not None) and (self.currency is None):
-            # currency may still be already set on the row; defer to service-side check
-            pass
-        return self
 
 
 class TransferRequestRead(BaseModel):

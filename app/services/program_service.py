@@ -49,11 +49,7 @@ class ProgramService:
             self.db, payload.sanatorium_id, user, action=_ACTION
         )
         self._validate_nights(payload.min_nights, payload.max_nights)
-        if (payload.price is None) != (payload.currency is None):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="price and currency must be set together",
-            )
+        self._assert_price_currency_pair(payload.price, payload.currency)
         if payload.focus_id is not None:
             await self._assert_focus_exists(payload.focus_id)
 
@@ -101,16 +97,9 @@ class ProgramService:
             data.get("max_nights", program.max_nights),
         )
 
-        # price and currency must move together — same invariant as create.
-        # Check against the post-merge values to catch partial PATCHes that
-        # would leave one set and the other NULL.
         final_price = data.get("price", program.price)
         final_currency = data.get("currency", program.currency)
-        if (final_price is None) != (final_currency is None):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="price and currency must be set together",
-            )
+        self._assert_price_currency_pair(final_price, final_currency)
         if "focus_id" in data and data["focus_id"] is not None:
             await self._assert_focus_exists(data["focus_id"])
 
@@ -143,6 +132,13 @@ class ProgramService:
                 detail="max_nights must be >= min_nights",
             )
 
+    @staticmethod
+    def _assert_price_currency_pair(price, currency) -> None:
+        if (price is None) != (currency is None):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="price and currency must be set together",
+            )
 
     async def _assert_focus_exists(self, focus_id: uuid.UUID) -> None:
         focus = await self.db.get(TreatmentFocus, focus_id)

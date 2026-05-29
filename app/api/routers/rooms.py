@@ -17,14 +17,16 @@ from app.api.deps import (
     not_found,
     require_roles,
 )
+from app.api.room_mapping import (
+    room_admin_list,
+    room_admin_read,
+    room_public_list,
+    room_public_read,
+    room_search_result,
+)
 from app.core.pagination import Pagination
-from app.core.pricing import enrich_room
-from app.models.room import Room
 from app.models.user import UserRole
 from app.schemas.room import (
-    AvailabilityBlock,
-    AvailabilityRead,
-    AvailabilityUpsert,
     RoomAdminList,
     RoomAdminRead,
     RoomCreate,
@@ -38,33 +40,6 @@ from app.services.room_service import RoomService, get_room_service
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-
-
-def _public_room(
-    room: Room,
-    pricing: dict,
-    *,
-    locale: str,
-    has_availability: bool | None = None,
-) -> RoomRead:
-    if has_availability is None:
-        has_availability = room.is_active and room.inventory_count >= 1
-    return RoomRead.from_obj(room, locale).model_copy(
-        update={**pricing, "has_availability": has_availability}
-    )
-
-
-def _admin_room(
-    room: Room,
-    pricing: dict,
-    *,
-    has_availability: bool | None = None,
-) -> RoomAdminRead:
-    if has_availability is None:
-        has_availability = room.is_active and room.inventory_count >= 1
-    return RoomAdminRead.model_validate(room).model_copy(
-        update={**pricing, "has_availability": has_availability}
-    )
 
 
 @router.get("", response_model=RoomList | RoomAdminList)
@@ -91,28 +66,15 @@ async def list_rooms(
     has_avail = await rooms.has_availability_map([r.id for r in items])
     if include_translations:
         return RoomAdminList(
-            items=[
-                _admin_room(
-                    r,
-                    enrich_room(r, rate),
-                    has_availability=has_avail.get(r.id, False),
-                )
-                for r in items
-            ],
+            items=room_admin_list(list(items), rate=rate, availability=has_avail),
             total=total,
             limit=page.limit,
             offset=page.offset,
         )
     return RoomList(
-        items=[
-            _public_room(
-                r,
-                enrich_room(r, rate),
-                locale=locale,
-                has_availability=has_avail.get(r.id, False),
-            )
-            for r in items
-        ],
+        items=room_public_list(
+            list(items), locale=locale, rate=rate, availability=has_avail
+        ),
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -139,23 +101,7 @@ async def search_rooms(
         guests=guests,
         sanatorium_id=sanatorium_id,
     )
-    results: list[RoomSearchResult] = []
-    for hit in hits:
-        base = _public_room(
-            hit.room,
-            hit.pricing,
-            locale=locale,
-            has_availability=hit.room.is_active and hit.room.inventory_count >= 1,
-        )
-        results.append(
-            RoomSearchResult(
-                **base.model_dump(),
-                available=hit.available,
-                rooms_count_needed=hit.rooms_count_needed,
-                unavailable_reason=hit.unavailable_reason,
-            )
-        )
-    return results
+    return [room_search_result(hit, locale=locale) for hit in hits]
 
 
 @router.get("/{room_id}", response_model=RoomRead | RoomAdminRead)
@@ -170,8 +116,8 @@ async def get_room(
         raise not_found("Room not found")
     pricing = await rooms.enrich(room)
     if include_translations:
-        return _admin_room(room, pricing)
-    return _public_room(room, pricing, locale=locale)
+        return room_admin_read(room, pricing)
+    return room_public_read(room, pricing, locale=locale)
 
 
 @router.post(
@@ -186,7 +132,7 @@ async def create_room(
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomAdminRead:
     room = await rooms.create(payload, current_user)
-    return _admin_room(room, await rooms.enrich(room))
+    return room_admin_read(room, await rooms.enrich(room))
 
 
 @router.patch(
@@ -204,7 +150,7 @@ async def update_room(
     if room is None:
         raise not_found("Room not found")
     updated = await rooms.update(room, payload, current_user)
-    return _admin_room(updated, await rooms.enrich(updated))
+    return room_admin_read(updated, await rooms.enrich(updated))
 
 
 @router.delete(
@@ -221,82 +167,4 @@ async def delete_room(
     if room is None:
         raise not_found("Room not found")
     await rooms.delete(room, current_user)
-
-
-@router.get("/{room_id}/availability", response_model=list[AvailabilityRead])
-async def get_room_availability(
-    room_id: uuid.UUID,
-    date_from: date = Query(..., alias="from"),
-    date_to: date = Query(..., alias="to"),
-    rooms: RoomService = Depends(get_room_service),
-) -> list[AvailabilityRead]:
-    room = await rooms.get_by_id(room_id)
-    if room is None:
-        raise not_found("Room not found")
-    rows = await rooms.get_availability(room, date_from, date_to)
-    return [
-        AvailabilityRead(
-            date=r.date,
-            inventory_count=r.inventory_count,
-            units_blocked=r.units_blocked,
-            units_booked=r.units_booked,
-            units_available=r.units_available,
-        )
-        for r in rows
-    ]
-
-
-@router.post(
-    "/{room_id}/availability/block",
-    response_model=list[AvailabilityRead],
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_or_above)],
-)
-async def block_availability_range(
-    room_id: uuid.UUID,
-    payload: AvailabilityBlock,
-    current_user: CurrentUser,
-    rooms: RoomService = Depends(get_room_service),
-) -> list[AvailabilityRead]:
-    room = await rooms.get_by_id(room_id)
-    if room is None:
-        raise not_found("Room not found")
-    rows = await rooms.block_range(room, payload, current_user)
-    return [
-        AvailabilityRead(
-            date=r.date,
-            inventory_count=r.inventory_count,
-            units_blocked=r.units_blocked,
-            units_booked=r.units_booked,
-            units_available=r.units_available,
-        )
-        for r in rows
-    ]
-
-
-@router.patch(
-    "/{room_id}/availability/{target_date}",
-    response_model=AvailabilityRead,
-    dependencies=[Depends(require_admin_or_above)],
-)
-async def upsert_room_availability(
-    room_id: uuid.UUID,
-    target_date: date,
-    payload: AvailabilityUpsert,
-    current_user: CurrentUser,
-    rooms: RoomService = Depends(get_room_service),
-) -> AvailabilityRead:
-    room = await rooms.get_by_id(room_id)
-    if room is None:
-        raise not_found("Room not found")
-    row = await rooms.set_blocked_for_date(
-        room, target_date, payload.units_blocked, current_user
-    )
-    return AvailabilityRead(
-        date=row.date,
-        inventory_count=row.inventory_count,
-        units_blocked=row.units_blocked,
-        units_booked=row.units_booked,
-        units_available=row.units_available,
-    )
 
