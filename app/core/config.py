@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "UzWellness API"
     API_PREFIX: str = "/api"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     DATABASE_URL: PostgresDsn
     TEST_DATABASE_URL: PostgresDsn | None = None

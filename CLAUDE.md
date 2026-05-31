@@ -309,6 +309,28 @@ db  # har test uchun yangi session, keyin truncate
 client  # ASGI test client, dependency override qilingan
 ```
 
+## Ishlash qoidalari
+
+### Code quality
+Ish tugagandan oldin:
+```bash
+ruff check .
+ruff format .
+pytest  # yoki tegishli testlar
+```
+
+### Code review ustuvorligi
+1. Security  2. Data integrity  3. Reliability  4. Correctness  5. Performance  6. Maintainability  7. Style
+
+### Opportunity scanner
+Ish davomida aloqasi yo'q yaxshilanishlarni (xavfsizlik, performance, soddalik) ko'rsangiz — alohida xabar bering, so'ralmasa implement qilmang.
+
+### Qaror formati
+Muhim qarorlar uchun: variantlar, trade-off'lar, tavsiya va sabab ko'rsating.
+
+### Backend preferences
+Python type hints, FastAPI best practices, dependency injection, explicit validation, proper error handling.
+
 ## Fayl qo'shish tartibi
 
 Yangi entity uchun (masalan `Payment`):

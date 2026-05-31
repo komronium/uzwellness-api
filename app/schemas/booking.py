@@ -86,6 +86,7 @@ class BookingRead(BaseModel):
     payments: list[BookingPaymentSummary] = Field(default_factory=list)
     customer: BookingCustomerRead | None = None
     created_at: datetime
+    updated_at: datetime
 
 
 class BookingList(BaseModel):

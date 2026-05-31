@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
+from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
 
 
@@ -35,6 +36,7 @@ class RatePlanCreate(BaseModel):
     promo_ends_at: datetime | None = None
     min_nights: int | None = Field(default=None, ge=1)
     max_nights: int | None = Field(default=None, ge=1)
+    amenity_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class RatePlanUpdate(BaseModel):
@@ -63,6 +65,7 @@ class RatePlanUpdate(BaseModel):
     min_nights: int | None = Field(default=None, ge=1)
     max_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
+    amenity_ids: list[uuid.UUID] | None = None
 
 
 class _RatePlanCommon(BaseModel):
@@ -92,6 +95,7 @@ class _RatePlanCommon(BaseModel):
 
 class RatePlanRead(_RatePlanCommon):
     name: str
+    amenities: list[AmenityRead] = Field(default_factory=list)
 
     @classmethod
     def from_obj(cls, obj, locale: str) -> "RatePlanRead":
@@ -119,6 +123,7 @@ class RatePlanRead(_RatePlanCommon):
             is_active=obj.is_active,
             created_at=obj.created_at,
             updated_at=obj.updated_at,
+            amenities=[AmenityRead.from_obj(a, locale) for a in obj.amenities],
         )
 
 
@@ -126,6 +131,7 @@ class RatePlanAdminRead(_RatePlanCommon):
     model_config = ConfigDict(from_attributes=True)
 
     name: dict
+    amenities: list[AmenityAdminRead] = Field(default_factory=list)
 
 
 class RatePlanList(BaseModel):

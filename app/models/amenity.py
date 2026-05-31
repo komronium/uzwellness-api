@@ -24,6 +24,7 @@ from app.core.ids import uuid7
 
 if TYPE_CHECKING:
     from app.models.program import TreatmentProgram
+    from app.models.rate_plan import RatePlan
     from app.models.sanatorium import Sanatorium
 
 
@@ -67,6 +68,23 @@ room_amenities = Table(
     ),
 )
 
+rate_plan_amenities = Table(
+    "rate_plan_amenities",
+    Base.metadata,
+    Column(
+        "rate_plan_id",
+        Uuid,
+        ForeignKey("rate_plans.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "amenity_id",
+        Uuid,
+        ForeignKey("amenities.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
 
 class Amenity(Base):
     __tablename__ = "amenities"
@@ -84,6 +102,9 @@ class Amenity(Base):
 
     programs: Mapped[list["TreatmentProgram"]] = relationship(
         secondary=program_amenities, back_populates="amenities"
+    )
+    rate_plans: Mapped[list["RatePlan"]] = relationship(
+        secondary=rate_plan_amenities, back_populates="amenities"
     )
 
 

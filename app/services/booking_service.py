@@ -77,9 +77,7 @@ class BookingService:
         base = select(Booking)
         for clause in filters:
             base = base.where(clause)
-        total = await self.db.scalar(
-            select(func.count()).select_from(base.subquery())
-        )
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
         stmt = (
             base.options(*_LOAD_OPTIONS)
             .order_by(Booking.created_at.desc())
@@ -90,59 +88,57 @@ class BookingService:
         return rows, total or 0
 
     async def get_visible(self, booking_id: uuid.UUID, user: User) -> Booking | None:
-        stmt = (
-            select(Booking)
-            .options(*_LOAD_OPTIONS)
-            .where(Booking.id == booking_id)
-        )
+        stmt = select(Booking).options(*_LOAD_OPTIONS).where(Booking.id == booking_id)
         for clause in booking_visibility_clauses(user):
             stmt = stmt.where(clause)
         return await self.db.scalar(stmt)
 
     async def cancel(self, booking: Booking, user: User) -> Booking:
-        await self._assert_can_cancel(booking, user)
+        locked = await self.db.scalar(
+            select(Booking).where(Booking.id == booking.id).with_for_update()
+        )
+        if locked is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+            )
+        await self._assert_can_cancel(locked, user)
 
         if (
-            booking.booking_type in (BookingType.ROOM, BookingType.PACKAGE)
-            and booking.room_id is not None
+            locked.booking_type in (BookingType.ROOM, BookingType.PACKAGE)
+            and locked.room_id is not None
         ):
             avail_rows = (
                 await self.db.scalars(
                     select(RoomAvailability)
                     .where(
-                        RoomAvailability.room_id == booking.room_id,
-                        RoomAvailability.date >= booking.check_in,
-                        RoomAvailability.date < booking.check_out,
+                        RoomAvailability.room_id == locked.room_id,
+                        RoomAvailability.date >= locked.check_in,
+                        RoomAvailability.date < locked.check_out,
                     )
                     .with_for_update()
                 )
             ).all()
             for row in avail_rows:
-                row.units_booked = max(row.units_booked - booking.rooms_count, 0)
+                row.units_booked = max(row.units_booked - locked.rooms_count, 0)
 
-        booking.status = BookingStatus.CANCELLED
-        # Flip payments into refund-pending / cancelled. Actual refund
-        # processing is gateway-specific and out of scope here — this just
-        # gives finance a queryable list of money to return.
-        await self._mark_payments_for_refund(booking.id)
+        locked.status = BookingStatus.CANCELLED
+        await self._mark_payments_for_refund(locked.id)
         self.db.add(
             Notification(
-                booking_id=booking.id, type="booking_cancelled", channel="email"
+                booking_id=locked.id, type="booking_cancelled", channel="email"
             )
         )
         await self.db.commit()
 
-        sanatorium_name = await sanatorium_name_for_booking(self.db, booking)
+        sanatorium_name = await sanatorium_name_for_booking(self.db, locked)
         if sanatorium_name is not None:
-            self._notify_cancelled(booking, user, sanatorium_name)
-        return await self._load_required(booking.id)
+            self._notify_cancelled(locked, user, sanatorium_name)
+        return await self._load_required(locked.id)
 
     async def _assert_can_cancel(self, booking: Booking, user: User) -> None:
         admin_owns = False
         if user.role == UserRole.ADMIN:
-            admin_owns = await admin_owns_booking_sanatorium(
-                self.db, booking, user.id
-            )
+            admin_owns = await admin_owns_booking_sanatorium(self.db, booking, user.id)
         reason = BookingPolicy.cancel_block_reason(
             booking, user, admin_owns_target=admin_owns
         )
@@ -179,9 +175,7 @@ class BookingService:
         return booking
 
     @staticmethod
-    def _notify_cancelled(
-        booking: Booking, user: User, sanatorium_name: str
-    ) -> None:
+    def _notify_cancelled(booking: Booking, user: User, sanatorium_name: str) -> None:
         if not user.email:
             return
         send_booking_cancelled(

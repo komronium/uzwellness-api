@@ -11,18 +11,34 @@ from app.models.user import User
 
 _memory_counts: dict[str, tuple[int, float]] = {}
 _memory_lock = asyncio.Lock()
+_CLEANUP_INTERVAL = 300
+_last_cleanup: float = 0.0
 
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
+    if forwarded and _is_trusted_proxy(request):
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
+def _is_trusted_proxy(request: Request) -> bool:
+    if not settings.TRUSTED_PROXY_IPS:
+        return True
+    peer = request.client.host if request.client else None
+    return peer in settings.TRUSTED_PROXY_IPS
+
+
 async def _incr_memory(key: str, window: int) -> int:
+    global _last_cleanup
     async with _memory_lock:
         now = time.monotonic()
+        if now - _last_cleanup > _CLEANUP_INTERVAL:
+            expired = [k for k, (_, exp) in _memory_counts.items() if exp < now]
+            for k in expired:
+                del _memory_counts[k]
+            _last_cleanup = now
+
         count, expires_at = _memory_counts.get(key, (0, 0.0))
         if expires_at < now:
             count, expires_at = 0, now + window
@@ -76,8 +92,9 @@ class RateLimiter:
         if client is None:
             return await _incr_memory(key, self.window_seconds)
         try:
-            await client.set(key, 0, ex=self.window_seconds, nx=True)
             count = await client.incr(key)
+            if count == 1:
+                await client.expire(key, self.window_seconds)
             return int(count)
         except Exception:
             return await _incr_memory(key, self.window_seconds)

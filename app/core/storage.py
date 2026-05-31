@@ -21,7 +21,7 @@ def url_to_key(url: str) -> str:
     start with our prefix (e.g. an externally-hosted file), return it as-is.
     """
     prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
-    return url[len(prefix):] if url.startswith(prefix) else url
+    return url[len(prefix) :] if url.startswith(prefix) else url
 
 
 def _validate_key(key: str) -> None:
@@ -89,7 +89,6 @@ def detect_image_mime(data: bytes) -> str | None:
 
 
 def detect_document_mime(data: bytes) -> str | None:
-    """Image (JPEG/PNG/WebP) or PDF — for passport scans and visa documents."""
     image = detect_image_mime(data)
     if image is not None:
         return image

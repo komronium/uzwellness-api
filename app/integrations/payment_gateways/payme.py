@@ -34,9 +34,7 @@ class PaymeGateway:
         encoded = base64.b64encode(params.encode("utf-8")).decode("ascii")
         return f"{settings.PAYME_CHECKOUT_URL}{encoded}"
 
-    def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]
-    ) -> bool:
+    def verify_webhook(self, *, payload: dict, headers: Mapping[str, str]) -> bool:
         secret = settings.PAYME_MERCHANT_KEY
         if not secret:
             return True
@@ -51,6 +49,7 @@ class PaymeGateway:
         return hmac.compare_digest(password, secret)
 
     def parse_webhook(self, *, payload: dict) -> WebhookResult:
+        method = payload.get("method", "")
         params = payload.get("params") or {}
         merchant_trans_id = (
             params.get("account", {}).get("order_id")
@@ -62,10 +61,12 @@ class PaymeGateway:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Missing merchant_trans_id",
             )
+        is_paid = method in ("", "PerformTransaction")
+        is_failed = method == "CancelTransaction"
         return WebhookResult(
             merchant_trans_id=str(merchant_trans_id),
-            provider_payment_id=params.get("id"),
-            is_paid=True,
-            is_failed=False,
-            response_body={"result": {"state": 2}},
+            provider_payment_id=str(params["id"]) if params.get("id") else None,
+            is_paid=is_paid,
+            is_failed=is_failed,
+            response_body={"result": {"state": 2 if is_paid else 1}},
         )

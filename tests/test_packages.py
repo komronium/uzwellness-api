@@ -10,15 +10,15 @@ PNG = make_png()
 
 
 @pytest.fixture
-async def package_sanatorium(db: AsyncSession):
-    return await make_sanatorium(db, slug="pkg-host", name="Pkg Host")
+async def package_sanatorium(db: AsyncSession, admin_user):
+    return await make_sanatorium(
+        db, slug="pkg-host", name="Pkg Host", admin_user_id=admin_user.id
+    )
 
 
 @pytest.fixture
 async def usd_room(db: AsyncSession, package_sanatorium):
-    return await make_room(
-        db, sanatorium=package_sanatorium, base_currency="USD"
-    )
+    return await make_room(db, sanatorium=package_sanatorium, base_currency="USD")
 
 
 def _payload(sanatorium_id: uuid.UUID, room_id: uuid.UUID, **overrides) -> dict:
@@ -64,13 +64,13 @@ def _payload(sanatorium_id: uuid.UUID, room_id: uuid.UUID, **overrides) -> dict:
 # ── create ───────────────────────────────────────────────────────────────────
 
 
-async def test_super_admin_creates_package(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+async def test_sanatorium_admin_creates_package(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers
 ) -> None:
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
@@ -85,13 +85,13 @@ async def test_super_admin_creates_package(
     assert len(body["items"]) == 3
 
 
-async def test_admin_cannot_create_package(
-    client: AsyncClient, package_sanatorium, usd_room, admin_headers
+async def test_super_admin_cannot_create_package(
+    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
 ) -> None:
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=admin_headers,
+        headers=super_admin_headers,
     )
     assert resp.status_code == 403
 
@@ -108,45 +108,41 @@ async def test_customer_cannot_create_package(
 
 
 async def test_room_id_is_required(
-    client: AsyncClient, package_sanatorium, super_admin_headers
+    client: AsyncClient, package_sanatorium, admin_headers, super_admin_headers
 ) -> None:
     payload = _payload(package_sanatorium.id, uuid.uuid4())
     payload.pop("room_id")
-    resp = await client.post(
-        "/api/packages", json=payload, headers=super_admin_headers
-    )
+    resp = await client.post("/api/packages", json=payload, headers=admin_headers)
     assert resp.status_code == 422
 
 
 async def test_sanatorium_id_is_required(
-    client: AsyncClient, super_admin_headers
+    client: AsyncClient, admin_headers, super_admin_headers
 ) -> None:
     payload = _payload(uuid.uuid4(), uuid.uuid4())
     payload.pop("sanatorium_id")
-    resp = await client.post(
-        "/api/packages", json=payload, headers=super_admin_headers
-    )
+    resp = await client.post("/api/packages", json=payload, headers=admin_headers)
     assert resp.status_code == 422
 
 
 async def test_unknown_sanatorium_returns_400(
-    client: AsyncClient, super_admin_headers
+    client: AsyncClient, admin_headers, super_admin_headers
 ) -> None:
     resp = await client.post(
         "/api/packages",
         json=_payload(uuid.uuid4(), uuid.uuid4()),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 400
 
 
 async def test_unknown_room_returns_400(
-    client: AsyncClient, package_sanatorium, super_admin_headers
+    client: AsyncClient, package_sanatorium, admin_headers, super_admin_headers
 ) -> None:
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, uuid.uuid4()),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 400
 
@@ -155,6 +151,7 @@ async def test_room_from_different_sanatorium_rejected(
     client: AsyncClient,
     db: AsyncSession,
     package_sanatorium,
+    admin_headers,
     super_admin_headers,
 ) -> None:
     other = await make_sanatorium(db, slug="pkg-other")
@@ -162,7 +159,7 @@ async def test_room_from_different_sanatorium_rejected(
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, foreign_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 400
 
@@ -171,6 +168,7 @@ async def test_room_currency_mismatch_rejected(
     client: AsyncClient,
     db: AsyncSession,
     package_sanatorium,
+    admin_headers,
     super_admin_headers,
 ) -> None:
     uzs_room = await make_room(
@@ -182,7 +180,7 @@ async def test_room_currency_mismatch_rejected(
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, uzs_room.id, currency="USD"),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 400
 
@@ -191,6 +189,7 @@ async def test_inactive_room_rejected_on_create(
     client: AsyncClient,
     db: AsyncSession,
     package_sanatorium,
+    admin_headers,
     super_admin_headers,
 ) -> None:
     inactive_room = await make_room(
@@ -202,24 +201,30 @@ async def test_inactive_room_rejected_on_create(
     resp = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, inactive_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     assert resp.status_code == 400
     assert "inactive" in resp.json()["detail"].lower()
 
 
 async def test_create_requires_all_three_locales(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     payload = _payload(package_sanatorium.id, usd_room.id, title={"uz": "Faqat uz"})
-    resp = await client.post(
-        "/api/packages", json=payload, headers=super_admin_headers
-    )
+    resp = await client.post("/api/packages", json=payload, headers=admin_headers)
     assert resp.status_code == 422
 
 
 async def test_hotel_item_type_rejected(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     payload = _payload(package_sanatorium.id, usd_room.id)
     payload["items"].append(
@@ -229,9 +234,7 @@ async def test_hotel_item_type_rejected(
             "is_included": True,
         }
     )
-    resp = await client.post(
-        "/api/packages", json=payload, headers=super_admin_headers
-    )
+    resp = await client.post("/api/packages", json=payload, headers=admin_headers)
     assert resp.status_code == 422
 
 
@@ -239,12 +242,16 @@ async def test_hotel_item_type_rejected(
 
 
 async def test_public_list_returns_resolved_strings(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     resp = await client.get("/api/packages?lang=ru")
     assert resp.status_code == 200
@@ -254,10 +261,14 @@ async def test_public_list_returns_resolved_strings(
 
 
 async def test_include_translations_returns_dict(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     payload = _payload(package_sanatorium.id, usd_room.id)
-    await client.post("/api/packages", json=payload, headers=super_admin_headers)
+    await client.post("/api/packages", json=payload, headers=admin_headers)
     resp = await client.get(
         "/api/packages?include_translations=true", headers=super_admin_headers
     )
@@ -266,12 +277,16 @@ async def test_include_translations_returns_dict(
 
 
 async def test_public_list_hides_inactive_even_if_requested(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     await client.patch(
@@ -287,12 +302,16 @@ async def test_public_list_hides_inactive_even_if_requested(
 
 
 async def test_super_admin_can_list_inactive_packages(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     await client.patch(
@@ -310,12 +329,16 @@ async def test_super_admin_can_list_inactive_packages(
 
 
 async def test_public_detail_hides_inactive_package(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     await client.patch(
@@ -330,7 +353,11 @@ async def test_public_detail_hides_inactive_package(
 
 
 async def test_featured_packages_endpoint_orders_by_display_order(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     second = _payload(
         package_sanatorium.id,
@@ -353,9 +380,23 @@ async def test_featured_packages_endpoint_orders_by_display_order(
         is_featured=False,
         display_order=0,
     )
-    await client.post("/api/packages", json=second, headers=super_admin_headers)
-    await client.post("/api/packages", json=first, headers=super_admin_headers)
-    await client.post("/api/packages", json=hidden, headers=super_admin_headers)
+    second_created = await client.post(
+        "/api/packages", json=second, headers=admin_headers
+    )
+    first_created = await client.post(
+        "/api/packages", json=first, headers=admin_headers
+    )
+    await client.post("/api/packages", json=hidden, headers=admin_headers)
+    await client.patch(
+        f"/api/packages/{second_created.json()['id']}",
+        json={"is_featured": True, "display_order": 2},
+        headers=super_admin_headers,
+    )
+    await client.patch(
+        f"/api/packages/{first_created.json()['id']}",
+        json={"is_featured": True, "display_order": 1},
+        headers=super_admin_headers,
+    )
 
     resp = await client.get("/api/packages/featured?lang=en")
 
@@ -364,7 +405,11 @@ async def test_featured_packages_endpoint_orders_by_display_order(
 
 
 async def test_list_filters_by_duration(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     short = _payload(
         package_sanatorium.id,
@@ -378,15 +423,19 @@ async def test_list_filters_by_duration(
         duration_nights=10,
         title={"uz": "Uzun", "ru": "Длинный", "en": "Long"},
     )
-    await client.post("/api/packages", json=short, headers=super_admin_headers)
-    await client.post("/api/packages", json=long_, headers=super_admin_headers)
+    await client.post("/api/packages", json=short, headers=admin_headers)
+    await client.post("/api/packages", json=long_, headers=admin_headers)
     resp = await client.get("/api/packages?duration_max=5&lang=uz")
     titles = [p["title"] for p in resp.json()["items"]]
     assert "Qisqa" in titles and "Uzun" not in titles
 
 
 async def test_list_filters_by_price(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     cheap = _payload(
         package_sanatorium.id,
@@ -400,20 +449,24 @@ async def test_list_filters_by_price(
         base_price="5000.00",
         title={"uz": "Qimmat", "ru": "Дорого", "en": "Pricey"},
     )
-    await client.post("/api/packages", json=cheap, headers=super_admin_headers)
-    await client.post("/api/packages", json=pricey, headers=super_admin_headers)
+    await client.post("/api/packages", json=cheap, headers=admin_headers)
+    await client.post("/api/packages", json=pricey, headers=admin_headers)
     resp = await client.get("/api/packages?price_max=1000&lang=uz")
     titles = [p["title"] for p in resp.json()["items"]]
     assert "Arzon" in titles and "Qimmat" not in titles
 
 
 async def test_get_by_slug_works(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     resp = await client.get("/api/packages/toshkent-wellness-sayohati")
     assert resp.status_code == 200
@@ -421,12 +474,17 @@ async def test_get_by_slug_works(
 
 
 async def test_upload_package_hero_image_as_super_admin(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers, storage
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
+    storage,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
 
@@ -446,12 +504,17 @@ async def test_upload_package_hero_image_as_super_admin(
 
 
 async def test_delete_package_hero_image(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers, storage
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
+    storage,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     uploaded = await client.post(
@@ -479,12 +542,16 @@ async def test_get_not_found_returns_404(client: AsyncClient) -> None:
 
 
 async def test_patch_merges_translations(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     resp = await client.patch(
@@ -503,12 +570,13 @@ async def test_patch_room_swap_validates(
     db: AsyncSession,
     package_sanatorium,
     usd_room,
+    admin_headers,
     super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     other = await make_sanatorium(db, slug="pkg-other-2")
@@ -526,6 +594,7 @@ async def test_patch_currency_alone_must_match_room(
     db: AsyncSession,
     package_sanatorium,
     usd_room,
+    admin_headers,
     super_admin_headers,
 ) -> None:
     # Package was created USD/USD-room. Switching currency to UZS without
@@ -534,7 +603,7 @@ async def test_patch_currency_alone_must_match_room(
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     resp = await client.patch(
@@ -549,12 +618,16 @@ async def test_patch_currency_alone_must_match_room(
 
 
 async def test_add_and_delete_item(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     add = await client.post(
@@ -583,12 +656,16 @@ async def test_add_and_delete_item(
 
 
 async def test_delete_package(
-    client: AsyncClient, package_sanatorium, usd_room, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     created = await client.post(
         "/api/packages",
         json=_payload(package_sanatorium.id, usd_room.id),
-        headers=super_admin_headers,
+        headers=admin_headers,
     )
     pid = created.json()["id"]
     resp = await client.delete(f"/api/packages/{pid}", headers=super_admin_headers)

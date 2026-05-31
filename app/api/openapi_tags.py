@@ -11,7 +11,7 @@ OPENAPI_TAGS = [
     {"name": "Payments", "description": "Payments and exchange rates"},
     {"name": "Finance", "description": "Role-based finance reports"},
     {"name": "B2B", "description": "B2B agent dashboard and clients"},
-    {"name": "Travel Services", "description": "Visa and transfer requests"},
+    {"name": "Travel Services", "description": "Transfer requests"},
     {"name": "Admin", "description": "Admin dashboard and operational stats"},
     {"name": "System", "description": "Health checks and metadata"},
 ]

@@ -62,6 +62,7 @@ class PackageItemAdminRead(BaseModel):
     extra_price: Decimal | None
     display_order: int
 
+
 class PackageCreate(BaseModel):
     slug: str | None = Field(default=None, max_length=255)
     title: TranslationsCreate
@@ -71,8 +72,6 @@ class PackageCreate(BaseModel):
     currency: str = Field(pattern=r"^(UZS|USD)$")
     sanatorium_id: uuid.UUID
     room_id: uuid.UUID
-    is_featured: bool = False
-    display_order: int = Field(default=0, ge=0)
     items: list[PackageItemCreate] = Field(default_factory=list)
 
 

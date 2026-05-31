@@ -6,7 +6,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.room import Room, RoomPricePeriod
 
 _TWO = Decimal("0.01")
-_WEEKEND_DAYS = frozenset({4, 5})  # Fri, Sat
+WEEKEND_DAYS = frozenset({4, 5})
 
 
 def calculate_final_price(base_price: Decimal, markup_percent: Decimal) -> Decimal:
@@ -60,7 +60,7 @@ def calculate_stay_total(
             weekend,
             room.markup_percent,
             discount,
-            d.weekday() in _WEEKEND_DAYS,
+            d.weekday() in WEEKEND_DAYS,
         )
     return total.quantize(_TWO, ROUND_HALF_UP)
 

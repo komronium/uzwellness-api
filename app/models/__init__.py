@@ -32,7 +32,6 @@ from app.models.transfer_request import (
     VehicleType,
 )
 from app.models.user import User, UserRole
-from app.models.visa_request import VisaPurpose, VisaRequest, VisaStatus
 
 __all__ = [
     "Amenity",
@@ -76,8 +75,5 @@ __all__ = [
     "User",
     "UserRole",
     "VehicleType",
-    "VisaPurpose",
-    "VisaRequest",
-    "VisaStatus",
     "WellnessCategory",
 ]

@@ -1,4 +1,4 @@
-"""Shared helper for resources that attach to a booking (visa, transfer)."""
+"""Shared helper for resources that attach to a booking."""
 
 import uuid
 

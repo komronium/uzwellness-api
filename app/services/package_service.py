@@ -12,12 +12,14 @@ from app.core.db_utils import assert_fk
 from app.core.config import settings
 from app.core.ids import uuid7
 from app.core.pagination import paginated
+from app.core.permissions import assert_sanatorium_access
 from app.core.slug import resolve_unique_slug, slugify
 from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.package import Package, PackageItem
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
+from app.models.user import User, UserRole
 from app.schemas.package import (
     PackageCreate,
     PackageItemCreate,
@@ -82,12 +84,23 @@ class PackageService:
         )
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
-    async def create(self, payload: PackageCreate) -> Package:
+    async def create(self, payload: PackageCreate, user: User | None) -> Package:
+        if user is None or user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only sanatorium admins can create packages",
+            )
         title_dict = payload.title.model_dump()
         slug_seed = payload.slug or pick_locale(title_dict)
         slug = await resolve_unique_slug(self.db, Package, _slug(slug_seed))
 
         await assert_fk(self.db, Sanatorium, payload.sanatorium_id, "sanatorium_id")
+        await assert_sanatorium_access(
+            self.db,
+            payload.sanatorium_id,
+            user,
+            action="create packages for this sanatorium",
+        )
         await self._require_room(
             payload.room_id, payload.sanatorium_id, payload.currency
         )
@@ -101,8 +114,6 @@ class PackageService:
             currency=payload.currency,
             sanatorium_id=payload.sanatorium_id,
             room_id=payload.room_id,
-            is_featured=payload.is_featured,
-            display_order=payload.display_order,
         )
         for item_payload in payload.items:
             package.items.append(self._build_item(item_payload))
@@ -130,9 +141,7 @@ class PackageService:
         new_room_id = data.get("room_id", package.room_id)
         new_currency = data.get("currency", package.currency)
         if "room_id" in data or "currency" in data:
-            await self._require_room(
-                new_room_id, package.sanatorium_id, new_currency
-            )
+            await self._require_room(new_room_id, package.sanatorium_id, new_currency)
 
         for field, value in data.items():
             setattr(package, field, value)

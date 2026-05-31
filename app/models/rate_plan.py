@@ -24,7 +24,10 @@ from app.core.database import Base
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
+    from app.models.amenity import Amenity
     from app.models.room import Room
+
+from app.models.amenity import rate_plan_amenities
 
 
 class BoardType(StrEnum):
@@ -120,3 +123,8 @@ class RatePlan(Base):
     )
 
     room: Mapped["Room"] = relationship(back_populates="rate_plans")
+    amenities: Mapped[list["Amenity"]] = relationship(
+        secondary=rate_plan_amenities,
+        back_populates="rate_plans",
+        lazy="selectin",
+    )

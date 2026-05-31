@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.api.deps import (
+    CurrentUser,
     IncludeTranslationsDep,
     LocaleDep,
     OptionalUser,
@@ -30,6 +31,7 @@ from app.services.package_service import PackageService, get_package_service
 router = APIRouter(prefix="/packages", tags=["Packages"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
+require_sanatorium_admin = require_roles(UserRole.ADMIN)
 
 
 @router.get("", response_model=None)
@@ -46,7 +48,9 @@ async def list_packages(
     price_max: Decimal | None = Query(default=None, ge=0),
     packages: PackageService = Depends(get_package_service),
 ) -> PackageList | PackageAdminList:
-    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    is_super_admin = (
+        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    )
     items, total = await packages.list_packages(
         limit=page.limit,
         offset=page.offset,
@@ -111,7 +115,9 @@ async def get_package(
         package = await packages.get_by_slug(package_id_or_slug)
     if package is None:
         raise not_found("Package not found")
-    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    is_super_admin = (
+        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    )
     if not package.is_active and not is_super_admin:
         raise not_found("Package not found")
     if include_translations and is_super_admin:
@@ -123,13 +129,14 @@ async def get_package(
     "",
     response_model=PackageAdminRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_sanatorium_admin)],
 )
 async def create_package(
     payload: PackageCreate,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageAdminRead:
-    return PackageAdminRead.model_validate(await packages.create(payload))
+    return PackageAdminRead.model_validate(await packages.create(payload, current_user))
 
 
 @router.patch(
@@ -203,6 +210,7 @@ async def delete_package(
         raise not_found("Package not found")
     await packages.delete(package)
 
+
 @router.post(
     "/{package_id}/items",
     response_model=PackageItemAdminRead,
@@ -217,7 +225,9 @@ async def add_package_item(
     package = await packages.get_by_id(package_id)
     if package is None:
         raise not_found("Package not found")
-    return PackageItemAdminRead.model_validate(await packages.add_item(package, payload))
+    return PackageItemAdminRead.model_validate(
+        await packages.add_item(package, payload)
+    )
 
 
 @router.patch(
@@ -234,7 +244,9 @@ async def update_package_item(
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
         raise not_found("Package item not found")
-    return PackageItemAdminRead.model_validate(await packages.update_item(item, payload))
+    return PackageItemAdminRead.model_validate(
+        await packages.update_item(item, payload)
+    )
 
 
 @router.delete(
