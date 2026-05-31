@@ -218,6 +218,20 @@ uv run pytest
 uv run pytest tests/test_booking_flow.py -v   # one file
 ```
 
+## DevOps Shortcuts
+
+```bash
+make help
+make install
+make check
+make up
+make logs
+make down
+```
+
+CI runs Ruff, compile, Alembic single-head validation, and the full test suite on
+pushes to `main` and pull requests.
+
 Tests use a separate database (`sanotour_test`) and reset the schema once per
 session. See `tests/conftest.py` for fixtures (`customer_headers`,
 `admin_headers`, `super_admin_headers`, `db`, `client`).
