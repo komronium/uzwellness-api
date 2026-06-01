@@ -25,7 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.ids import uuid7
-from app.models.rate_plan import BoardType, PaymentTiming
+from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 
 if TYPE_CHECKING:
     from app.models.extra_bed import BookingExtraBed
@@ -38,6 +38,10 @@ _ALPHABET = string.ascii_uppercase + string.digits
 
 def _generate_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(8))
+
+
+def _generate_reservation_number() -> str:
+    return f"{secrets.randbelow(10**16):016d}"
 
 
 class BookingStatus(StrEnum):
@@ -59,6 +63,13 @@ class Booking(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     code: Mapped[str] = mapped_column(
         String(16), unique=True, nullable=False, index=True, default=_generate_code
+    )
+    reservation_number: Mapped[str] = mapped_column(
+        String(24),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=_generate_reservation_number,
     )
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -117,6 +128,7 @@ class Booking(Base):
     guest_details: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    special_requests: Mapped[str | None] = mapped_column(String(1000))
 
     commission_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     commission_percent_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
@@ -147,6 +159,24 @@ class Booking(Base):
             length=20,
             values_callable=lambda e: [x.value for x in e],
         )
+    )
+    confirmation: Mapped[ConfirmationType | None] = mapped_column(
+        SQLEnum(
+            ConfirmationType,
+            native_enum=False,
+            length=20,
+            values_callable=lambda e: [x.value for x in e],
+        )
+    )
+    rate_plan_name: Mapped[dict | None] = mapped_column(JSONB)
+    board_guests: Mapped[int | None] = mapped_column(Integer)
+
+    is_processed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

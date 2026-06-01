@@ -36,6 +36,10 @@ from app.schemas.sanatorium import (
     SanatoriumRead,
     SanatoriumUpdate,
 )
+from app.schemas.sanatorium_reservation import (
+    SanatoriumReservationSettingsRead,
+    SanatoriumReservationSettingsUpdate,
+)
 from app.services.sanatorium_service import (
     SanatoriumService,
     get_sanatorium_service,
@@ -166,6 +170,40 @@ async def update_sanatorium(
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
     return sanatorium_admin_read(updated)
+
+
+@router.get(
+    "/{sanatorium_id}/reservation-settings",
+    response_model=SanatoriumReservationSettingsRead,
+)
+async def get_reservation_settings(
+    sanatorium_id: uuid.UUID,
+    current_user: CurrentUser,
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+) -> SanatoriumReservationSettingsRead:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    ensure_can_edit_sanatorium(sanatorium, current_user)
+    return SanatoriumReservationSettingsRead.model_validate(sanatorium)
+
+
+@router.patch(
+    "/{sanatorium_id}/reservation-settings",
+    response_model=SanatoriumReservationSettingsRead,
+)
+async def update_reservation_settings(
+    sanatorium_id: uuid.UUID,
+    payload: SanatoriumReservationSettingsUpdate,
+    current_user: CurrentUser,
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+) -> SanatoriumReservationSettingsRead:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    ensure_can_edit_sanatorium(sanatorium, current_user)
+    updated = await sanatoriums.update_reservation_settings(sanatorium, payload)
+    return SanatoriumReservationSettingsRead.model_validate(updated)
 
 
 @router.post(

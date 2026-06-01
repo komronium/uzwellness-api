@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import CurrentUser, not_found, require_roles
 from app.models.user import UserRole
+from app.schemas.availability_calendar import AvailableAllotmentSet
 from app.schemas.room import AvailabilityBlock, AvailabilityRead, AvailabilityUpsert
 from app.services.room_availability_service import (
     RoomAvailabilityService,
@@ -49,6 +50,25 @@ async def block_availability_range(
     if room is None:
         raise not_found("Room not found")
     rows = await availability.block_range(room, payload, current_user)
+    return [_availability_read(row) for row in rows]
+
+
+@router.patch(
+    "/{room_id}/availability/allotment",
+    response_model=list[AvailabilityRead],
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def set_available_allotment(
+    room_id: uuid.UUID,
+    payload: AvailableAllotmentSet,
+    current_user: CurrentUser,
+    rooms: RoomService = Depends(get_room_service),
+    availability: RoomAvailabilityService = Depends(get_room_availability_service),
+) -> list[AvailabilityRead]:
+    room = await rooms.get_by_id(room_id)
+    if room is None:
+        raise not_found("Room not found")
+    rows = await availability.set_available_allotment(room, payload, current_user)
     return [_availability_read(row) for row in rows]
 
 

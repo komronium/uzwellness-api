@@ -105,6 +105,7 @@ class SessionBookingFlow(BookingFlowBase):
             currency=program.currency,
             is_b2b=is_b2b,
             guest_details=[g.model_dump() for g in payload.guest_details],
+            special_requests=payload.special_requests,
             commission_snapshot=pricing.commission_amount,
             commission_percent_snapshot=pricing.commission_percent,
             agent_discount_percent_snapshot=(

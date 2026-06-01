@@ -3,6 +3,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.models.exchange_rate import ExchangeRate
+from app.models.rate_plan import RatePlan
 from app.models.room import Room, RoomPricePeriod
 
 _TWO = Decimal("0.01")
@@ -63,6 +64,31 @@ def calculate_stay_total(
             d.weekday() in WEEKEND_DAYS,
         )
     return total.quantize(_TWO, ROUND_HALF_UP)
+
+
+def calculate_rate_plan_night_price(
+    room: Room,
+    rate_plan: RatePlan,
+    target: date,
+    periods: Sequence[RoomPricePeriod] | None = None,
+    *,
+    selling_rate_override: Decimal | None = None,
+) -> Decimal:
+    if selling_rate_override is not None:
+        return selling_rate_override.quantize(_TWO, ROUND_HALF_UP)
+    base, weekend_base, discount = effective_prices_for_date(room, target, periods)
+    price = calculate_night_price(
+        base,
+        weekend_base,
+        room.markup_percent,
+        discount,
+        target.weekday() in WEEKEND_DAYS,
+    )
+    if rate_plan.price_adjustment_percent is not None:
+        price *= 1 + rate_plan.price_adjustment_percent / 100
+    if rate_plan.board_optional and rate_plan.board_price is not None:
+        price += rate_plan.board_price * (rate_plan.board_guests or room.capacity)
+    return price.quantize(_TWO, ROUND_HALF_UP)
 
 
 def convert_to_uzs(

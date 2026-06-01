@@ -101,6 +101,14 @@ class Sanatorium(Base):
     cancellation_policy: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    reservation_auto_confirmation_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    reservation_fallback_processing_method: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="email", server_default="email"
+    )
+    reservation_fallback_contact_name: Mapped[str | None] = mapped_column(String(120))
+    reservation_fallback_contact: Mapped[str | None] = mapped_column(String(255))
     weekly_schedule: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )

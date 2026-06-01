@@ -19,6 +19,7 @@ from app.models.region import Region
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
+from app.schemas.sanatorium_reservation import SanatoriumReservationSettingsUpdate
 
 
 def _slug(text: str) -> str:
@@ -100,9 +101,7 @@ class SanatoriumService:
                 self.db, Destination, data["destination_id"], "destination_id"
             )
 
-    async def _resolve_update_slug(
-        self, sanatorium: Sanatorium, data: dict
-    ) -> None:
+    async def _resolve_update_slug(self, sanatorium: Sanatorium, data: dict) -> None:
         if "slug" in data and data["slug"] is not None:
             data["slug"] = await resolve_unique_slug(
                 self.db, Sanatorium, _slug(data["slug"]), exclude_id=sanatorium.id
@@ -145,6 +144,15 @@ class SanatoriumService:
                 detail="Sanatorium already rejected",
             )
         sanatorium.status = SanatoriumStatus.REJECTED
+        await self.db.commit()
+        return await self._reload_required(sanatorium.id)
+
+    async def update_reservation_settings(
+        self, sanatorium: Sanatorium, payload: SanatoriumReservationSettingsUpdate
+    ) -> Sanatorium:
+        data = payload.model_dump(exclude_unset=True)
+        for field, value in data.items():
+            setattr(sanatorium, field, value)
         await self.db.commit()
         return await self._reload_required(sanatorium.id)
 

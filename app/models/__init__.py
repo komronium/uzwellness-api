@@ -13,6 +13,7 @@ from app.models.rate_plan import (
     ConfirmationType,
     PaymentTiming,
     RatePlan,
+    RatePlanDateRule,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.region import Region
@@ -55,6 +56,7 @@ __all__ = [
     "PaymentTiming",
     "PropertyType",
     "RatePlan",
+    "RatePlanDateRule",
     "RefreshToken",
     "Region",
     "Room",

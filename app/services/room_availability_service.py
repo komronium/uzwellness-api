@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from app.core.utils import date_range
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.user import User
+from app.schemas.availability_calendar import AvailableAllotmentSet
 from app.schemas.room import AvailabilityBlock
 
 
@@ -114,6 +115,29 @@ class RoomAvailabilityService:
         await self.db.commit()
         return view
 
+    async def set_available_allotment(
+        self,
+        room: Room,
+        payload: AvailableAllotmentSet,
+        user: User,
+    ) -> list[RoomAvailabilityView]:
+        if payload.date_from > payload.date_to:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="date_from must be on or before date_to",
+            )
+        await assert_sanatorium_access(
+            self.db, room.sanatorium_id, user, action="manage this room's availability"
+        )
+        dates = date_range(payload.date_from, payload.date_to + timedelta(days=1))
+        existing = await self._locked_rows(room, dates)
+        result = [
+            self._set_available(existing.get(d), room, d, payload.units_available)
+            for d in dates
+        ]
+        await self.db.commit()
+        return result
+
     @staticmethod
     def _assert_valid_range(payload: AvailabilityBlock) -> None:
         if payload.date_from >= payload.date_to:
@@ -172,6 +196,26 @@ class RoomAvailabilityService:
             units_blocked=units_blocked,
             units_booked=booked,
         )
+
+    def _set_available(
+        self,
+        row: RoomAvailability | None,
+        room: Room,
+        target: date,
+        units_available: int,
+    ) -> RoomAvailabilityView:
+        booked = row.units_booked if row else 0
+        max_available = room.inventory_count - booked
+        if units_available > max_available:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"units_available ({units_available}) exceeds remaining "
+                    f"inventory ({max_available}) on {target}"
+                ),
+            )
+        units_blocked = room.inventory_count - booked - units_available
+        return self._set_blocked(row, room, target, units_blocked)
 
     @staticmethod
     def _assert_units_plus_booked(

@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -128,3 +130,43 @@ class RatePlan(Base):
         back_populates="rate_plans",
         lazy="selectin",
     )
+    date_rules: Mapped[list["RatePlanDateRule"]] = relationship(
+        back_populates="rate_plan",
+        cascade="all, delete-orphan",
+        order_by="RatePlanDateRule.date",
+    )
+
+
+class RatePlanDateRule(Base):
+    __tablename__ = "rate_plan_date_rules"
+    __table_args__ = (
+        UniqueConstraint("rate_plan_id", "date", name="uq_rate_plan_date_rule"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    rate_plan_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("rate_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+
+    selling_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    is_closed: Mapped[bool | None] = mapped_column(Boolean)
+    min_advance_hours: Mapped[int | None] = mapped_column(Integer)
+    max_advance_hours: Mapped[int | None] = mapped_column(Integer)
+    min_stay_nights: Mapped[int | None] = mapped_column(Integer)
+    min_stay_arrival_nights: Mapped[int | None] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    rate_plan: Mapped["RatePlan"] = relationship(back_populates="date_rules")

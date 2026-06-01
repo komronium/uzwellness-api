@@ -1,21 +1,25 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.policies import BookingPolicy
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
-from app.core.utils import today_tashkent
+from app.core.utils import TASHKENT_TZ, today_tashkent
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.payment import Payment, PaymentStatus
 from app.models.user import User, UserRole
-from app.schemas.booking import BookingCreate
+from app.schemas.booking import (
+    BookingCreate,
+    BookingDateFilter,
+)
 from app.services.booking_flows import (
     BookingFlow,
     PackageBookingFlow,
@@ -67,16 +71,39 @@ class BookingService:
         offset: int,
         is_b2b: bool | None = None,
         agent_id: uuid.UUID | None = None,
+        q: str | None = None,
+        status_filter: BookingStatus | None = None,
+        is_processed: bool | None = None,
+        date_filter: BookingDateFilter = BookingDateFilter.BOOKING_DATE,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> tuple[Sequence[Booking], int]:
         filters = booking_visibility_clauses(user)
         if is_b2b is not None:
             filters.append(Booking.is_b2b.is_(is_b2b))
         if agent_id is not None and user.role == UserRole.SUPER_ADMIN:
             filters.append(Booking.user_id == agent_id)
+        if status_filter is not None:
+            filters.append(Booking.status == status_filter)
+        if is_processed is not None:
+            filters.append(Booking.is_processed.is_(is_processed))
 
-        base = select(Booking)
+        base = select(Booking).outerjoin(User, Booking.user_id == User.id)
         for clause in filters:
             base = base.where(clause)
+        if q:
+            term = f"%{q.strip()}%"
+            base = base.where(
+                or_(
+                    Booking.code.ilike(term),
+                    Booking.reservation_number.ilike(term),
+                    User.full_name.ilike(term),
+                    User.email.ilike(term),
+                )
+            )
+        base = self._apply_date_filters(
+            base, date_filter=date_filter, date_from=date_from, date_to=date_to
+        )
         total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
         stmt = (
             base.options(*_LOAD_OPTIONS)
@@ -92,6 +119,25 @@ class BookingService:
         for clause in booking_visibility_clauses(user):
             stmt = stmt.where(clause)
         return await self.db.scalar(stmt)
+
+    async def mark_processed(self, booking: Booking, user: User) -> Booking:
+        if user.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only sanatorium staff can process reservations",
+            )
+        locked = await self.db.scalar(
+            select(Booking).where(Booking.id == booking.id).with_for_update()
+        )
+        if locked is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+            )
+        locked.is_processed = True
+        locked.processed_at = datetime.now(UTC)
+        locked.processed_by_id = user.id
+        await self.db.commit()
+        return await self._load_required(locked.id)
 
     async def cancel(self, booking: Booking, user: User) -> Booking:
         locked = await self.db.scalar(
@@ -175,6 +221,33 @@ class BookingService:
         return booking
 
     @staticmethod
+    def _apply_date_filters(
+        stmt,
+        *,
+        date_filter: BookingDateFilter,
+        date_from: date | None,
+        date_to: date | None,
+    ):
+        if date_from is None and date_to is None:
+            return stmt
+        if date_filter == BookingDateFilter.BOOKING_DATE:
+            if date_from is not None:
+                stmt = stmt.where(Booking.created_at >= _day_bounds(date_from)[0])
+            if date_to is not None:
+                stmt = stmt.where(Booking.created_at < _day_bounds(date_to)[1])
+            return stmt
+        field = (
+            Booking.check_in
+            if date_filter == BookingDateFilter.CHECK_IN
+            else Booking.check_out
+        )
+        if date_from is not None:
+            stmt = stmt.where(field >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(field <= date_to)
+        return stmt
+
+    @staticmethod
     def _notify_cancelled(booking: Booking, user: User, sanatorium_name: str) -> None:
         if not user.email:
             return
@@ -202,3 +275,8 @@ def get_booking_service(
         RoomBookingFlow(db, pricing),
     ]
     return BookingService(db, flows)
+
+
+def _day_bounds(day: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(day, time.min, tzinfo=TASHKENT_TZ).astimezone(UTC)
+    return start, start + timedelta(days=1)

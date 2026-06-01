@@ -1,11 +1,12 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, BookingType
-from app.models.rate_plan import BoardType, PaymentTiming
+from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 from app.models.user import UserRole
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
 from app.schemas.payment import BookingPaymentSummary
@@ -37,6 +38,7 @@ class BookingCreate(BaseModel):
     guests: int = Field(default=1, ge=1)
     extra_beds: list[ExtraBedItem] = Field(default_factory=list)
     guest_details: list[GuestDetail] = Field(default_factory=list)
+    special_requests: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def _validate(self):
@@ -59,6 +61,7 @@ class BookingRead(BaseModel):
 
     id: uuid.UUID
     code: str
+    reservation_number: str
     user_id: uuid.UUID | None
     room_id: uuid.UUID | None
     program_id: uuid.UUID | None
@@ -80,8 +83,15 @@ class BookingRead(BaseModel):
     cancellation_penalty_percent: Decimal | None = None
     cancellation_penalty_amount: Decimal | None = None
     payment_timing: PaymentTiming | None = None
+    confirmation: ConfirmationType | None = None
+    rate_plan_name: dict | None = None
+    board_guests: int | None = None
     is_b2b: bool
     guest_details: list[GuestDetail] = Field(default_factory=list)
+    special_requests: str | None = None
+    is_processed: bool
+    processed_at: datetime | None = None
+    processed_by_id: uuid.UUID | None = None
     extra_beds: list[BookingExtraBedRead] = []
     payments: list[BookingPaymentSummary] = Field(default_factory=list)
     customer: BookingCustomerRead | None = None
@@ -94,6 +104,49 @@ class BookingList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class BookingDateFilter(StrEnum):
+    BOOKING_DATE = "booking_date"
+    CHECK_IN = "check_in"
+    CHECK_OUT = "check_out"
+
+
+class AdminReservationListItem(BaseModel):
+    id: uuid.UUID
+    code: str
+    reservation_number: str
+    guest_name: str
+    amount: Decimal
+    currency: str
+    check_in: date
+    check_out: date
+    room_type: str | None
+    rooms_count: int
+    booking_date: datetime
+    status: BookingStatus
+    is_processed: bool
+    has_special_requests: bool
+
+
+class AdminReservationDashboardStats(BaseModel):
+    reservations_made_today: int
+    checking_in_today: int
+    unreplied_reviews: int
+    unanswered_questions: int
+    unprocessed_reservations: int
+
+
+class AdminGuestActivity(BaseModel):
+    check_ins: list[AdminReservationListItem]
+    in_house: list[AdminReservationListItem]
+    check_outs: list[AdminReservationListItem]
+
+
+class AdminReservationDashboard(BaseModel):
+    stats: AdminReservationDashboardStats
+    unprocessed: list[AdminReservationListItem]
+    guest_activity: AdminGuestActivity
 
 
 class InvoiceRead(BaseModel):

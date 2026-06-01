@@ -7,13 +7,32 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import not_found
+from app.api.deps import CurrentUser, not_found, require_roles
 from app.core.database import get_db
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
+from app.models.user import UserRole
+from app.schemas.availability_calendar import AvailabilityCalendarRead
+from app.schemas.bulk_availability import (
+    BulkAllotmentUpdate,
+    BulkCopyRates,
+    BulkOperationResult,
+    BulkRatesUpdate,
+    BulkRestrictionsUpdate,
+    BulkRoomStatusUpdate,
+)
+from app.services.availability_calendar_service import (
+    AvailabilityCalendarService,
+    get_availability_calendar_service,
+)
+from app.services.bulk_availability_service import (
+    BulkAvailabilityService,
+    get_bulk_availability_service,
+)
 
 router = APIRouter(prefix="/availability", tags=["Availability"])
+require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 _MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
@@ -71,9 +90,7 @@ async def get_availability(
         )
         .group_by(RoomAvailability.date)
     )
-    used_per_date = {
-        row.date: int(row.used) for row in (await db.execute(stmt)).all()
-    }
+    used_per_date = {row.date: int(row.used) for row in (await db.execute(stmt)).all()}
 
     dates: dict[str, dict] = {}
     current = first
@@ -89,3 +106,94 @@ async def get_availability(
         current += timedelta(days=1)
 
     return {"dates": dates}
+
+
+@router.get(
+    "/calendar",
+    response_model=AvailabilityCalendarRead,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def get_admin_availability_calendar(
+    current_user: CurrentUser,
+    sanatorium_id: uuid.UUID = Query(...),
+    date_from: date = Query(..., alias="from"),
+    date_to: date = Query(..., alias="to"),
+    room_id: uuid.UUID | None = Query(default=None),
+    rate_plan_ids: list[uuid.UUID] | None = Query(default=None),
+    calendar_service: AvailabilityCalendarService = Depends(
+        get_availability_calendar_service
+    ),
+) -> AvailabilityCalendarRead:
+    return await calendar_service.get_calendar(
+        sanatorium_id=sanatorium_id,
+        date_from=date_from,
+        date_to=date_to,
+        user=current_user,
+        room_id=room_id,
+        rate_plan_ids=rate_plan_ids,
+    )
+
+
+@router.post(
+    "/bulk/allotment",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def bulk_update_allotment(
+    payload: BulkAllotmentUpdate,
+    current_user: CurrentUser,
+    bulk: BulkAvailabilityService = Depends(get_bulk_availability_service),
+) -> BulkOperationResult:
+    return await bulk.update_allotment(payload, current_user)
+
+
+@router.post(
+    "/bulk/rates",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def bulk_update_rates(
+    payload: BulkRatesUpdate,
+    current_user: CurrentUser,
+    bulk: BulkAvailabilityService = Depends(get_bulk_availability_service),
+) -> BulkOperationResult:
+    return await bulk.update_rates(payload, current_user)
+
+
+@router.post(
+    "/bulk/status",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def bulk_update_status(
+    payload: BulkRoomStatusUpdate,
+    current_user: CurrentUser,
+    bulk: BulkAvailabilityService = Depends(get_bulk_availability_service),
+) -> BulkOperationResult:
+    return await bulk.update_status(payload, current_user)
+
+
+@router.post(
+    "/bulk/restrictions",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def bulk_update_restrictions(
+    payload: BulkRestrictionsUpdate,
+    current_user: CurrentUser,
+    bulk: BulkAvailabilityService = Depends(get_bulk_availability_service),
+) -> BulkOperationResult:
+    return await bulk.update_restrictions(payload, current_user)
+
+
+@router.post(
+    "/bulk/copy-rates",
+    response_model=BulkOperationResult,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def bulk_copy_rates(
+    payload: BulkCopyRates,
+    current_user: CurrentUser,
+    bulk: BulkAvailabilityService = Depends(get_bulk_availability_service),
+) -> BulkOperationResult:
+    return await bulk.copy_rates(payload, current_user)

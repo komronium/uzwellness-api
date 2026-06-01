@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.pricing import calculate_stay_total, convert_to_usd, convert_to_uzs
+from app.core.pricing import (
+    calculate_rate_plan_night_price,
+    calculate_stay_total,
+    convert_to_usd,
+    convert_to_uzs,
+)
 from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
-from app.models.rate_plan import RatePlan
+from app.models.rate_plan import RatePlan, RatePlanDateRule
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
@@ -34,6 +39,7 @@ class RoomBookingContext:
     sanatorium: Sanatorium
     rooms_count: int
     rate_plan: RatePlan | None
+    rate_rules: dict
     is_b2b: bool
 
 
@@ -85,6 +91,8 @@ class RoomBookingFlow(BookingFlowBase):
         sanatorium = await self._approved_sanatorium(room.sanatorium_id)
         rooms_count = self._validate_and_compute_rooms(room, payload, nights)
         rate_plan = await self._load_rate_plan(payload.rate_plan_id, room, nights)
+        rate_rules = await self._load_rate_rules(rate_plan, all_dates)
+        self._assert_rate_rules(rate_rules, all_dates, nights)
         return RoomBookingContext(
             nights=nights,
             dates=all_dates,
@@ -92,6 +100,7 @@ class RoomBookingFlow(BookingFlowBase):
             sanatorium=sanatorium,
             rooms_count=rooms_count,
             rate_plan=rate_plan,
+            rate_rules=rate_rules,
             is_b2b=user.role == UserRole.AGENT,
         )
 
@@ -130,21 +139,38 @@ class RoomBookingFlow(BookingFlowBase):
     def _room_and_board_total(
         self, payload: BookingCreate, context: RoomBookingContext
     ) -> tuple[Decimal, Decimal]:
-        room = context.room
         rate_plan = context.rate_plan
-        rooms_total = (
-            calculate_stay_total(room, context.dates, room.price_periods)
-            * context.rooms_count
-        )
+        rooms_total = self._rooms_total(context)
         board_total = Decimal("0")
         promo_percent = Decimal("0")
         if rate_plan is not None:
-            if rate_plan.price_adjustment_percent is not None:
-                rooms_total *= 1 + rate_plan.price_adjustment_percent / 100
             if rate_plan.board_optional and rate_plan.board_price is not None:
                 board_total = rate_plan.board_price * payload.guests * context.nights
             promo_percent = self._active_promo_percent(rate_plan)
         return rooms_total + board_total, promo_percent
+
+    def _rooms_total(self, context: RoomBookingContext) -> Decimal:
+        room = context.room
+        rate_plan = context.rate_plan
+        if rate_plan is None:
+            return (
+                calculate_stay_total(room, context.dates, room.price_periods)
+                * context.rooms_count
+            )
+        total = Decimal("0")
+        for target in context.dates:
+            rule = context.rate_rules.get(target)
+            total += (
+                calculate_rate_plan_night_price(
+                    room,
+                    rate_plan,
+                    target,
+                    room.price_periods,
+                    selling_rate_override=rule.selling_rate if rule else None,
+                )
+                * context.rooms_count
+            )
+        return total
 
     def _build_booking(
         self,
@@ -173,6 +199,7 @@ class RoomBookingFlow(BookingFlowBase):
             currency=context.room.base_currency,
             is_b2b=context.is_b2b,
             guest_details=[g.model_dump() for g in payload.guest_details],
+            special_requests=payload.special_requests,
             commission_snapshot=pricing.commission_amount,
             commission_percent_snapshot=pricing.commission_percent,
             agent_discount_percent_snapshot=(
@@ -194,6 +221,9 @@ class RoomBookingFlow(BookingFlowBase):
             payment_timing=(
                 rate_plan.payment_timing if rate_plan is not None else None
             ),
+            confirmation=rate_plan.confirmation if rate_plan is not None else None,
+            rate_plan_name=rate_plan.name if rate_plan is not None else None,
+            board_guests=rate_plan.board_guests if rate_plan is not None else None,
         )
 
     def _attach_extra_beds(
@@ -238,6 +268,70 @@ class RoomBookingFlow(BookingFlowBase):
                 detail=f"This rate allows at most {rate_plan.max_nights} night(s)",
             )
         return rate_plan
+
+    async def _load_rate_rules(self, rate_plan: RatePlan | None, dates: list) -> dict:
+        if rate_plan is None:
+            return {}
+        rows = (
+            await self.db.scalars(
+                select(RatePlanDateRule).where(
+                    RatePlanDateRule.rate_plan_id == rate_plan.id,
+                    RatePlanDateRule.date.in_(dates),
+                )
+            )
+        ).all()
+        return {row.date: row for row in rows}
+
+    @staticmethod
+    def _assert_rate_rules(rules: dict, dates: list, nights: int) -> None:
+        arrival_rule = rules.get(dates[0]) if dates else None
+        now = datetime.now(timezone.utc)
+        for target in dates:
+            rule = rules.get(target)
+            if rule is None:
+                continue
+            if rule.is_closed is True:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Rate plan is closed on {target}",
+                )
+            if rule.min_stay_nights is not None and nights < rule.min_stay_nights:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Minimum stay is {rule.min_stay_nights} night(s)",
+                )
+        if arrival_rule is None:
+            return
+        hours_until_arrival = (
+            datetime.combine(dates[0], datetime.min.time(), tzinfo=timezone.utc) - now
+        ).total_seconds() / 3600
+        if (
+            arrival_rule.min_advance_hours is not None
+            and hours_until_arrival < arrival_rule.min_advance_hours
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Booking is too close to arrival for this rate plan",
+            )
+        if (
+            arrival_rule.max_advance_hours is not None
+            and hours_until_arrival > arrival_rule.max_advance_hours
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Booking is too far in advance for this rate plan",
+            )
+        if (
+            arrival_rule.min_stay_arrival_nights is not None
+            and nights < arrival_rule.min_stay_arrival_nights
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Minimum length of stay from arrival is "
+                    f"{arrival_rule.min_stay_arrival_nights} night(s)"
+                ),
+            )
 
     @staticmethod
     def _active_promo_percent(rate_plan: RatePlan) -> Decimal:
