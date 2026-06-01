@@ -1,15 +1,27 @@
 from app.core.meta.amenities import amenity_meta
+from app.core.meta.availability import availability_meta
 from app.core.meta.rooms import room_meta
 from app.core.meta.sanatoriums import sanatorium_meta
 from app.core.meta.shared import Option
 from app.core.meta.travel import travel_meta
 
+_AVAILABILITY = availability_meta()
 _ROOM = room_meta()
 _AMENITY = amenity_meta()
 _SANATORIUM = sanatorium_meta()
 _TRAVEL = travel_meta()
 
 META: dict[str, list[Option]] = {
+    "booking_date_filters": _AVAILABILITY["booking_date_filters"],
+    "weekdays": _AVAILABILITY["weekdays"],
+    "weekend_days": _AVAILABILITY["weekend_days"],
+    "bulk_restriction_fields": _AVAILABILITY["bulk_restriction_fields"],
+    "copy_rate_alignments": _AVAILABILITY["copy_rate_alignments"],
+    "copy_rate_adjustments": _AVAILABILITY["copy_rate_adjustments"],
+    "reservation_fallback_processing_methods": _AVAILABILITY[
+        "reservation_fallback_processing_methods"
+    ],
+    "availability_room_statuses": _AVAILABILITY["availability_room_statuses"],
     "board_types": _ROOM["board_types"],
     "payment_timings": _ROOM["payment_timings"],
     "confirmation_types": _ROOM["confirmation_types"],
