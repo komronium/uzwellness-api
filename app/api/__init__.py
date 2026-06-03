@@ -16,6 +16,7 @@ from app.api.routers import (
     packages,
     payments,
     programs,
+    promotions,
     rate_plans,
     regions,
     reviews,
@@ -47,6 +48,7 @@ api_router.include_router(exchange_rates.router)
 api_router.include_router(bookings.router)
 api_router.include_router(amenities.router)
 api_router.include_router(programs.router)
+api_router.include_router(promotions.router)
 api_router.include_router(rate_plans.router)
 api_router.include_router(packages.router)
 api_router.include_router(extra_beds.router)

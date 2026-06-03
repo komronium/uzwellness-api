@@ -77,6 +77,7 @@ class DestinationService:
                 Room,
                 (Room.sanatorium_id == Sanatorium.id)
                 & (Room.is_active.is_(True))
+                & (Room.deleted_at.is_(None))
                 & (Room.inventory_count > 0),
             )
             .where(Destination.is_active.is_(True))

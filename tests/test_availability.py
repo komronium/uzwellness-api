@@ -4,8 +4,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.room import RoomCreate, RoomUpdate
+from app.models.amenity import Amenity, AmenityScope
 from app.models.sanatorium import SanatoriumStatus
+from app.schemas.room import RoomCreate, RoomUpdate
 from app.models.user import User, UserRole
 from tests.factories import make_room, make_sanatorium, make_user
 
@@ -68,6 +69,20 @@ class TestRoomCRUD:
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
+        amenity = Amenity(
+            code="air_conditioning",
+            name={
+                "uz": "Konditsioner",
+                "ru": "Кондиционер",
+                "en": "Air conditioning",
+            },
+            description={"uz": "", "ru": "", "en": ""},
+            category="popular_amenities",
+            scope=AmenityScope.ROOM,
+        )
+        db.add(amenity)
+        await db.commit()
+
         resp = await client.post(
             "/api/rooms",
             json={
@@ -103,6 +118,14 @@ class TestRoomCRUD:
                     "comfort": {"balcony": True, "desk": True},
                     "highlights": ["spacious", "garden_view"],
                 },
+                "amenity_items": [
+                    {
+                        "amenity_id": str(amenity.id),
+                        "status": "yes",
+                        "cost": "free",
+                        "details": {"all_rooms": True},
+                    }
+                ],
             },
             headers=admin_headers,
         )
@@ -117,6 +140,84 @@ class TestRoomCRUD:
         assert data["room_features"]["kitchen"]["refrigerator"] is True
         assert data["room_features"]["accessibility"]["wheelchair_accessible"] is True
         assert data["room_features"]["highlights"] == ["spacious", "garden_view"]
+        assert data["amenity_items"][0]["amenity"]["code"] == "air_conditioning"
+        assert data["amenity_items"][0]["details"] == {"all_rooms": True}
+
+    async def test_room_rejects_sanatorium_scoped_amenity(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        amenity = Amenity(
+            code="restaurant",
+            name={"uz": "Restoran", "ru": "Ресторан", "en": "Restaurant"},
+            description={"uz": "", "ru": "", "en": ""},
+            category="food_drink",
+            scope=AmenityScope.SANATORIUM,
+        )
+        db.add(amenity)
+        await db.commit()
+
+        resp = await client.post(
+            "/api/rooms",
+            json={
+                "sanatorium_id": str(san.id),
+                "name": {"uz": "Suite", "ru": "Люкс", "en": "Suite"},
+                "capacity": 2,
+                "base_price": "220.00",
+                "base_currency": "USD",
+                "amenity_items": [{"amenity_id": str(amenity.id)}],
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 400, resp.text
+        assert "resource scope" in resp.json()["detail"]
+
+    async def test_admin_creates_room_with_admin_information_fields(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        resp = await client.post(
+            "/api/rooms",
+            json={
+                "sanatorium_id": str(san.id),
+                "name": {"uz": "Standart", "ru": "Стандарт", "en": "Standard"},
+                "capacity": 2,
+                "max_adults": 2,
+                "max_children": 1,
+                "max_child_rate_children": 1,
+                "inventory_count": 10,
+                "base_price": "150.00",
+                "base_currency": "USD",
+                "accommodation_type": "hotel_room",
+                "beds": [
+                    {"beds": [{"type": "double", "count": 1, "size_cm": "150x200"}]}
+                ],
+                "room_size_policy": "same_size",
+                "size_sqm": 35,
+                "floor": "3-5",
+                "window_policy": "all_rooms_have_windows",
+                "window_description": "City-facing windows",
+                "smoking_policy": "non_smoking",
+                "room_advisories": ["near_elevator"],
+                "display_order": 2,
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["accommodation_type"] == "hotel_room"
+        assert data["max_child_rate_children"] == 1
+        assert data["room_size_policy"] == "same_size"
+        assert data["window_policy"] == "all_rooms_have_windows"
+        assert data["smoking_policy"] == "non_smoking"
+        assert data["smoking_allowed"] is False
+        assert data["room_advisories"] == ["near_elevator"]
+        assert data["display_order"] == 2
 
     async def test_admin_patches_room_features(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
@@ -141,6 +242,38 @@ class TestRoomCRUD:
         assert features["has_window"] is False
         assert features["bathroom"]["type"] == "shower"
         assert features["comfort"]["carpet"] is True
+
+    async def test_admin_can_reorder_rooms(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        first = await make_room(db, sanatorium=san, name="First")
+        second = await make_room(db, sanatorium=san, name="Second")
+
+        resp = await client.patch(
+            "/api/rooms/order",
+            json={
+                "sanatorium_id": str(san.id),
+                "items": [
+                    {"room_id": str(first.id), "display_order": 2},
+                    {"room_id": str(second.id), "display_order": 1},
+                ],
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 204
+
+        listed = await client.get(
+            f"/api/rooms?sanatorium_id={san.id}&include_translations=true",
+            headers=admin_headers,
+        )
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()["items"]] == [
+            str(second.id),
+            str(first.id),
+        ]
 
     async def test_admin_cannot_create_room_for_other_sanatorium(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
@@ -196,6 +329,36 @@ class TestRoomCRUD:
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 1
+
+    async def test_delete_room_is_soft_and_hidden_from_public(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        room = await make_room(db, sanatorium=san)
+
+        deleted = await client.delete(f"/api/rooms/{room.id}", headers=admin_headers)
+        assert deleted.status_code == 204
+
+        public_list = await client.get(f"/api/rooms?sanatorium_id={san.id}")
+        assert public_list.status_code == 200
+        assert public_list.json()["total"] == 0
+
+        public_detail = await client.get(f"/api/rooms/{room.id}")
+        assert public_detail.status_code == 404
+
+        deleted_list = await client.get(
+            f"/api/rooms?sanatorium_id={san.id}&deleted_only=true",
+            headers=admin_headers,
+        )
+        assert deleted_list.status_code == 200
+        assert deleted_list.json()["total"] == 1
+        assert deleted_list.json()["items"][0]["deleted_at"] is not None
+
+        admin_detail = await client.get(f"/api/rooms/{room.id}", headers=admin_headers)
+        assert admin_detail.status_code == 200
+        assert admin_detail.json()["is_active"] is False
 
     async def test_super_admin_sets_markup_percent(
         self,

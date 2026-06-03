@@ -121,7 +121,7 @@ class PackageBookingFlow(BookingFlowBase):
         room = await self.db.scalar(
             select(Room).where(Room.id == room_id).with_for_update(of=Room)
         )
-        if room is None or not room.is_active:
+        if room is None or not room.is_active or room.deleted_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Package's assigned room is unavailable",

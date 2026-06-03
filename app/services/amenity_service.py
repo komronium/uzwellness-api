@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.pagination import paginated
 from app.core.utils import merge_translation_fields
-from app.models.amenity import Amenity
+from app.models.amenity import Amenity, AmenityScope
 from app.schemas.amenity import AmenityCreate, AmenityUpdate
 
 
@@ -17,10 +17,25 @@ class AmenityService:
         self.db = db
 
     async def list_all(
-        self, *, limit: int, offset: int
+        self,
+        *,
+        limit: int,
+        offset: int,
+        scope: AmenityScope | None = None,
+        category: str | None = None,
+        is_active: bool | None = True,
     ) -> tuple[Sequence[Amenity], int]:
-        stmt = select(Amenity).order_by(
-            Amenity.category.asc(), Amenity.created_at.asc()
+        stmt = select(Amenity)
+        if scope is not None:
+            stmt = stmt.where(Amenity.scope.in_([scope, AmenityScope.BOTH]))
+        if category is not None:
+            stmt = stmt.where(Amenity.category == category)
+        if is_active is not None:
+            stmt = stmt.where(Amenity.is_active.is_(is_active))
+        stmt = stmt.order_by(
+            Amenity.category.asc(),
+            Amenity.display_order.asc(),
+            Amenity.created_at.asc(),
         )
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
@@ -29,10 +44,14 @@ class AmenityService:
 
     async def create(self, payload: AmenityCreate) -> Amenity:
         amenity = Amenity(
+            code=payload.code,
             name=payload.name.model_dump(),
             description=payload.description.model_dump(),
             category=payload.category,
+            scope=payload.scope,
             icon=payload.icon,
+            display_order=payload.display_order,
+            is_active=payload.is_active,
         )
         self.db.add(amenity)
         await self.db.commit()

@@ -5,7 +5,12 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
-from app.models.sanatorium import PropertyType, SanatoriumStatus, WellnessCategory
+from app.models.sanatorium import (
+    HostType,
+    PropertyType,
+    SanatoriumStatus,
+    WellnessCategory,
+)
 from app.schemas.common import Translations, TranslationsCreate
 from app.schemas.destination import DestinationAdminRead, DestinationRead
 from app.schemas.region import RegionAdminRead, RegionRead
@@ -31,7 +36,7 @@ from app.schemas.sanatorium_service_matrix import (
     ServiceMatrix,
     ServiceMatrixRead,
 )
-from app.schemas.sanatorium_policies import SanatoriumPolicies
+from app.schemas.sanatorium_policies import SanatoriumPolicies, SanatoriumPoliciesUpdate
 
 __all__ = ("SanatoriumImageRead", "SanatoriumImageUpdate")
 
@@ -51,6 +56,8 @@ class SanatoriumCreate(BaseModel):
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     phones: list[str] = Field(default_factory=list, max_length=10)
+    postal_code: str | None = Field(default=None, max_length=20)
+    customer_support_email: str | None = Field(default=None, max_length=255)
     website: str | None = Field(default=None, max_length=255)
     check_in_time: time | None = None
     check_out_time: time | None = None
@@ -69,6 +76,9 @@ class SanatoriumCreate(BaseModel):
     treatment_focuses: list[str] = Field(default_factory=list)
     treatment_profile: TreatmentProfile = Field(default_factory=TreatmentProfile)
     year_opened: int | None = Field(default=None, ge=1800, le=2100)
+    renovation_year: int | None = Field(default=None, ge=1800, le=2100)
+    chain_name: str | None = Field(default=None, max_length=120)
+    host_type: HostType | None = None
     languages_spoken: list[str] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
     promo_badges: list[PromoBadge] = Field(default_factory=list)
@@ -102,6 +112,8 @@ class SanatoriumUpdate(BaseModel):
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
     phones: list[str] | None = Field(default=None, max_length=10)
+    postal_code: str | None = Field(default=None, max_length=20)
+    customer_support_email: str | None = Field(default=None, max_length=255)
     website: str | None = Field(default=None, max_length=255)
     check_in_time: time | None = None
     check_out_time: time | None = None
@@ -121,6 +133,9 @@ class SanatoriumUpdate(BaseModel):
     treatment_focuses: list[str] | None = None
     treatment_profile: TreatmentProfile | None = None
     year_opened: int | None = Field(default=None, ge=1800, le=2100)
+    renovation_year: int | None = Field(default=None, ge=1800, le=2100)
+    chain_name: str | None = Field(default=None, max_length=120)
+    host_type: HostType | None = None
     languages_spoken: list[str] | None = None
     highlights: list[str] | None = None
     is_featured: bool | None = None
@@ -135,7 +150,7 @@ class SanatoriumUpdate(BaseModel):
     b2b_commission_percent: Decimal | None = Field(default=None, ge=0, le=100)
     agent_discount_tiers: list[AgentDiscountTier] | None = None
     medical_base: MedicalBase | None = None
-    policies: SanatoriumPolicies | None = None
+    policies: SanatoriumPoliciesUpdate | None = None
 
     @field_validator("agent_discount_tiers")
     @classmethod
@@ -156,6 +171,8 @@ class _SanatoriumReadCommon(BaseModel):
     lat: Decimal | None
     lng: Decimal | None
     phones: list[str]
+    postal_code: str | None
+    customer_support_email: str | None
     website: str | None
     check_in_time: time | None
     check_out_time: time | None
@@ -173,6 +190,9 @@ class _SanatoriumReadCommon(BaseModel):
     treatment_focuses: list[str]
     treatment_profile: TreatmentProfileRead
     year_opened: int | None
+    renovation_year: int | None
+    chain_name: str | None
+    host_type: HostType | None
     languages_spoken: list[str]
     highlights: list[str]
     is_featured: bool
@@ -262,6 +282,8 @@ def _public_core(obj, locale: str) -> dict:
         "lat": obj.lat,
         "lng": obj.lng,
         "phones": obj.phones,
+        "postal_code": obj.postal_code,
+        "customer_support_email": obj.customer_support_email,
         "website": obj.website,
         "stars": obj.stars,
         "status": obj.status,
@@ -287,6 +309,9 @@ def _public_detail(obj, locale: str) -> dict:
         "wellness_category": obj.wellness_category,
         "treatment_focuses": obj.treatment_focuses,
         "year_opened": obj.year_opened,
+        "renovation_year": obj.renovation_year,
+        "chain_name": obj.chain_name,
+        "host_type": obj.host_type,
         "languages_spoken": obj.languages_spoken,
         "highlights": obj.highlights,
         "is_featured": obj.is_featured,
@@ -321,8 +346,7 @@ def _public_relations(obj, locale: str) -> dict:
         ],
         "images": [SanatoriumImageRead.model_validate(i) for i in obj.images],
         "amenities": [
-            SanatoriumAmenityRead.from_obj(link, locale)
-            for link in obj.amenity_links
+            SanatoriumAmenityRead.from_obj(link, locale) for link in obj.amenity_links
         ],
         "medical_base": MedicalBaseRead.from_obj(obj.medical_base, locale),
         "policies": SanatoriumPolicies.model_validate(obj.policies or {}),

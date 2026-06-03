@@ -1,9 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import IncludeTranslationsDep, LocaleDep, not_found, require_roles
 from app.core.pagination import LargePagination
+from app.models.amenity import AmenityScope
 from app.models.user import UserRole
 from app.schemas.amenity import (
     AmenityAdminList,
@@ -25,9 +26,18 @@ async def list_amenities(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     page: LargePagination,
+    scope: AmenityScope | None = Query(default=None),
+    category: str | None = Query(default=None, max_length=60),
+    is_active: bool | None = Query(default=True),
     amenities: AmenityService = Depends(get_amenity_service),
 ) -> AmenityList | AmenityAdminList:
-    items, total = await amenities.list_all(limit=page.limit, offset=page.offset)
+    items, total = await amenities.list_all(
+        limit=page.limit,
+        offset=page.offset,
+        scope=scope,
+        category=category,
+        is_active=is_active,
+    )
     if include_translations:
         return AmenityAdminList(
             items=[AmenityAdminRead.model_validate(a) for a in items],

@@ -1,4 +1,5 @@
 from app.core.meta.shared import Label, Option, from_enum, from_labels
+from app.models.availability_log import AvailabilityLogCategory
 from app.schemas.booking import BookingDateFilter
 from app.schemas.bulk_availability import (
     CopyRateAdjustment,
@@ -98,6 +99,31 @@ _AVAILABILITY_ROOM_STATUS: dict[str, Label] = {
     },
 }
 
+_AVAILABILITY_LOG_CATEGORY: dict[str, Label] = {
+    "room_status_restrictions": {
+        "uz": "Xona holati va cheklovlar",
+        "ru": "Статус номера и ограничения",
+        "en": "Room status & restrictions",
+    },
+    "inventory": {"uz": "Inventar", "ru": "Инвентарь", "en": "Inventory"},
+    "rate": {"uz": "Narx", "ru": "Тариф", "en": "Rate"},
+    "max_rooms_available": {
+        "uz": "Maksimal mavjud xonalar",
+        "ru": "Максимум доступных номеров",
+        "en": "Maximum rooms available",
+    },
+    "cancellation_policy": {
+        "uz": "Bekor qilish siyosati",
+        "ru": "Политика отмены",
+        "en": "Cancellation policy",
+    },
+    "bulk_operation": {
+        "uz": "Ommaviy operatsiya",
+        "ru": "Массовая операция",
+        "en": "Bulk operation",
+    },
+}
+
 
 def availability_meta() -> dict[str, list[Option]]:
     return {
@@ -117,4 +143,8 @@ def availability_meta() -> dict[str, list[Option]]:
             _RESERVATION_FALLBACK_PROCESSING_METHOD,
         ),
         "availability_room_statuses": from_labels(_AVAILABILITY_ROOM_STATUS),
+        "availability_log_categories": from_enum(
+            AvailabilityLogCategory,
+            _AVAILABILITY_LOG_CATEGORY,
+        ),
     }

@@ -173,6 +173,23 @@ async def test_bulk_rates_and_status_update_rate_plan_calendar(
     assert days[1]["is_closed"] is True
     assert days[1]["is_sellable"] is False
 
+    logs = await client.get(
+        "/api/availability/logs",
+        headers=admin_headers,
+        params={
+            "sanatorium_id": str(sanatorium.id),
+            "rate_plan_id": rate_plan_id,
+            "category": "rate",
+        },
+    )
+    assert logs.status_code == 200, logs.text
+    assert logs.json()["total"] == 1
+    log = logs.json()["items"][0]
+    assert log["action"] == "bulk_rates"
+    assert log["check_in_from"] == "2027-06-01"
+    assert log["check_in_to"] == "2027-06-03"
+    assert log["after"]["selling_rate"] == "900.00"
+
 
 async def test_bulk_restrictions_are_enforced_on_booking(
     client: AsyncClient,

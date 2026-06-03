@@ -4,6 +4,8 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.amenity import Amenity, AmenityScope
+from app.models.room import RoomImage
 from app.models.sanatorium import SanatoriumImage, SanatoriumStatus
 from app.models.user import UserRole
 from tests.factories import make_exchange_rate, make_room, make_sanatorium, make_user
@@ -46,6 +48,58 @@ async def test_create_as_super_admin_works(
     assert body["description"]["uz"] == "Eng yaxshi"
     assert body["description"]["en"] == "The best"
     assert body["description"]["ru"] == "Лучший"
+
+
+async def test_create_with_property_information_fields(
+    client: AsyncClient, super_admin_headers
+) -> None:
+    resp = await client.post(
+        "/api/sanatoriums",
+        json={
+            **CREATE_PAYLOAD,
+            "postal_code": "200100",
+            "customer_support_email": "info@example.uz",
+            "year_opened": 2019,
+            "renovation_year": 2024,
+            "chain_name": "UzWellness Collection",
+            "host_type": "private_host",
+        },
+        headers=super_admin_headers,
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["postal_code"] == "200100"
+    assert body["customer_support_email"] == "info@example.uz"
+    assert body["renovation_year"] == 2024
+    assert body["chain_name"] == "UzWellness Collection"
+    assert body["host_type"] == "private_host"
+
+
+async def test_create_rejects_room_scoped_facility_amenity(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    amenity = Amenity(
+        code="room_safe",
+        name={"uz": "Seyf", "ru": "Сейф", "en": "Safe"},
+        description={"uz": "", "ru": "", "en": ""},
+        category="room_amenities",
+        scope=AmenityScope.ROOM,
+    )
+    db.add(amenity)
+    await db.commit()
+
+    resp = await client.post(
+        "/api/sanatoriums",
+        json={
+            **CREATE_PAYLOAD,
+            "amenities": [{"amenity_id": str(amenity.id), "status": "yes"}],
+        },
+        headers=super_admin_headers,
+    )
+
+    assert resp.status_code == 400, resp.text
+    assert "resource scope" in resp.json()["detail"]
 
 
 async def test_create_as_admin_auto_assigns_owner(
@@ -256,6 +310,33 @@ async def test_patch_as_owning_admin(
     assert resp.json()["address"]["uz"] == "Updated 99"
 
 
+async def test_patch_property_information_fields(
+    client: AsyncClient, db: AsyncSession, admin_user, admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(
+        db, name="Property Info", slug="property-info", admin_user_id=admin_user.id
+    )
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={
+            "postal_code": "100000",
+            "customer_support_email": "support@example.uz",
+            "renovation_year": 2025,
+            "chain_name": "Local Chain",
+            "host_type": "professional_host",
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["postal_code"] == "100000"
+    assert body["customer_support_email"] == "support@example.uz"
+    assert body["renovation_year"] == 2025
+    assert body["chain_name"] == "Local Chain"
+    assert body["host_type"] == "professional_host"
+
+
 async def test_patch_as_other_admin_returns_403(
     client: AsyncClient, db: AsyncSession, admin_headers
 ) -> None:
@@ -281,6 +362,58 @@ async def test_patch_as_customer_returns_403(
         headers=customer_headers,
     )
     assert resp.status_code == 403
+
+
+async def test_property_content_overview_returns_score_and_tasks(
+    client: AsyncClient, db: AsyncSession, admin_user, admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        name="Content Hotel",
+        slug="content-hotel",
+        admin_user_id=admin_user.id,
+    )
+    sanatorium.customer_support_email = "info@example.uz"
+    sanatorium.year_opened = 2020
+    sanatorium.host_type = "private_host"
+    room = await make_room(db, sanatorium=sanatorium)
+    db.add(
+        SanatoriumImage(
+            sanatorium_id=sanatorium.id,
+            url="/uploads/property.webp",
+            order=0,
+            is_primary=True,
+            category="featured",
+        )
+    )
+    db.add(
+        RoomImage(
+            room_id=room.id,
+            url="/uploads/room.webp",
+            order=0,
+            is_primary=True,
+            category="room",
+        )
+    )
+    await db.commit()
+
+    resp = await client.get(
+        f"/api/sanatoriums/{sanatorium.id}/content-overview",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["sanatorium_id"] == str(sanatorium.id)
+    assert 0 <= body["score_percent"] <= 100
+    assert body["property_rooms_count"] == 1
+    assert body["total_inventory_count"] == room.inventory_count
+    assert any(task["code"] == "update_room_core_info" for task in body["tasks"])
+    assert {section["code"] for section in body["sections"]} >= {
+        "general_information",
+        "photos_videos",
+        "room_information",
+    }
 
 
 async def test_patch_merges_partial_translations(
@@ -577,9 +710,7 @@ async def test_get_by_slug_include_translations(
 async def test_get_by_slug_public_pending_returns_404(
     client: AsyncClient, db: AsyncSession
 ) -> None:
-    await make_sanatorium(
-        db, slug="hidden-slug", status=SanatoriumStatus.PENDING
-    )
+    await make_sanatorium(db, slug="hidden-slug", status=SanatoriumStatus.PENDING)
     resp = await client.get("/api/sanatoriums/slug/hidden-slug")
     assert resp.status_code == 404
 
@@ -794,11 +925,36 @@ POLICIES_PAYLOAD = {
             "en": "Check in at reception with your passport",
         },
         "required_documents": ["passport", "booking_confirmation"],
+        "latest_check_in_time": "00:00:00",
+        "earliest_check_out_time": "12:00:00",
+        "front_desk_available": True,
+        "front_desk_24h": True,
+        "staff_greet_on_arrival": False,
+        "self_check_in_available": False,
+        "check_in_at_another_location": False,
+        "must_contact_before_check_in": False,
+        "sends_check_in_guide": False,
+    },
+    "important_notices": {
+        "items": [
+            {
+                "category": "city",
+                "body": {"en": "Marriage certificate may be required for some guests."},
+                "valid_from": "1900-01-01",
+                "valid_to": "long_term",
+            }
+        ]
     },
     "children": {
         "allowed": True,
         "min_age": 2,
         "treatment_min_age": 12,
+        "child_rate_mode": "standard",
+        "child_rates_prepaid": False,
+        "existing_bed_price_bands": [
+            {"min_age": 0, "max_age": 4, "pricing_method": "free"},
+            {"min_age": 5, "pricing_method": "same_as_adults"},
+        ],
         "notes": {"uz": "Bolalar ota-ona bilan qabul qilinadi"},
     },
     "extra_bed": {
@@ -824,25 +980,81 @@ POLICIES_PAYLOAD = {
     },
     "breakfast": {
         "included": True,
+        "available": True,
         "style": "buffet",
+        "serving_style": "buffet",
+        "cuisine": "full_english_irish",
+        "adult_price": "10.00",
+        "child_price": "5.00",
+        "currency": "USD",
         "hours": "07:30-10:00",
+        "hours_by_weekday": {"mon": "08:00-10:00", "sat": "08:00-10:00"},
     },
     "pets": {
-        "allowed": False,
+        "allowed": True,
         "service_animals_allowed": True,
+        "fee": "0.99",
+        "currency": "USD",
+        "fee_frequency": "per_pet_per_day",
+        "advance_notice_required": False,
     },
     "cancellation": {
         "free_cancellation_until_days_before": 3,
         "penalty_percent": "50.00",
     },
+    "deposit": {
+        "required": True,
+        "percent": "20.00",
+        "currency": "USD",
+        "type": "percent",
+    },
     "payment": {
         "methods": ["cash", "visa"],
         "deposit_required": True,
         "deposit_percent": "20.00",
+        "guarantee_methods": ["cash", "card"],
+        "accepted_cards": ["mastercard", "visa"],
     },
     "fees": {
+        "pricing_mode": "tax_inclusive",
+        "tax_rules": [
+            {
+                "code": "vat",
+                "type": "vat",
+                "title": {"uz": "QQS", "ru": "НДС", "en": "VAT"},
+                "calculation_method": "per_room_per_night_percent",
+                "amount": "12.00",
+                "active": True,
+                "postpay": False,
+                "included_in_price": True,
+                "include_in_promotion_calculations": True,
+                "calculation_order": 0,
+            },
+            {
+                "code": "tourism_tax",
+                "type": "tourism_tax",
+                "title": {
+                    "uz": "Turizm solig'i",
+                    "ru": "Туристический сбор",
+                    "en": "Tourism tax",
+                },
+                "calculation_method": "per_person_per_night_fixed",
+                "amount": "4.89",
+                "currency": "USD",
+                "active": True,
+                "postpay": True,
+                "included_in_price": False,
+                "include_in_promotion_calculations": False,
+                "separate_children_rule": False,
+            },
+        ],
         "mandatory_fees": ["city_tax"],
         "optional_fees": ["parking"],
+    },
+    "reservation_restrictions": {
+        "cutoff_hours_before_check_in": 2,
+        "min_advance_hours": 1,
+        "max_advance_days": 365,
     },
 }
 
@@ -857,10 +1069,24 @@ async def test_create_with_policies(client: AsyncClient, super_admin_headers) ->
     policies = resp.json()["policies"]
     assert policies["children"]["allowed"] is True
     assert policies["children"]["treatment_min_age"] == 12
+    assert policies["children"]["child_rate_mode"] == "standard"
+    assert (
+        policies["children"]["existing_bed_price_bands"][0]["pricing_method"] == "free"
+    )
     assert policies["extra_bed"]["age_price_bands"][0]["min_age"] == 4
-    assert policies["extra_bed"]["age_price_bands"][1]["price_per_night"] == "1000000.00"
+    assert (
+        policies["extra_bed"]["age_price_bands"][1]["price_per_night"] == "1000000.00"
+    )
     assert policies["breakfast"]["style"] == "buffet"
+    assert policies["breakfast"]["available"] is True
+    assert policies["pets"]["fee_frequency"] == "per_pet_per_day"
+    assert policies["deposit"]["type"] == "percent"
     assert policies["payment"]["deposit_percent"] == "20.00"
+    assert policies["fees"]["pricing_mode"] == "tax_inclusive"
+    assert policies["fees"]["tax_rules"][0]["type"] == "vat"
+    assert policies["fees"]["tax_rules"][0]["amount"] == "12.00"
+    assert policies["fees"]["tax_rules"][1]["postpay"] is True
+    assert policies["reservation_restrictions"]["cutoff_hours_before_check_in"] == 2
 
 
 async def test_patch_policies(
@@ -874,6 +1100,67 @@ async def test_patch_policies(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["policies"]["children"]["allowed"] is False
+
+
+async def test_patch_policies_deep_merges_existing_sections(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(db, slug="policy-merge")
+    sanatorium.policies = {
+        "children": {
+            "allowed": True,
+            "child_rate_mode": "standard",
+            "existing_bed_price_bands": [{"max_age": 4, "pricing_method": "free"}],
+        },
+        "payment": {"methods": ["cash"]},
+    }
+    await db.commit()
+
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={"policies": {"children": {"child_rates_prepaid": False}}},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    policies = resp.json()["policies"]
+    assert policies["children"]["allowed"] is True
+    assert policies["children"]["child_rate_mode"] == "standard"
+    assert policies["children"]["child_rates_prepaid"] is False
+    assert (
+        policies["children"]["existing_bed_price_bands"][0]["pricing_method"] == "free"
+    )
+    assert policies["payment"]["methods"] == ["cash"]
+
+
+async def test_policy_endpoint_reads_and_patches_sections(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(db, slug="policy-endpoint")
+    sanatorium.policies = {
+        "children": {"allowed": True, "child_rate_mode": "standard"},
+        "payment": {"methods": ["cash"]},
+    }
+    await db.commit()
+
+    read = await client.get(
+        f"/api/sanatoriums/{sanatorium.id}/policies",
+        headers=super_admin_headers,
+    )
+    assert read.status_code == 200, read.text
+    assert read.json()["children"]["allowed"] is True
+    assert read.json()["payment"]["methods"] == ["cash"]
+
+    patched = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}/policies",
+        json={"children": {"child_rates_prepaid": False}},
+        headers=super_admin_headers,
+    )
+    assert patched.status_code == 200, patched.text
+    policies = patched.json()
+    assert policies["children"]["allowed"] is True
+    assert policies["children"]["child_rate_mode"] == "standard"
+    assert policies["children"]["child_rates_prepaid"] is False
+    assert policies["payment"]["methods"] == ["cash"]
 
 
 # ---------- rating breakdown ----------
@@ -982,6 +1269,92 @@ async def test_review_visibility_recomputes_rating_breakdown(
     assert body["rating_breakdown"]["treatment"] == "5.00"
 
 
+async def test_admin_review_reply_workflow_and_summary(
+    client: AsyncClient,
+    db: AsyncSession,
+    admin_user,
+    admin_headers,
+    customer_headers,
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        slug="review-admin-workflow",
+        status=SanatoriumStatus.APPROVED,
+        admin_user_id=admin_user.id,
+    )
+
+    created = await client.post(
+        f"/api/reviews/sanatoriums/{sanatorium.id}",
+        json={
+            "source": "trip_com",
+            "reviewer_name": "Guest User",
+            "reviewer_country": "Russia",
+            "traveler_type": "couple",
+            "stayed_at": "2026-01-01",
+            "stayed_room_name": "Standard Twin Room",
+            "rating": 2,
+            "score_label": "Negative",
+            "cleanliness": 3,
+            "amenities": 2,
+            "location": 4,
+            "service": 2,
+            "body": "The room was not clean and service was slow.",
+            "positive_tags": ["location"],
+            "negative_tags": ["cleanliness", "service"],
+            "photos": [{"url": "https://example.com/review.jpg"}],
+        },
+        headers=customer_headers,
+    )
+    assert created.status_code == 201, created.text
+    review_id = created.json()["id"]
+
+    listed = await client.get(
+        "/api/reviews",
+        params={
+            "sanatorium_id": str(sanatorium.id),
+            "source": "trip_com",
+            "reply_status": "awaiting_reply",
+            "negative_only": "true",
+        },
+        headers=admin_headers,
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["negative_tags"] == ["cleanliness", "service"]
+
+    summary = await client.get(
+        "/api/reviews/admin/summary",
+        params={"sanatorium_id": str(sanatorium.id)},
+        headers=admin_headers,
+    )
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["awaiting_reply"] == 1
+    assert summary.json()["negative_reviews"] == 1
+    assert summary.json()["reviews_with_photos"] == 1
+    assert summary.json()["negative_tags"][0]["tag"] == "cleanliness"
+
+    replied = await client.patch(
+        f"/api/reviews/{review_id}/reply",
+        json={
+            "body": "Thank you for your feedback. We will improve this.",
+            "language": "en",
+        },
+        headers=admin_headers,
+    )
+    assert replied.status_code == 200, replied.text
+    assert replied.json()["reply_status"] == "replied"
+    assert replied.json()["replied_by_user_id"] == str(admin_user.id)
+
+    after_reply = await client.get(
+        "/api/reviews/admin/summary",
+        params={"sanatorium_id": str(sanatorium.id)},
+        headers=admin_headers,
+    )
+    assert after_reply.status_code == 200, after_reply.text
+    assert after_reply.json()["awaiting_reply"] == 0
+    assert after_reply.json()["reply_rate"] == "100.00"
+
+
 # ---------- treatment profile ----------
 
 
@@ -1088,6 +1461,23 @@ async def test_get_treatment_profile_public_locale(
 
 
 SERVICE_MATRIX_PAYLOAD = {
+    "popular_facilities": {
+        "title": {
+            "uz": "Mashhur qulayliklar",
+            "ru": "Популярные удобства",
+            "en": "Popular facilities",
+        },
+        "items": [
+            {
+                "code": "restaurant",
+                "title": {"uz": "Restoran", "ru": "Ресторан", "en": "Restaurant"},
+                "status": "yes",
+                "is_available": True,
+                "cost": "free",
+                "details": {"reservations_required": False},
+            }
+        ],
+    },
     "food_drink": {
         "title": {"uz": "Ovqatlanish", "ru": "Питание", "en": "Food & drink"},
         "items": [
@@ -1150,6 +1540,34 @@ SERVICE_MATRIX_PAYLOAD = {
             }
         ]
     },
+    "health_wellness": {
+        "items": [
+            {
+                "code": "massage_room",
+                "title": {
+                    "uz": "Massaj xonasi",
+                    "ru": "Массажный кабинет",
+                    "en": "Massage room",
+                },
+                "status": "yes",
+                "cost": "paid",
+            }
+        ]
+    },
+    "sport_fitness": {
+        "items": [
+            {
+                "code": "fitness_room",
+                "title": {
+                    "uz": "Fitnes zali",
+                    "ru": "Фитнес-зал",
+                    "en": "Fitness room",
+                },
+                "status": "no",
+                "is_available": False,
+            }
+        ]
+    },
     "languages": ["uz", "ru", "en"],
     "notes": {
         "uz": "Xizmatlar mavsumga qarab o'zgarishi mumkin",
@@ -1169,10 +1587,17 @@ async def test_create_with_service_matrix(
     )
     assert resp.status_code == 201, resp.text
     matrix = resp.json()["service_matrix"]
+    assert matrix["popular_facilities"]["items"][0]["code"] == "restaurant"
+    assert matrix["popular_facilities"]["items"][0]["status"] == "yes"
+    assert matrix["popular_facilities"]["items"][0]["details"] == {
+        "reservations_required": False
+    }
     assert matrix["food_drink"]["items"][0]["code"] == "breakfast"
     assert matrix["food_drink"]["items"][0]["cost"] == "free"
     assert matrix["medical_department"]["items"][0]["hours"] == "09:00-17:00"
     assert matrix["parking"]["items"][0]["cost"] == "paid"
+    assert matrix["health_wellness"]["items"][0]["code"] == "massage_room"
+    assert matrix["sport_fitness"]["items"][0]["status"] == "no"
     assert matrix["languages"] == ["uz", "ru", "en"]
 
 
@@ -1203,6 +1628,7 @@ async def test_get_service_matrix_public_locale(
     matrix = resp.json()["service_matrix"]
     assert matrix["food_drink"]["title"] == "Ovqatlanish"
     assert matrix["food_drink"]["items"][0]["title"] == "Nonushta"
+    assert matrix["popular_facilities"]["items"][0]["title"] == "Restoran"
     assert matrix["food_drink"]["items"][0]["description"] == "Shved stoli"
     assert matrix["medical_department"]["title"] == "Tibbiy bo'lim"
     assert matrix["notes"] == "Xizmatlar mavsumga qarab o'zgarishi mumkin"

@@ -1,5 +1,12 @@
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
-from app.models.room import RoomView
+from app.models.room import (
+    AccommodationType,
+    GenderRestriction,
+    RoomSizePolicy,
+    RoomView,
+    SmokingPolicy,
+    WindowPolicy,
+)
 from app.core.meta.shared import Label, Option, from_enum, from_labels
 
 
@@ -61,6 +68,115 @@ _BED_TYPE: dict[str, Label] = {
     "bunk": {"uz": "Qavatli karavot", "ru": "Двухъярусная", "en": "Bunk bed"},
 }
 
+_ACCOMMODATION_TYPE: dict[str, Label] = {
+    "hotel_room": {"uz": "Mehmonxona xonasi", "ru": "Номер", "en": "Hotel room"},
+    "shared_room_bed": {
+        "uz": "Umumiy xonadagi karavot",
+        "ru": "Кровать в общем номере",
+        "en": "Bed in shared room",
+    },
+}
+
+_GENDER_RESTRICTION: dict[str, Label] = {
+    "male_only": {"uz": "Faqat erkaklar", "ru": "Только мужчины", "en": "Male only"},
+    "female_only": {
+        "uz": "Faqat ayollar",
+        "ru": "Только женщины",
+        "en": "Female only",
+    },
+}
+
+_ROOM_SIZE_POLICY: dict[str, Label] = {
+    "same_size": {
+        "uz": "Barcha xonalar bir xil o'lchamda",
+        "ru": "Все номера одного размера",
+        "en": "All rooms have the same size",
+    },
+    "different_sizes": {
+        "uz": "Xonalar har xil o'lchamda",
+        "ru": "Номера разного размера",
+        "en": "Rooms have different sizes",
+    },
+}
+
+_SMOKING_POLICY: dict[str, Label] = {
+    "non_smoking": {"uz": "Chekilmaydi", "ru": "Для некурящих", "en": "Non-smoking"},
+    "smoking_permitted": {
+        "uz": "Chekish mumkin",
+        "ru": "Курение разрешено",
+        "en": "Smoking permitted",
+    },
+    "some_smoking": {
+        "uz": "Ba'zi xonalarda chekish mumkin",
+        "ru": "Курение разрешено в некоторых номерах",
+        "en": "Smoking permitted in some rooms",
+    },
+}
+
+_WINDOW_POLICY: dict[str, Label] = {
+    "all_rooms_have_windows": {
+        "uz": "Barcha xonalarda deraza bor",
+        "ru": "Во всех номерах есть окна",
+        "en": "All rooms have windows",
+    },
+    "some_rooms_have_windows": {
+        "uz": "Ba'zi xonalarda deraza bor",
+        "ru": "В некоторых номерах есть окна",
+        "en": "Some rooms have windows",
+    },
+    "no_rooms_have_windows": {
+        "uz": "Xonalarda deraza yo'q",
+        "ru": "В номерах нет окон",
+        "en": "No rooms have windows",
+    },
+}
+
+_ROOM_AMENITY_GROUP: dict[str, Label] = {
+    "popular_amenities": {
+        "uz": "Mashhur qulayliklar",
+        "ru": "Популярные удобства",
+        "en": "Popular amenities",
+    },
+    "bathroom": {"uz": "Hammom", "ru": "Ванная", "en": "Bathroom"},
+    "bedroom": {"uz": "Yotoqxona", "ru": "Спальня", "en": "Bedroom"},
+    "media_technology": {
+        "uz": "Media va texnologiya",
+        "ru": "Медиа и технологии",
+        "en": "Media and technology",
+    },
+    "internet": {"uz": "Internet", "ru": "Интернет", "en": "Internet"},
+    "kitchen": {"uz": "Oshxona", "ru": "Кухня", "en": "Kitchen"},
+    "food_drink": {
+        "uz": "Ovqat va ichimlik",
+        "ru": "Еда и напитки",
+        "en": "Food and drink",
+    },
+    "comfort": {"uz": "Qulaylik", "ru": "Комфорт", "en": "Comfort"},
+    "heating_cooling": {
+        "uz": "Isitish va sovitish",
+        "ru": "Отопление и охлаждение",
+        "en": "Heating and cooling",
+    },
+    "layout_furnishing": {
+        "uz": "Joylashuv va mebel",
+        "ru": "Планировка и мебель",
+        "en": "Layout and furnishing",
+    },
+    "safety_security": {
+        "uz": "Xavfsizlik",
+        "ru": "Безопасность",
+        "en": "Safety and security",
+    },
+    "outdoor_view": {"uz": "Tashqi ko'rinish", "ru": "Вид", "en": "Outdoor and view"},
+    "services": {"uz": "Xizmatlar", "ru": "Услуги", "en": "Services"},
+    "family": {"uz": "Oila", "ru": "Семья", "en": "Family"},
+    "accessibility": {
+        "uz": "Maxsus imkoniyatlar",
+        "ru": "Доступность",
+        "en": "Accessibility",
+    },
+}
+
 
 def room_meta() -> dict[str, list[Option]]:
     return {
@@ -69,4 +185,10 @@ def room_meta() -> dict[str, list[Option]]:
         "confirmation_types": from_enum(ConfirmationType, _CONFIRMATION),
         "room_views": from_enum(RoomView, _ROOM_VIEW),
         "bed_types": from_labels(_BED_TYPE),
+        "accommodation_types": from_enum(AccommodationType, _ACCOMMODATION_TYPE),
+        "gender_restrictions": from_enum(GenderRestriction, _GENDER_RESTRICTION),
+        "room_size_policies": from_enum(RoomSizePolicy, _ROOM_SIZE_POLICY),
+        "smoking_policies": from_enum(SmokingPolicy, _SMOKING_POLICY),
+        "window_policies": from_enum(WindowPolicy, _WINDOW_POLICY),
+        "room_amenity_groups": from_labels(_ROOM_AMENITY_GROUP),
     }

@@ -12,6 +12,10 @@ from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import calculate_rate_plan_night_price
 from app.core.utils import date_range
 from app.models.availability import RoomAvailability
+from app.models.availability_log import (
+    AvailabilityLogCategory,
+    AvailabilityOperationLog,
+)
 from app.models.rate_plan import RatePlan, RatePlanDateRule
 from app.models.room import Room
 from app.models.user import User
@@ -62,6 +66,19 @@ class BulkAvailabilityService:
                 )
                 self._set_availability(row, room, target, units_blocked)
                 updated += 1
+        self._log_rooms(
+            rooms,
+            user=user,
+            sanatorium_id=payload.sanatorium_id,
+            category=AvailabilityLogCategory.INVENTORY,
+            action="bulk_allotment",
+            dates=dates,
+            weekdays=payload.weekdays,
+            after={
+                "units_available": payload.units_available,
+                "allow_overbooking": payload.allow_overbooking,
+            },
+        )
         await self.db.commit()
         return BulkOperationResult(updated=updated)
 
@@ -82,6 +99,23 @@ class BulkAvailabilityService:
                 rule = self._rule(rules, rate_plan.id, target)
                 rule.selling_rate = _rate_for_day(payload, target)
                 updated += 1
+        self._log_rate_plans(
+            rate_plans,
+            user=user,
+            sanatorium_id=payload.sanatorium_id,
+            category=AvailabilityLogCategory.RATE,
+            action="bulk_rates",
+            dates=dates,
+            weekdays=payload.weekdays,
+            after={
+                "selling_rate": str(payload.selling_rate),
+                "weekend_selling_rate": (
+                    str(payload.weekend_selling_rate)
+                    if payload.weekend_selling_rate is not None
+                    else None
+                ),
+            },
+        )
         await self.db.commit()
         return BulkOperationResult(updated=updated)
 
@@ -101,6 +135,16 @@ class BulkAvailabilityService:
             for target in dates:
                 self._rule(rules, rate_plan.id, target).is_closed = payload.is_closed
                 updated += 1
+        self._log_rate_plans(
+            rate_plans,
+            user=user,
+            sanatorium_id=payload.sanatorium_id,
+            category=AvailabilityLogCategory.ROOM_STATUS_RESTRICTIONS,
+            action="bulk_status",
+            dates=dates,
+            weekdays=payload.weekdays,
+            after={"is_closed": payload.is_closed},
+        )
         await self.db.commit()
         return BulkOperationResult(updated=updated)
 
@@ -133,6 +177,19 @@ class BulkAvailabilityService:
                 for field in payload.clear:
                     setattr(rule, field.value, None)
                 updated += 1
+        self._log_rate_plans(
+            rate_plans,
+            user=user,
+            sanatorium_id=payload.sanatorium_id,
+            category=AvailabilityLogCategory.ROOM_STATUS_RESTRICTIONS,
+            action="bulk_restrictions",
+            dates=dates,
+            weekdays=payload.weekdays,
+            after={
+                **updates,
+                "clear": [field.value for field in payload.clear],
+            },
+        )
         await self.db.commit()
         return BulkOperationResult(updated=updated)
 
@@ -177,6 +234,29 @@ class BulkAvailabilityService:
                     price, payload.adjustment, payload.adjustment_percent
                 )
                 updated += 1
+        self._log_rate_plans(
+            rate_plans,
+            user=user,
+            sanatorium_id=payload.sanatorium_id,
+            category=AvailabilityLogCategory.RATE,
+            action="copy_rates",
+            dates=target_dates,
+            weekdays=payload.weekdays,
+            after={
+                "source_date_from": payload.source_date_from.isoformat(),
+                "source_date_to": payload.source_date_to.isoformat(),
+                "target_date_from": payload.target_date_from.isoformat(),
+                "target_date_to": payload.target_date_to.isoformat(),
+                "alignment": payload.alignment.value,
+                "overwrite_existing": payload.overwrite_existing,
+                "adjustment": payload.adjustment.value,
+                "adjustment_percent": (
+                    str(payload.adjustment_percent)
+                    if payload.adjustment_percent is not None
+                    else None
+                ),
+            },
+        )
         await self.db.commit()
         return BulkOperationResult(updated=updated)
 
@@ -268,12 +348,75 @@ class BulkAvailabilityService:
         else:
             row.units_blocked = units_blocked
 
+    def _log_rate_plans(
+        self,
+        rate_plans: list[RatePlan],
+        *,
+        user: User,
+        sanatorium_id: uuid.UUID,
+        category: AvailabilityLogCategory,
+        action: str,
+        dates: list[date],
+        weekdays: list[int],
+        after: dict,
+    ) -> None:
+        first, last = _date_window(dates)
+        for rate_plan in rate_plans:
+            self.db.add(
+                AvailabilityOperationLog(
+                    sanatorium_id=sanatorium_id,
+                    room_id=rate_plan.room_id,
+                    rate_plan_id=rate_plan.id,
+                    operated_by_id=user.id,
+                    category=category,
+                    action=action,
+                    check_in_from=first,
+                    check_in_to=last,
+                    weekdays=weekdays,
+                    after=after,
+                )
+            )
+
+    def _log_rooms(
+        self,
+        rooms: set[Room],
+        *,
+        user: User,
+        sanatorium_id: uuid.UUID,
+        category: AvailabilityLogCategory,
+        action: str,
+        dates: list[date],
+        weekdays: list[int],
+        after: dict,
+    ) -> None:
+        first, last = _date_window(dates)
+        for room in rooms:
+            self.db.add(
+                AvailabilityOperationLog(
+                    sanatorium_id=sanatorium_id,
+                    room_id=room.id,
+                    operated_by_id=user.id,
+                    category=category,
+                    action=action,
+                    check_in_from=first,
+                    check_in_to=last,
+                    weekdays=weekdays,
+                    after=after,
+                )
+            )
+
 
 def _scope_dates(date_ranges, weekdays: list[int]) -> list[date]:
     dates: set[date] = set()
     for item in date_ranges:
         dates.update(_filtered_range(item.date_from, item.date_to, weekdays))
     return sorted(dates)
+
+
+def _date_window(dates: list[date]) -> tuple[date | None, date | None]:
+    if not dates:
+        return None, None
+    return dates[0], dates[-1]
 
 
 def _filtered_range(start: date, end: date, weekdays: list[int]) -> list[date]:

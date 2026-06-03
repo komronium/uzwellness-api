@@ -13,12 +13,13 @@ from app.core.permissions import (
 )
 from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
-from app.models.amenity import Amenity, SanatoriumAmenity
+from app.models.amenity import Amenity, AmenityScope, SanatoriumAmenity
 from app.models.destination import Destination
 from app.models.region import Region
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 from app.schemas.sanatorium import SanatoriumCreate, SanatoriumUpdate
+from app.schemas.sanatorium_policies import SanatoriumPoliciesUpdate
 from app.schemas.sanatorium_reservation import SanatoriumReservationSettingsUpdate
 
 
@@ -117,12 +118,20 @@ class SanatoriumService:
     async def _build_amenity_links(self, items) -> list[SanatoriumAmenity]:
         if not items:
             return []
-        await fetch_by_ids(
+        amenities = await fetch_by_ids(
             self.db, Amenity, [i.amenity_id for i in items], label="amenity"
+        )
+        _assert_amenity_scope(
+            amenities, allowed={AmenityScope.SANATORIUM, AmenityScope.BOTH}
         )
         return [
             SanatoriumAmenity(
-                amenity_id=i.amenity_id, cost=i.cost, is_available=i.is_available
+                amenity_id=i.amenity_id,
+                cost=i.cost,
+                is_available=i.is_available,
+                status=i.status,
+                details=i.details,
+                display_order=i.display_order,
             )
             for i in items
         ]
@@ -156,6 +165,14 @@ class SanatoriumService:
         await self.db.commit()
         return await self._reload_required(sanatorium.id)
 
+    async def update_policies(
+        self, sanatorium: Sanatorium, payload: SanatoriumPoliciesUpdate
+    ) -> Sanatorium:
+        patch = payload.model_dump(mode="json", exclude_unset=True, exclude_none=True)
+        sanatorium.policies = _deep_merge(sanatorium.policies or {}, patch)
+        await self.db.commit()
+        return await self._reload_required(sanatorium.id)
+
     async def _reload_required(self, sanatorium_id: uuid.UUID) -> Sanatorium:
         result = await self._reload(sanatorium_id)
         if result is None:
@@ -168,7 +185,9 @@ class SanatoriumService:
             .where(Sanatorium.id == sanatorium_id)
             .options(
                 selectinload(Sanatorium.images),
-                selectinload(Sanatorium.amenity_links),
+                selectinload(Sanatorium.amenity_links).selectinload(
+                    SanatoriumAmenity.amenity
+                ),
             )
         )
 
@@ -196,6 +215,8 @@ def _create_values(
         "lat": payload.lat,
         "lng": payload.lng,
         "phones": payload.phones,
+        "postal_code": payload.postal_code,
+        "customer_support_email": payload.customer_support_email,
         "website": payload.website,
         "check_in_time": payload.check_in_time,
         "check_out_time": payload.check_out_time,
@@ -216,6 +237,9 @@ def _create_values(
         "treatment_focuses": payload.treatment_focuses,
         "treatment_profile": payload.treatment_profile.model_dump(),
         "year_opened": payload.year_opened,
+        "renovation_year": payload.renovation_year,
+        "chain_name": payload.chain_name,
+        "host_type": payload.host_type,
         "languages_spoken": payload.languages_spoken,
         "highlights": payload.highlights,
         "promo_badges": [b.model_dump(mode="json") for b in payload.promo_badges],
@@ -242,9 +266,13 @@ def _apply_json_updates(
         sanatorium.agent_discount_tiers = _agent_discount_tiers_json(tiers)
 
     if policies is not _MISSING:
-        sanatorium.policies = (
-            payload.policies.model_dump(mode="json") if payload.policies else {}
-        )
+        if payload.policies is None:
+            sanatorium.policies = {}
+        else:
+            patch = payload.policies.model_dump(
+                mode="json", exclude_unset=True, exclude_none=True
+            )
+            sanatorium.policies = _deep_merge(sanatorium.policies or {}, patch)
 
 
 _MISSING: object = object()
@@ -261,6 +289,27 @@ def _agent_discount_tiers_json(tiers) -> list[dict[str, object]]:
             }
         )
     return result
+
+
+def _deep_merge(base: dict, patch: dict) -> dict:
+    result = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _assert_amenity_scope(
+    amenities: list[Amenity], *, allowed: set[AmenityScope]
+) -> None:
+    invalid = [str(item.id) for item in amenities if item.scope not in allowed]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more amenity IDs are not valid for this resource scope",
+        )
 
 
 def get_sanatorium_service(db: AsyncSession = Depends(get_db)) -> SanatoriumService:

@@ -7,8 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.utils import TASHKENT_TZ, pick_locale, today_tashkent
 from app.models.booking import Booking, BookingStatus
+from app.models.review import ReviewReplyStatus, SanatoriumReview
 from app.models.room import Room
+from app.models.sanatorium import Sanatorium
 from app.models.user import User
+from app.models.user import UserRole
 from app.schemas.booking import (
     AdminGuestActivity,
     AdminReservationDashboard,
@@ -40,7 +43,7 @@ class AdminReservationService:
             stats=AdminReservationDashboardStats(
                 reservations_made_today=reservations_today,
                 checking_in_today=checking_in_today,
-                unreplied_reviews=0,
+                unreplied_reviews=await self._unreplied_reviews_count(user),
                 unanswered_questions=0,
                 unprocessed_reservations=unprocessed_count,
             ),
@@ -64,6 +67,19 @@ class AdminReservationService:
         stmt = select(func.count(Booking.id))
         for clause in clauses:
             stmt = stmt.where(clause)
+        return await self.db.scalar(stmt) or 0
+
+    async def _unreplied_reviews_count(self, user: User) -> int:
+        stmt = select(func.count(SanatoriumReview.id)).where(
+            SanatoriumReview.is_visible.is_(True),
+            SanatoriumReview.reply_status == ReviewReplyStatus.AWAITING_REPLY,
+        )
+        if user.role == UserRole.ADMIN:
+            stmt = stmt.where(
+                SanatoriumReview.sanatorium_id.in_(
+                    select(Sanatorium.id).where(Sanatorium.admin_user_id == user.id)
+                )
+            )
         return await self.db.scalar(stmt) or 0
 
     async def _items(

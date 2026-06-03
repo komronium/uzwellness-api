@@ -5,9 +5,11 @@ from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.pricing import enrich_room
 from app.core.utils import date_range
+from app.models.amenity import RoomAmenity
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -65,7 +67,15 @@ def _room_search_statement(
     stmt = (
         select(Room)
         .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
-        .where(Sanatorium.status == SanatoriumStatus.APPROVED, Room.is_active.is_(True))
+        .where(
+            Sanatorium.status == SanatoriumStatus.APPROVED,
+            Room.is_active.is_(True),
+            Room.deleted_at.is_(None),
+        )
+        .options(
+            selectinload(Room.amenities),
+            selectinload(Room.amenity_links).selectinload(RoomAmenity.amenity),
+        )
         .order_by(Room.base_price.asc())
     )
     if sanatorium_id is not None:

@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.pricing import calculate_stay_total, convert_to_usd
 from app.core.utils import date_range, pick_locale
+from app.models.amenity import RoomAmenity, SanatoriumAmenity
 from app.models.availability import RoomAvailability
 from app.models.destination import Destination
 from app.models.region import Region
@@ -150,6 +151,7 @@ class SearchService:
             .where(
                 Sanatorium.status == SanatoriumStatus.APPROVED,
                 Room.is_active.is_(True),
+                Room.deleted_at.is_(None),
                 Room.inventory_count >= 1,
                 Room.capacity >= 1,
                 Room.min_nights <= nights,
@@ -157,7 +159,12 @@ class SearchService:
             )
             .options(
                 selectinload(Room.price_periods),
+                selectinload(Room.amenities),
+                selectinload(Room.amenity_links).selectinload(RoomAmenity.amenity),
                 selectinload(Sanatorium.images),
+                selectinload(Sanatorium.amenity_links).selectinload(
+                    SanatoriumAmenity.amenity
+                ),
             )
             .order_by(Room.base_price.asc(), Sanatorium.created_at.asc())
         )

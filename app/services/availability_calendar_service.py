@@ -74,12 +74,12 @@ class AvailabilityCalendarService:
     ) -> list[Room]:
         stmt = (
             select(Room)
-            .where(Room.sanatorium_id == sanatorium_id)
+            .where(Room.sanatorium_id == sanatorium_id, Room.deleted_at.is_(None))
             .options(
                 selectinload(Room.price_periods),
                 selectinload(Room.rate_plans).selectinload(RatePlan.amenities),
             )
-            .order_by(Room.created_at.asc())
+            .order_by(Room.display_order.asc(), Room.created_at.asc())
         )
         if room_id is not None:
             stmt = stmt.where(Room.id == room_id)

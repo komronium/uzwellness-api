@@ -52,6 +52,11 @@ class WellnessCategory(StrEnum):
     DIGITAL_DETOX = "digital_detox"
 
 
+class HostType(StrEnum):
+    PRIVATE_HOST = "private_host"
+    PROFESSIONAL_HOST = "professional_host"
+
+
 class Sanatorium(Base):
     __tablename__ = "sanatoriums"
 
@@ -81,6 +86,8 @@ class Sanatorium(Base):
     phones: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+    customer_support_email: Mapped[str | None] = mapped_column(String(255))
     website: Mapped[str | None] = mapped_column(String(255))
 
     check_in_time: Mapped[time | None] = mapped_column(Time)
@@ -142,6 +149,16 @@ class Sanatorium(Base):
     )
 
     year_opened: Mapped[int | None] = mapped_column(SmallInteger)
+    renovation_year: Mapped[int | None] = mapped_column(SmallInteger)
+    chain_name: Mapped[str | None] = mapped_column(String(120))
+    host_type: Mapped[HostType | None] = mapped_column(
+        SQLEnum(
+            HostType,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum: [e.value for e in enum],
+        )
+    )
     languages_spoken: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )

@@ -6,7 +6,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
-from app.models.room import RoomView
+from app.models.amenity import AmenityCost, AmenitySelectionStatus
+from app.models.room import (
+    AccommodationType,
+    GenderRestriction,
+    RoomSizePolicy,
+    RoomView,
+    SmokingPolicy,
+    WindowPolicy,
+)
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
 from app.schemas.common import Translations, TranslationsCreate
 from app.schemas.room_availability import (
@@ -149,25 +157,75 @@ class RoomFeatures(BaseModel):
     highlights: list[str] = Field(default_factory=list)
 
 
+class RoomAmenityItem(BaseModel):
+    amenity_id: uuid.UUID
+    status: AmenitySelectionStatus = AmenitySelectionStatus.YES
+    cost: AmenityCost = AmenityCost.FREE
+    is_available: bool = True
+    details: dict = Field(default_factory=dict)
+    display_order: int = Field(default=0, ge=0)
+
+
+class RoomAmenityRead(BaseModel):
+    status: AmenitySelectionStatus
+    cost: AmenityCost
+    is_available: bool
+    details: dict
+    display_order: int
+    amenity: AmenityRead
+
+    @classmethod
+    def from_obj(cls, link, locale: str) -> "RoomAmenityRead":
+        return cls(
+            status=link.status,
+            cost=link.cost,
+            is_available=link.is_available,
+            details=link.details or {},
+            display_order=link.display_order,
+            amenity=AmenityRead.from_obj(link.amenity, locale),
+        )
+
+
+class RoomAmenityAdminRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: AmenitySelectionStatus
+    cost: AmenityCost
+    is_available: bool
+    details: dict
+    display_order: int
+    amenity: AmenityAdminRead
+
+
 class RoomCreate(BaseModel):
     sanatorium_id: uuid.UUID
     name: TranslationsCreate
     description: Translations = Field(default_factory=Translations)
     amenity_ids: list[uuid.UUID] = Field(default_factory=list)
+    amenity_items: list[RoomAmenityItem] = Field(default_factory=list)
     size_sqm: int | None = Field(default=None, ge=0)
+    room_size_policy: RoomSizePolicy = RoomSizePolicy.SAME_SIZE
     floor: str | None = Field(default=None, max_length=20)
     beds: list[BeddingOption] = Field(default_factory=list)
     view: RoomView | None = None
     smoking_allowed: bool = False
+    smoking_policy: SmokingPolicy | None = None
+    window_policy: WindowPolicy | None = None
+    window_description: str | None = Field(default=None, max_length=255)
     room_features: RoomFeatures = Field(default_factory=RoomFeatures)
+    accommodation_type: AccommodationType = AccommodationType.HOTEL_ROOM
+    gender_restriction: GenderRestriction | None = None
     capacity: int = Field(ge=1)
     max_adults: int | None = Field(default=None, ge=0)
     max_children: int | None = Field(default=None, ge=0)
+    max_child_rate_children: int | None = Field(default=None, ge=0)
     inventory_count: int = Field(default=1, ge=1)
+    room_advisories: list[str] = Field(default_factory=list)
     base_price: Decimal = Field(ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_currency: str = Field(pattern=r"^(UZS|USD)$")
     min_nights: int = Field(default=1, ge=1)
+    display_order: int = Field(default=0, ge=0)
 
     @field_validator("floor", mode="before")
     @classmethod
@@ -179,16 +237,25 @@ class RoomUpdate(BaseModel):
     name: Translations | None = None
     description: Translations | None = None
     amenity_ids: list[uuid.UUID] | None = None
+    amenity_items: list[RoomAmenityItem] | None = None
     size_sqm: int | None = Field(default=None, ge=0)
+    room_size_policy: RoomSizePolicy | None = None
     floor: str | None = Field(default=None, max_length=20)
     beds: list[BeddingOption] | None = None
     view: RoomView | None = None
     smoking_allowed: bool | None = None
+    smoking_policy: SmokingPolicy | None = None
+    window_policy: WindowPolicy | None = None
+    window_description: str | None = Field(default=None, max_length=255)
     room_features: RoomFeatures | None = None
+    accommodation_type: AccommodationType | None = None
+    gender_restriction: GenderRestriction | None = None
     capacity: int | None = Field(default=None, ge=1)
     max_adults: int | None = Field(default=None, ge=0)
     max_children: int | None = Field(default=None, ge=0)
+    max_child_rate_children: int | None = Field(default=None, ge=0)
     inventory_count: int | None = Field(default=None, ge=0)
+    room_advisories: list[str] | None = None
     base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     base_currency: str | None = Field(default=None, pattern=r"^(UZS|USD)$")
@@ -198,6 +265,7 @@ class RoomUpdate(BaseModel):
     )
     min_nights: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
+    display_order: int | None = Field(default=None, ge=0)
 
     @field_validator("floor", mode="before")
     @classmethod
@@ -211,15 +279,23 @@ class _RoomReadCommon(BaseModel):
     id: uuid.UUID
     sanatorium_id: uuid.UUID
     size_sqm: int | None = None
+    room_size_policy: RoomSizePolicy = RoomSizePolicy.SAME_SIZE
     floor: str | None = None
     beds: list[BeddingOption] = Field(default_factory=list)
     view: RoomView | None = None
     smoking_allowed: bool = False
+    smoking_policy: SmokingPolicy = SmokingPolicy.NON_SMOKING
+    window_policy: WindowPolicy | None = None
+    window_description: str | None = None
     room_features: RoomFeatures = Field(default_factory=RoomFeatures)
+    accommodation_type: AccommodationType = AccommodationType.HOTEL_ROOM
+    gender_restriction: GenderRestriction | None = None
     capacity: int
     max_adults: int | None = None
     max_children: int | None = None
+    max_child_rate_children: int | None = None
     inventory_count: int
+    room_advisories: list[str] = Field(default_factory=list)
     images: list[RoomImageRead] = Field(default_factory=list)
     base_price: Decimal
     base_price_weekend: Decimal | None = None
@@ -228,6 +304,8 @@ class _RoomReadCommon(BaseModel):
     discount_percent: Decimal | None = None
     min_nights: int
     is_active: bool
+    display_order: int
+    deleted_at: datetime | None = None
     has_availability: bool = False
     final_price: Decimal = Decimal("0")
     final_price_uzs: Decimal | None = None
@@ -245,6 +323,7 @@ class RoomRead(_RoomReadCommon):
     name: str
     description: str
     amenities: list[AmenityRead] = Field(default_factory=list)
+    amenity_items: list["RoomAmenityRead"] = Field(default_factory=list)
 
     @classmethod
     def from_obj(cls, obj, locale: str) -> "RoomRead":
@@ -254,16 +333,27 @@ class RoomRead(_RoomReadCommon):
             name=pick_locale(obj.name, locale),
             description=pick_locale(obj.description, locale),
             amenities=[AmenityRead.from_obj(a, locale) for a in obj.amenities],
+            amenity_items=[
+                RoomAmenityRead.from_obj(link, locale) for link in obj.amenity_links
+            ],
             size_sqm=obj.size_sqm,
+            room_size_policy=obj.room_size_policy,
             floor=obj.floor,
             beds=obj.beds or [],
             view=obj.view,
             smoking_allowed=obj.smoking_allowed,
+            smoking_policy=obj.smoking_policy,
+            window_policy=obj.window_policy,
+            window_description=obj.window_description,
             room_features=RoomFeatures.model_validate(obj.room_features or {}),
+            accommodation_type=obj.accommodation_type,
+            gender_restriction=obj.gender_restriction,
             capacity=obj.capacity,
             max_adults=obj.max_adults,
             max_children=obj.max_children,
+            max_child_rate_children=obj.max_child_rate_children,
             inventory_count=obj.inventory_count,
+            room_advisories=obj.room_advisories or [],
             images=[RoomImageRead.model_validate(i) for i in obj.images],
             base_price=obj.base_price,
             base_price_weekend=obj.base_price_weekend,
@@ -272,6 +362,8 @@ class RoomRead(_RoomReadCommon):
             discount_percent=obj.discount_percent,
             min_nights=obj.min_nights,
             is_active=obj.is_active,
+            display_order=obj.display_order,
+            deleted_at=obj.deleted_at,
             created_at=obj.created_at,
             updated_at=obj.updated_at,
         )
@@ -285,6 +377,9 @@ class RoomAdminRead(_RoomReadCommon):
     name: dict
     description: dict
     amenities: list[AmenityAdminRead] = Field(default_factory=list)
+    amenity_items: list["RoomAmenityAdminRead"] = Field(
+        default_factory=list, validation_alias="amenity_links"
+    )
 
 
 class RoomList(BaseModel):
@@ -299,6 +394,16 @@ class RoomAdminList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class RoomOrderItem(BaseModel):
+    room_id: uuid.UUID
+    display_order: int = Field(ge=0)
+
+
+class RoomOrderUpdate(BaseModel):
+    sanatorium_id: uuid.UUID
+    items: list[RoomOrderItem] = Field(min_length=1)
 
 
 class RoomSearchResult(RoomRead):

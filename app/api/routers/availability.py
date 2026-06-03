@@ -1,7 +1,7 @@
 import calendar
 import re
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -9,11 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, not_found, require_roles
 from app.core.database import get_db
+from app.core.pagination import Pagination
 from app.models.availability import RoomAvailability
+from app.models.availability_log import AvailabilityLogCategory
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import UserRole
 from app.schemas.availability_calendar import AvailabilityCalendarRead
+from app.schemas.availability_log import (
+    AvailabilityOperationLogList,
+    AvailabilityOperationLogRead,
+)
 from app.schemas.bulk_availability import (
     BulkAllotmentUpdate,
     BulkCopyRates,
@@ -25,6 +31,10 @@ from app.schemas.bulk_availability import (
 from app.services.availability_calendar_service import (
     AvailabilityCalendarService,
     get_availability_calendar_service,
+)
+from app.services.availability_log_service import (
+    AvailabilityLogService,
+    get_availability_log_service,
 )
 from app.services.bulk_availability_service import (
     BulkAvailabilityService,
@@ -70,6 +80,7 @@ async def get_availability(
         select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
             Room.sanatorium_id == sanatorium_id,
             Room.is_active.is_(True),
+            Room.deleted_at.is_(None),
         )
     )
 
@@ -85,6 +96,7 @@ async def get_availability(
         .where(
             Room.sanatorium_id == sanatorium_id,
             Room.is_active.is_(True),
+            Room.deleted_at.is_(None),
             RoomAvailability.date >= first,
             RoomAvailability.date <= last,
         )
@@ -131,6 +143,45 @@ async def get_admin_availability_calendar(
         user=current_user,
         room_id=room_id,
         rate_plan_ids=rate_plan_ids,
+    )
+
+
+@router.get(
+    "/logs",
+    response_model=AvailabilityOperationLogList,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def list_availability_logs(
+    current_user: CurrentUser,
+    page: Pagination,
+    sanatorium_id: uuid.UUID = Query(...),
+    room_id: uuid.UUID | None = Query(default=None),
+    rate_plan_id: uuid.UUID | None = Query(default=None),
+    category: AvailabilityLogCategory | None = Query(default=None),
+    check_in_from: date | None = Query(default=None),
+    check_in_to: date | None = Query(default=None),
+    operated_from: datetime | None = Query(default=None),
+    operated_to: datetime | None = Query(default=None),
+    logs: AvailabilityLogService = Depends(get_availability_log_service),
+) -> AvailabilityOperationLogList:
+    items, total = await logs.list_for_sanatorium(
+        sanatorium_id,
+        current_user,
+        room_id=room_id,
+        rate_plan_id=rate_plan_id,
+        category=category,
+        check_in_from=check_in_from,
+        check_in_to=check_in_to,
+        operated_from=operated_from,
+        operated_to=operated_to,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return AvailabilityOperationLogList(
+        items=[AvailabilityOperationLogRead.from_obj(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
     )
 
 

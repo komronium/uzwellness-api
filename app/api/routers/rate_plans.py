@@ -1,17 +1,20 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import (
     CurrentUser,
     IncludeTranslationsDep,
     LocaleDep,
+    OptionalUser,
     not_found,
     require_roles,
 )
 from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.rate_plan import (
+    RatePlanAdminDirectoryItem,
+    RatePlanAdminDirectoryList,
     RatePlanAdminList,
     RatePlanAdminRead,
     RatePlanCreate,
@@ -31,9 +34,44 @@ async def list_rate_plans(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     page: Pagination,
-    room_id: uuid.UUID = Query(...),
+    current_user: OptionalUser,
+    room_id: uuid.UUID | None = Query(default=None),
+    sanatorium_id: uuid.UUID | None = Query(default=None),
+    rate_plan_ids: list[uuid.UUID] | None = Query(default=None),
+    hide_inactive: bool = Query(default=False),
     rate_plans: RatePlanService = Depends(get_rate_plan_service),
-) -> RatePlanList | RatePlanAdminList:
+) -> RatePlanList | RatePlanAdminList | RatePlanAdminDirectoryList:
+    if sanatorium_id is not None:
+        if current_user is None or current_user.role not in {
+            UserRole.ADMIN,
+            UserRole.SUPER_ADMIN,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        items, total = await rate_plans.list_for_sanatorium(
+            sanatorium_id,
+            current_user,
+            room_id=room_id,
+            rate_plan_ids=rate_plan_ids,
+            hide_inactive=hide_inactive,
+            limit=page.limit,
+            offset=page.offset,
+        )
+        return RatePlanAdminDirectoryList(
+            items=[RatePlanAdminDirectoryItem.from_obj(item) for item in items],
+            total=total,
+            limit=page.limit,
+            offset=page.offset,
+        )
+
+    if room_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="room_id or sanatorium_id is required",
+        )
+
     items, total = await rate_plans.list_for_room(
         room_id, limit=page.limit, offset=page.offset
     )

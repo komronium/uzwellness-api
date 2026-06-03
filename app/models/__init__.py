@@ -1,5 +1,16 @@
-from app.models.amenity import Amenity, AmenityCost, SanatoriumAmenity
+from app.models.amenity import (
+    Amenity,
+    AmenityCost,
+    AmenityScope,
+    AmenitySelectionStatus,
+    RoomAmenity,
+    SanatoriumAmenity,
+)
 from app.models.availability import RoomAvailability
+from app.models.availability_log import (
+    AvailabilityLogCategory,
+    AvailabilityOperationLog,
+)
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.destination import Destination
 from app.models.exchange_rate import ExchangeRate
@@ -8,6 +19,13 @@ from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.program import TreatmentFocus, TreatmentProgram
+from app.models.promotion import (
+    Promotion,
+    PromotionAudience,
+    PromotionCancellationPolicyMode,
+    PromotionCategory,
+    PromotionStatus,
+)
 from app.models.rate_plan import (
     BoardType,
     ConfirmationType,
@@ -17,9 +35,15 @@ from app.models.rate_plan import (
 )
 from app.models.refresh_token import RefreshToken
 from app.models.region import Region
-from app.models.review import SanatoriumReview
+from app.models.review import (
+    ReviewAppealStatus,
+    ReviewReplyStatus,
+    ReviewSource,
+    SanatoriumReview,
+)
 from app.models.room import Room, RoomImage, RoomPricePeriod, RoomView
 from app.models.sanatorium import (
+    HostType,
     PropertyType,
     Sanatorium,
     SanatoriumImage,
@@ -37,6 +61,10 @@ from app.models.user import User, UserRole
 __all__ = [
     "Amenity",
     "AmenityCost",
+    "AmenityScope",
+    "AmenitySelectionStatus",
+    "AvailabilityLogCategory",
+    "AvailabilityOperationLog",
     "BoardType",
     "Booking",
     "BookingExtraBed",
@@ -46,6 +74,7 @@ __all__ = [
     "Destination",
     "ExchangeRate",
     "ExtraBedConfig",
+    "HostType",
     "Notification",
     "Package",
     "PackageItem",
@@ -54,12 +83,21 @@ __all__ = [
     "PaymentMethod",
     "PaymentStatus",
     "PaymentTiming",
+    "Promotion",
+    "PromotionAudience",
+    "PromotionCancellationPolicyMode",
+    "PromotionCategory",
+    "PromotionStatus",
     "PropertyType",
     "RatePlan",
     "RatePlanDateRule",
     "RefreshToken",
     "Region",
+    "ReviewAppealStatus",
+    "ReviewReplyStatus",
+    "ReviewSource",
     "Room",
+    "RoomAmenity",
     "RoomAvailability",
     "RoomImage",
     "RoomPricePeriod",

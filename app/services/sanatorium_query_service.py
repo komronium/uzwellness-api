@@ -125,6 +125,9 @@ class SanatoriumQueryService:
                 selectinload(Sanatorium.images),
                 selectinload(Sanatorium.region),
                 selectinload(Sanatorium.destination),
+                selectinload(Sanatorium.amenity_links).selectinload(
+                    SanatoriumAmenity.amenity
+                ),
             )
             .order_by(
                 Sanatorium.display_order.asc(),
@@ -160,7 +163,9 @@ class SanatoriumQueryService:
             .where(Sanatorium.id == sanatorium_id)
             .options(
                 selectinload(Sanatorium.images),
-                selectinload(Sanatorium.amenity_links),
+                selectinload(Sanatorium.amenity_links).selectinload(
+                    SanatoriumAmenity.amenity
+                ),
             )
         )
 
@@ -269,7 +274,9 @@ def _list_statement(stmt, *, sort: str, locale: str, limit: int, offset: int):
     return (
         stmt.options(
             selectinload(Sanatorium.images),
-            selectinload(Sanatorium.amenity_links),
+            selectinload(Sanatorium.amenity_links).selectinload(
+                SanatoriumAmenity.amenity
+            ),
         )
         .order_by(_resolve_sort(sort, locale))
         .limit(limit)
@@ -298,7 +305,11 @@ def _featured_price_subquery(usd_uzs_rate: Decimal | None):
             )
             .label("rank"),
         )
-        .where(Room.is_active.is_(True), Room.inventory_count > 0)
+        .where(
+            Room.is_active.is_(True),
+            Room.deleted_at.is_(None),
+            Room.inventory_count > 0,
+        )
         .subquery()
     )
     return (

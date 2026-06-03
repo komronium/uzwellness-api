@@ -240,7 +240,7 @@ class RoomBookingFlow(BookingFlowBase):
             .options(selectinload(Room.price_periods))
             .with_for_update(of=Room)
         )
-        if room is None or not room.is_active:
+        if room is None or not room.is_active or room.deleted_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
             )

@@ -36,9 +36,15 @@ from app.schemas.sanatorium import (
     SanatoriumRead,
     SanatoriumUpdate,
 )
+from app.schemas.sanatorium_content import SanatoriumContentOverview
+from app.schemas.sanatorium_policies import SanatoriumPolicies, SanatoriumPoliciesUpdate
 from app.schemas.sanatorium_reservation import (
     SanatoriumReservationSettingsRead,
     SanatoriumReservationSettingsUpdate,
+)
+from app.services.sanatorium_content_service import (
+    SanatoriumContentService,
+    get_sanatorium_content_service,
 )
 from app.services.sanatorium_service import (
     SanatoriumService,
@@ -121,6 +127,60 @@ async def get_sanatorium_by_slug(
     if include_translations:
         return sanatorium_admin_read(sanatorium)
     return sanatorium_public_read(sanatorium, locale=locale)
+
+
+@router.get(
+    "/{sanatorium_id}/content-overview",
+    response_model=SanatoriumContentOverview,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def get_sanatorium_content_overview(
+    sanatorium_id: uuid.UUID,
+    current_user: CurrentUser,
+    locale: LocaleDep,
+    sanatoriums: SanatoriumQueryService = Depends(get_sanatorium_query_service),
+    content: SanatoriumContentService = Depends(get_sanatorium_content_service),
+) -> SanatoriumContentOverview:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    return await content.overview(sanatorium, current_user, locale=locale)
+
+
+@router.get(
+    "/{sanatorium_id}/policies",
+    response_model=SanatoriumPolicies,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def get_sanatorium_policies(
+    sanatorium_id: uuid.UUID,
+    current_user: CurrentUser,
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+) -> SanatoriumPolicies:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    ensure_can_edit_sanatorium(sanatorium, current_user)
+    return SanatoriumPolicies.model_validate(sanatorium.policies or {})
+
+
+@router.patch(
+    "/{sanatorium_id}/policies",
+    response_model=SanatoriumPolicies,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def update_sanatorium_policies(
+    sanatorium_id: uuid.UUID,
+    payload: SanatoriumPoliciesUpdate,
+    current_user: CurrentUser,
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+) -> SanatoriumPolicies:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    ensure_can_edit_sanatorium(sanatorium, current_user)
+    updated = await sanatoriums.update_policies(sanatorium, payload)
+    return SanatoriumPolicies.model_validate(updated.policies or {})
 
 
 @router.get("/{sanatorium_id}", response_model=SanatoriumRead | SanatoriumAdminRead)

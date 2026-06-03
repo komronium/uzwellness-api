@@ -24,7 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.ids import uuid7
-from app.models.amenity import room_amenities
+from app.models.amenity import RoomAmenity
 
 if TYPE_CHECKING:
     from app.models.amenity import Amenity
@@ -45,6 +45,33 @@ class RoomView(StrEnum):
     LANDMARK = "landmark"
 
 
+class AccommodationType(StrEnum):
+    HOTEL_ROOM = "hotel_room"
+    SHARED_ROOM_BED = "shared_room_bed"
+
+
+class GenderRestriction(StrEnum):
+    MALE_ONLY = "male_only"
+    FEMALE_ONLY = "female_only"
+
+
+class RoomSizePolicy(StrEnum):
+    SAME_SIZE = "same_size"
+    DIFFERENT_SIZES = "different_sizes"
+
+
+class SmokingPolicy(StrEnum):
+    NON_SMOKING = "non_smoking"
+    SMOKING_PERMITTED = "smoking_permitted"
+    SOME_SMOKING = "some_smoking"
+
+
+class WindowPolicy(StrEnum):
+    ALL_ROOMS_HAVE_WINDOWS = "all_rooms_have_windows"
+    SOME_ROOMS_HAVE_WINDOWS = "some_rooms_have_windows"
+    NO_ROOMS_HAVE_WINDOWS = "no_rooms_have_windows"
+
+
 class Room(Base):
     __tablename__ = "rooms"
 
@@ -62,6 +89,17 @@ class Room(Base):
     )
 
     size_sqm: Mapped[int | None] = mapped_column(Integer)
+    room_size_policy: Mapped[RoomSizePolicy] = mapped_column(
+        SQLEnum(
+            RoomSizePolicy,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=RoomSizePolicy.SAME_SIZE,
+        server_default=RoomSizePolicy.SAME_SIZE.value,
+    )
     floor: Mapped[str | None] = mapped_column(String(20))
     beds: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
@@ -77,14 +115,57 @@ class Room(Base):
     smoking_allowed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    smoking_policy: Mapped[SmokingPolicy] = mapped_column(
+        SQLEnum(
+            SmokingPolicy,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=SmokingPolicy.NON_SMOKING,
+        server_default=SmokingPolicy.NON_SMOKING.value,
+    )
+    window_policy: Mapped[WindowPolicy | None] = mapped_column(
+        SQLEnum(
+            WindowPolicy,
+            native_enum=False,
+            length=40,
+            values_callable=lambda enum: [e.value for e in enum],
+        )
+    )
+    window_description: Mapped[str | None] = mapped_column(String(255))
     room_features: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
 
+    accommodation_type: Mapped[AccommodationType] = mapped_column(
+        SQLEnum(
+            AccommodationType,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=AccommodationType.HOTEL_ROOM,
+        server_default=AccommodationType.HOTEL_ROOM.value,
+    )
+    gender_restriction: Mapped[GenderRestriction | None] = mapped_column(
+        SQLEnum(
+            GenderRestriction,
+            native_enum=False,
+            length=20,
+            values_callable=lambda enum: [e.value for e in enum],
+        )
+    )
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     max_adults: Mapped[int | None] = mapped_column(SmallInteger)
     max_children: Mapped[int | None] = mapped_column(SmallInteger)
+    max_child_rate_children: Mapped[int | None] = mapped_column(SmallInteger)
     inventory_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    room_advisories: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     base_price_weekend: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -94,6 +175,10 @@ class Room(Base):
     discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     min_nights: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    display_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -125,8 +210,15 @@ class Room(Base):
         cascade="all, delete-orphan",
         order_by="RatePlan.created_at",
     )
+    amenity_links: Mapped[list["RoomAmenity"]] = relationship(
+        back_populates="room",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     amenities: Mapped[list["Amenity"]] = relationship(
-        secondary=room_amenities, lazy="selectin"
+        secondary="room_amenities",
+        viewonly=True,
+        lazy="selectin",
     )
 
 

@@ -31,6 +31,7 @@ from app.schemas.room import (
     RoomAdminRead,
     RoomCreate,
     RoomList,
+    RoomOrderUpdate,
     RoomRead,
     RoomSearchResult,
     RoomUpdate,
@@ -49,9 +50,18 @@ async def list_rooms(
     include_translations: IncludeTranslationsDep,
     page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
+    q: str | None = Query(default=None, max_length=120),
     is_active: bool | None = Query(
         default=None,
         description="Filter rooms by active status (staff only; ignored for guests).",
+    ),
+    include_deleted: bool = Query(
+        default=False,
+        description="Include soft-deleted rooms (staff only; ignored for guests).",
+    ),
+    deleted_only: bool = Query(
+        default=False,
+        description="Return only soft-deleted rooms (staff only; ignored for guests).",
     ),
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomList | RoomAdminList:
@@ -61,6 +71,9 @@ async def list_rooms(
         limit=page.limit,
         offset=page.offset,
         is_active=is_active,
+        q=q,
+        include_deleted=include_deleted,
+        deleted_only=deleted_only,
     )
     rate = await rooms.rates.get_usd_uzs()
     has_avail = await rooms.has_availability_map([r.id for r in items])
@@ -104,15 +117,33 @@ async def search_rooms(
     return [room_search_result(hit, locale=locale) for hit in hits]
 
 
+@router.patch(
+    "/order",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def order_rooms(
+    payload: RoomOrderUpdate,
+    current_user: CurrentUser,
+    rooms: RoomService = Depends(get_room_service),
+) -> None:
+    await rooms.order(payload, current_user)
+
+
 @router.get("/{room_id}", response_model=RoomRead | RoomAdminRead)
 async def get_room(
     room_id: uuid.UUID,
+    current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomRead | RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
+        raise not_found("Room not found")
+    if (
+        not room.is_active or room.deleted_at is not None
+    ) and not await rooms.can_manage(room, current_user):
         raise not_found("Room not found")
     pricing = await rooms.enrich(room)
     if include_translations:
@@ -167,4 +198,3 @@ async def delete_room(
     if room is None:
         raise not_found("Room not found")
     await rooms.delete(room, current_user)
-
