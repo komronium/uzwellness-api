@@ -1193,7 +1193,7 @@ ROOM_DATA = [
         "description": "Compact room for one guest with private bathroom.",
         "size_sqm": 18,
         "floor": "1-3",
-        "beds": [{"type": "single", "width_cm": 90, "count": 1}],
+        "beds": [{"beds": [{"type": "single", "size_cm": "90", "count": 1}]}],
         "view": RoomView.GARDEN,
         "room_features": {
             "has_window": True,
@@ -1220,7 +1220,7 @@ ROOM_DATA = [
         "description": "Double room with private bathroom and basic comfort amenities.",
         "size_sqm": 25,
         "floor": "1-4",
-        "beds": [{"type": "double", "width_cm": 150, "count": 1}],
+        "beds": [{"beds": [{"type": "double", "size_cm": "150", "count": 1}]}],
         "view": RoomView.COURTYARD,
         "room_features": {
             "has_window": True,
@@ -1247,7 +1247,7 @@ ROOM_DATA = [
         "description": "Larger twin room with two single beds and balcony option.",
         "size_sqm": 30,
         "floor": "2-4",
-        "beds": [{"type": "single", "width_cm": 90, "count": 2}],
+        "beds": [{"beds": [{"type": "single", "size_cm": "90", "count": 2}]}],
         "view": RoomView.PARK,
         "room_features": {
             "has_window": True,
@@ -1283,8 +1283,12 @@ ROOM_DATA = [
         "size_sqm": 42,
         "floor": "3-4",
         "beds": [
-            {"type": "double", "width_cm": 160, "count": 1},
-            {"type": "single", "width_cm": 90, "count": 1},
+            {
+                "beds": [
+                    {"type": "double", "size_cm": "160", "count": 1},
+                    {"type": "single", "size_cm": "90", "count": 1},
+                ]
+            }
         ],
         "view": RoomView.GARDEN,
         "room_features": {

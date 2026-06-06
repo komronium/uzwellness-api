@@ -61,3 +61,18 @@ def test_room_read_normalizes_legacy_room_features():
     assert result.room_features.has_window is True
     assert result.room_features.bathroom.private is True
     assert result.room_features.comfort.balcony is True
+
+
+def test_room_read_normalizes_legacy_flat_beds():
+    room = _room_obj(
+        beds=[
+            {"type": "double", "count": 1, "width_cm": 160},
+            {"type": "single", "count": 1, "width_cm": 90},
+        ]
+    )
+
+    result = RoomRead.from_obj(room, "en")
+
+    assert len(result.beds) == 1
+    assert [bed.type for bed in result.beds[0].beds] == ["double", "single"]
+    assert result.beds[0].beds[0].size_cm == "160"
