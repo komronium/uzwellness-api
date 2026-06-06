@@ -3,17 +3,9 @@ from datetime import date
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.review import ReviewAppealStatus, ReviewReplyStatus, ReviewSource
-
-
-def normalize_review_photos(value):
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        return value
-    return [{"url": item} if isinstance(item, str) else item for item in value]
 
 
 class ReviewCreate(BaseModel):
@@ -43,11 +35,6 @@ class ReviewCreate(BaseModel):
     positive_tags: list[str] = Field(default_factory=list)
     negative_tags: list[str] = Field(default_factory=list)
     photos: list[dict] = Field(default_factory=list)
-
-    @field_validator("photos", mode="before")
-    @classmethod
-    def _normalize_photos(cls, value):
-        return normalize_review_photos(value)
 
 
 class ReviewUpdate(BaseModel):
@@ -105,11 +92,6 @@ class ReviewRead(BaseModel):
     appealed_at: datetime | None
     is_visible: bool
     created_at: datetime
-
-    @field_validator("photos", mode="before")
-    @classmethod
-    def _normalize_photos(cls, value):
-        return normalize_review_photos(value)
 
 
 class ReviewList(BaseModel):

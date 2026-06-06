@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
 from app.models.amenity import AmenityCost, AmenitySelectionStatus
@@ -77,44 +77,10 @@ def normalize_floor(value) -> str | None:
     raise ValueError("floor must look like '2', '2-4', or '2,4'")
 
 
-def normalize_bedding_options(value):
-    if value is None or not isinstance(value, list):
-        return value
-    if not value:
-        return value
-    if all(_is_legacy_bed_config(item) for item in value):
-        return [{"beds": [_normalize_legacy_bed_config(item) for item in value]}]
-    return [
-        {"beds": [_normalize_legacy_bed_config(item)]}
-        if _is_legacy_bed_config(item)
-        else item
-        for item in value
-    ]
-
-
-def _is_legacy_bed_config(value) -> bool:
-    return isinstance(value, dict) and "type" in value and "beds" not in value
-
-
-def _normalize_legacy_bed_config(value: dict) -> dict:
-    data = dict(value)
-    width_cm = data.pop("width_cm", None)
-    if "size_cm" not in data and width_cm is not None:
-        data["size_cm"] = str(width_cm)
-    return data
-
-
 class BedConfig(BaseModel):
     type: BedType
     count: int = Field(default=1, ge=1)
     size_cm: str | None = Field(default=None, max_length=20)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_shape(cls, value):
-        if not isinstance(value, dict):
-            return value
-        return _normalize_legacy_bed_config(value)
 
 
 class BeddingOption(BaseModel):
@@ -124,13 +90,6 @@ class BeddingOption(BaseModel):
 
     beds: list[BedConfig] = Field(min_length=1)
     label: str | None = Field(default=None, max_length=120)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_shape(cls, value):
-        if _is_legacy_bed_config(value):
-            return {"beds": [_normalize_legacy_bed_config(value)]}
-        return value
 
 
 class RoomBathroomFeatures(BaseModel):
@@ -196,41 +155,6 @@ class RoomFeatures(BaseModel):
     )
     comfort: RoomComfortFeatures = Field(default_factory=RoomComfortFeatures)
     highlights: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_shape(cls, value):
-        if isinstance(value, BaseModel) or not isinstance(value, dict):
-            return value
-
-        data = dict(value)
-        bathroom = data.get("bathroom")
-        if isinstance(bathroom, str):
-            bathroom_value = bathroom.strip().lower()
-            if bathroom_value in {"private", "private_bathroom", "ensuite"}:
-                data["bathroom"] = {"private": True}
-            elif bathroom_value in {"shared", "shared_bathroom"}:
-                data["bathroom"] = {"private": False}
-
-        windows = data.pop("windows", None)
-        if "has_window" not in data and windows is not None:
-            if isinstance(windows, bool):
-                data["has_window"] = windows
-            elif isinstance(windows, str):
-                windows_value = windows.strip().lower()
-                if windows_value in {"all", "some", "yes", "true", "1"}:
-                    data["has_window"] = True
-                elif windows_value in {"none", "no", "false", "0"}:
-                    data["has_window"] = False
-
-        if "balcony" in data:
-            comfort = data.get("comfort")
-            if not isinstance(comfort, dict):
-                comfort = {}
-            comfort.setdefault("balcony", data.pop("balcony"))
-            data["comfort"] = comfort
-
-        return data
 
 
 class RoomAmenityItem(BaseModel):
@@ -308,11 +232,6 @@ class RoomCreate(BaseModel):
     def _normalize_floor(cls, value):
         return normalize_floor(value)
 
-    @field_validator("beds", mode="before")
-    @classmethod
-    def _normalize_beds(cls, value):
-        return normalize_bedding_options(value)
-
 
 class RoomUpdate(BaseModel):
     name: Translations | None = None
@@ -352,11 +271,6 @@ class RoomUpdate(BaseModel):
     @classmethod
     def _normalize_floor(cls, value):
         return normalize_floor(value)
-
-    @field_validator("beds", mode="before")
-    @classmethod
-    def _normalize_beds(cls, value):
-        return normalize_bedding_options(value)
 
 
 class _RoomReadCommon(BaseModel):
@@ -401,11 +315,6 @@ class _RoomReadCommon(BaseModel):
     final_price_weekend_usd: Decimal | None = None
     created_at: datetime
     updated_at: datetime
-
-    @field_validator("beds", mode="before")
-    @classmethod
-    def _normalize_beds(cls, value):
-        return normalize_bedding_options(value)
 
 
 class RoomRead(_RoomReadCommon):
