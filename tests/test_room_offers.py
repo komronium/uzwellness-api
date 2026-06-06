@@ -17,11 +17,17 @@ from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestTyp
 from tests.factories import make_room, make_sanatorium
 
 
-async def _rate_plan(db: AsyncSession, room_id) -> RatePlan:
+async def _rate_plan(
+    db: AsyncSession, room_id, *, board: BoardType = BoardType.FULL_BOARD
+) -> RatePlan:
+    name = {
+        BoardType.FULL_BOARD: "Full board and treatment",
+        BoardType.HALF_BOARD: "Half board and treatment",
+    }.get(board, board.value.replace("_", " ").title())
     rate_plan = RatePlan(
         room_id=room_id,
-        name={"en": "Full board and treatment"},
-        board=BoardType.FULL_BOARD,
+        name={"en": name},
+        board=board,
         payment_timing=PaymentTiming.AT_HOTEL,
         confirmation=ConfirmationType.INSTANT,
     )
@@ -148,6 +154,7 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
         inventory_count=2,
     )
     await _rate_plan(db, room.id)
+    half_board_rate = await _rate_plan(db, room.id, board=BoardType.HALF_BOARD)
     treatment = await _program(db, sanatorium.id, price="10.00")
     special = await _special_package(db, sanatorium.id, price="3.00")
 
@@ -161,7 +168,7 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
                 {
                     "room_index": 0,
                     "guest_index": 0,
-                    "board": "full_board",
+                    "board": "half_board",
                     "treatment_included": False,
                 },
                 {
@@ -189,8 +196,11 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    assert body["available_count"] == 1
+    assert body["offers"][0]["rate_plan_id"] == str(half_board_rate.id)
     groups = body["treatment_selection"]
     assert groups[0]["package_kind"] == "special"
+    assert groups[0]["board"] == "half_board"
     assert groups[0]["selected_program_id"] == str(special.id)
     assert groups[0]["options"][0]["id"] == str(special.id)
     assert groups[1]["package_kind"] == "treatment"
@@ -199,11 +209,65 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
     assert groups[2]["package_kind"] == "special"
 
     inclusions = body["offers"][0]["inclusions"]
-    assert inclusions[0]["items"][0]["description"] == "2 night(s), 3 meals a day"
+    assert inclusions[0]["items"][0]["description"] == "2 night(s), 2 meals a day"
     assert inclusions[0]["items"][-1]["type"] == "special_package"
     assert inclusions[1]["items"][0]["description"] == "2 night(s), 2 meals a day"
     assert inclusions[1]["items"][-1]["type"] == "treatment"
     assert body["offers"][0]["price"]["total"] == "216.00"
+
+
+async def test_room_offer_search_filters_rate_plans_with_conflicting_guest_boards(
+    client, db: AsyncSession, admin_user
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        status=SanatoriumStatus.APPROVED,
+        admin_user_id=admin_user.id,
+    )
+    room = await make_room(
+        db,
+        sanatorium=sanatorium,
+        name="Family Suite",
+        capacity=3,
+        inventory_count=2,
+    )
+    await _rate_plan(db, room.id)
+    await _rate_plan(db, room.id, board=BoardType.HALF_BOARD)
+    await _program(db, sanatorium.id, price="10.00")
+    await _special_package(db, sanatorium.id, price="3.00")
+
+    resp = await client.post(
+        f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
+        json={
+            "check_in": "2026-10-02",
+            "check_out": "2026-10-04",
+            "rooms": [{"adults": 3, "children": []}],
+            "guest_options": [
+                {
+                    "room_index": 0,
+                    "guest_index": 0,
+                    "board": "full_board",
+                    "treatment_included": True,
+                },
+                {
+                    "room_index": 0,
+                    "guest_index": 1,
+                    "board": "full_board",
+                    "treatment_included": True,
+                },
+                {
+                    "room_index": 0,
+                    "guest_index": 2,
+                    "board": "half_board",
+                    "treatment_included": False,
+                },
+            ],
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["available_count"] == 0
+    assert resp.json()["offers"] == []
 
 
 async def test_room_offer_search_prices_guest_stay_options(

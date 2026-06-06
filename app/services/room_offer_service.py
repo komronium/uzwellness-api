@@ -339,6 +339,8 @@ class RoomOfferService:
         return True
 
     def _rate_plan_fits(self, rate_plan: RatePlan, context: _OfferContext) -> bool:
+        if not self._rate_plan_matches_guest_boards(rate_plan, context):
+            return False
         if rate_plan.min_nights is not None and context.nights < rate_plan.min_nights:
             return False
         if rate_plan.max_nights is not None and context.nights > rate_plan.max_nights:
@@ -360,6 +362,14 @@ class RoomOfferService:
             arrival_rule is None
             or arrival_rule.min_stay_arrival_nights is None
             or context.nights >= arrival_rule.min_stay_arrival_nights
+        )
+
+    @staticmethod
+    def _rate_plan_matches_guest_boards(
+        rate_plan: RatePlan, context: _OfferContext
+    ) -> bool:
+        return all(
+            option.board == rate_plan.board for option in context.guest_options.values()
         )
 
     def _offer(
