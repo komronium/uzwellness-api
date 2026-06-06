@@ -141,9 +141,7 @@ async def get_room(
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise not_found("Room not found")
-    if (
-        not room.is_active or room.deleted_at is not None
-    ) and not await rooms.can_manage(room, current_user):
+    if room.deleted_at is not None and not await rooms.can_manage(room, current_user):
         raise not_found("Room not found")
     pricing = await rooms.enrich(room)
     if include_translations:
