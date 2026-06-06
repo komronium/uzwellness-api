@@ -723,7 +723,19 @@ class RoomOfferService:
                     (room_index, guest.guest_index),
                     cls._default_guest_option(room_index, guest.guest_index),
                 )
+        cls._assert_single_board(options)
         return options
+
+    @staticmethod
+    def _assert_single_board(
+        options: dict[tuple[int, int], RoomOfferGuestOption],
+    ) -> None:
+        boards = {option.board for option in options.values()}
+        if len(boards) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="All guests in one room-offer search must use the same board",
+            )
 
     @staticmethod
     def _guest_option(

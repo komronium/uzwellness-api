@@ -216,7 +216,7 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
     assert body["offers"][0]["price"]["total"] == "216.00"
 
 
-async def test_room_offer_search_filters_rate_plans_with_conflicting_guest_boards(
+async def test_room_offer_search_rejects_conflicting_guest_boards(
     client, db: AsyncSession, admin_user
 ) -> None:
     sanatorium = await make_sanatorium(
@@ -265,9 +265,11 @@ async def test_room_offer_search_filters_rate_plans_with_conflicting_guest_board
         },
     )
 
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["available_count"] == 0
-    assert resp.json()["offers"] == []
+    assert resp.status_code == 400
+    assert (
+        resp.json()["detail"]
+        == "All guests in one room-offer search must use the same board"
+    )
 
 
 async def test_room_offer_search_prices_guest_stay_options(
@@ -285,14 +287,14 @@ async def test_room_offer_search_prices_guest_stay_options(
         capacity=3,
         inventory_count=2,
     )
-    await _rate_plan(db, room.id)
+    await _rate_plan(db, room.id, board=BoardType.HALF_BOARD)
     treatment = await _program(db, sanatorium.id, price="10.00")
     await _special_package(db, sanatorium.id, price="3.00")
     await _stay_option(
         db,
         sanatorium.id,
         guest_type=StayOptionGuestType.ADULT,
-        board=BoardType.FULL_BOARD,
+        board=BoardType.HALF_BOARD,
         treatment_included=False,
         price_delta="5.00",
     )
@@ -323,7 +325,7 @@ async def test_room_offer_search_prices_guest_stay_options(
                 {
                     "room_index": 0,
                     "guest_index": 0,
-                    "board": "full_board",
+                    "board": "half_board",
                     "treatment_included": False,
                 },
                 {
