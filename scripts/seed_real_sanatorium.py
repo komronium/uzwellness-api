@@ -10,7 +10,7 @@ import asyncio
 import sys
 from datetime import date, timedelta, time
 from decimal import Decimal
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from sqlalchemy import delete, select
@@ -717,13 +717,26 @@ async def save_images(items: list[dict]) -> dict[str, str]:
     storage = get_storage()
     saved: dict[str, str] = {}
     for item in items:
-        content = download_image(item["url"])
+        content = download_first_available_image(item)
         webp, _ = to_webp(content)
         key = f"seed/{SLUG}/{item['key']}.webp"
         saved[item["key"]] = await storage.save(
             key=key, content=webp, content_type=WEBP_MIME
         )
     return saved
+
+
+def download_first_available_image(item: dict) -> bytes:
+    urls = [item["url"], *item.get("fallback_urls", [])]
+    errors: list[str] = []
+    for url in urls:
+        try:
+            return download_image(url)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+    raise RuntimeError(
+        f"All image downloads failed for {item['key']}: " + " | ".join(errors)
+    )
 
 
 def download_image(url: str) -> bytes:
@@ -739,15 +752,21 @@ def download_image(url: str) -> bytes:
     try:
         with urlopen(request, timeout=IMAGE_TIMEOUT_SECONDS) as response:
             return response.read()
-    except URLError as exc:
-        print(f"Could not download image: {url}", file=sys.stderr)
+    except (HTTPError, URLError, TimeoutError) as exc:
+        print(f"Could not download image: {url} ({exc})", file=sys.stderr)
         raise RuntimeError(f"Image download failed: {url}") from exc
 
+
+COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:Redirect/file"
 
 SANATORIUM_IMAGES = [
     {
         "key": "exterior_main",
         "url": f"{IMAGE_BASE}/84.jpg",
+        "fallback_urls": [
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bino.png",
+            f"{COMMONS_FILE}/Chortoq.jpg",
+        ],
         "category": "exterior",
         "caption": "Main sanatorium building",
         "alt": "Chortoq Sanatorium exterior",
@@ -756,6 +775,10 @@ SANATORIUM_IMAGES = [
     {
         "key": "garden",
         "url": f"{IMAGE_BASE}/85.jpg",
+        "fallback_urls": [
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bog%27i.png",
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_yo%27llar.png",
+        ],
         "category": "surroundings",
         "caption": "Green walking area",
         "alt": "Walking area at Chortoq Sanatorium",
@@ -764,6 +787,10 @@ SANATORIUM_IMAGES = [
     {
         "key": "mineral_pool",
         "url": f"{IMAGE_BASE}/86.jpg",
+        "fallback_urls": [
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchi.png",
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchilar.png",
+        ],
         "category": "treatment",
         "caption": "Mineral-water treatment area",
         "alt": "Mineral-water treatment at Chortoq Sanatorium",
@@ -772,6 +799,10 @@ SANATORIUM_IMAGES = [
     {
         "key": "dining",
         "url": f"{IMAGE_BASE}/87.jpg",
+        "fallback_urls": [
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bog%27i.png",
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_yo%27llar.png",
+        ],
         "category": "dining",
         "caption": "Diet dining hall",
         "alt": "Dining hall at Chortoq Sanatorium",
@@ -780,6 +811,10 @@ SANATORIUM_IMAGES = [
     {
         "key": "medical_base",
         "url": f"{IMAGE_BASE}/98.jpg",
+        "fallback_urls": [
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchilar.png",
+            f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchi.png",
+        ],
         "category": "medical",
         "caption": "Medical treatment base",
         "alt": "Medical base at Chortoq Sanatorium",
@@ -788,14 +823,46 @@ SANATORIUM_IMAGES = [
 ]
 
 ROOM_IMAGES = [
-    {"key": "standard_single_1", "url": f"{IMAGE_BASE}/116.jpg"},
-    {"key": "standard_single_2", "url": f"{IMAGE_BASE}/117.jpg"},
-    {"key": "standard_double_1", "url": f"{IMAGE_BASE}/89.jpg"},
-    {"key": "standard_double_2", "url": f"{IMAGE_BASE}/90.jpg"},
-    {"key": "superior_twin_1", "url": f"{IMAGE_BASE}/91.jpg"},
-    {"key": "superior_twin_2", "url": f"{IMAGE_BASE}/92.jpg"},
-    {"key": "family_suite_1", "url": f"{IMAGE_BASE}/93.jpg"},
-    {"key": "family_suite_2", "url": f"{IMAGE_BASE}/94.jpg"},
+    {
+        "key": "standard_single_1",
+        "url": f"{IMAGE_BASE}/116.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bino.png"],
+    },
+    {
+        "key": "standard_single_2",
+        "url": f"{IMAGE_BASE}/117.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_yo%27llar.png"],
+    },
+    {
+        "key": "standard_double_1",
+        "url": f"{IMAGE_BASE}/89.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bog%27i.png"],
+    },
+    {
+        "key": "standard_double_2",
+        "url": f"{IMAGE_BASE}/90.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchi.png"],
+    },
+    {
+        "key": "superior_twin_1",
+        "url": f"{IMAGE_BASE}/91.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_damoluvchilar.png"],
+    },
+    {
+        "key": "superior_twin_2",
+        "url": f"{IMAGE_BASE}/92.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq.jpg"],
+    },
+    {
+        "key": "family_suite_1",
+        "url": f"{IMAGE_BASE}/93.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bino.png"],
+    },
+    {
+        "key": "family_suite_2",
+        "url": f"{IMAGE_BASE}/94.jpg",
+        "fallback_urls": [f"{COMMONS_FILE}/Chortoq_sanatoriyasi_bog%27i.png"],
+    },
 ]
 
 AMENITY_DATA = [
