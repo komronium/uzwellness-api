@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from fastapi import Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.discount_tiers import best_tier_discount_percent
+from app.core.database import get_db
 from app.models.booking import Booking, BookingStatus
 from app.models.sanatorium import Sanatorium
 from app.models.user import User
@@ -83,9 +85,16 @@ class BookingPricingPolicy:
             sanatorium.agent_discount_tiers, int(count or 0)
         )
 
+
 @dataclass(slots=True)
 class BookingPricing:
     final_price: Decimal
     agent_discount_percent: Decimal
     commission_percent: Decimal
     commission_amount: Decimal
+
+
+def get_booking_pricing_policy(
+    db: AsyncSession = Depends(get_db),
+) -> BookingPricingPolicy:
+    return BookingPricingPolicy(db)

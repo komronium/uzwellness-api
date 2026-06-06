@@ -26,7 +26,7 @@ router = APIRouter(prefix="/extra-beds", tags=["Rooms"])
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=ExtraBedConfigList | ExtraBedConfigAdminList)
 async def list_extra_beds(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
@@ -52,7 +52,7 @@ async def list_extra_beds(
     )
 
 
-@router.get("/{config_id}", response_model=None)
+@router.get("/{config_id}", response_model=ExtraBedConfigRead | ExtraBedConfigAdminRead)
 async def get_extra_bed(
     config_id: uuid.UUID,
     locale: LocaleDep,

@@ -7,6 +7,7 @@ from app.models.room import (
     SmokingPolicy,
     WindowPolicy,
 )
+from app.models.stay_option import StayOptionGuestType
 from app.core.meta.shared import Label, Option, from_enum, from_labels
 
 
@@ -19,6 +20,47 @@ _BOARD: dict[str, Label] = {
         "uz": "Hammasi kiritilgan",
         "ru": "Всё включено",
         "en": "All inclusive",
+    },
+}
+
+_ROOM_OFFER_PACKAGE_KIND: dict[str, Label] = {
+    "treatment": {
+        "uz": "Davolash paketi",
+        "ru": "Лечебный пакет",
+        "en": "Treatment package",
+    },
+    "special": {
+        "uz": "Maxsus paket",
+        "ru": "Специальный пакет",
+        "en": "Special package",
+    },
+}
+
+_STAY_OPTION_GUEST_TYPE: dict[str, Label] = {
+    "adult": {"uz": "Katta", "ru": "Взрослый", "en": "Adult"},
+    "child": {"uz": "Bola", "ru": "Ребенок", "en": "Child"},
+}
+
+_ROOM_GUEST_OPTION_PRESET: dict[str, Label] = {
+    "full_board_and_treatment": {
+        "uz": "To'liq pansion va davolash",
+        "ru": "Полный пансион и лечение",
+        "en": "Full board and treatment",
+    },
+    "half_board_and_treatment": {
+        "uz": "Yarim pansion va davolash",
+        "ru": "Полупансион и лечение",
+        "en": "Half board and treatment",
+    },
+    "full_board_without_treatment": {
+        "uz": "To'liq pansion, davolashsiz",
+        "ru": "Полный пансион без лечения",
+        "en": "Full board without treatment",
+    },
+    "half_board_without_treatment": {
+        "uz": "Yarim pansion, davolashsiz",
+        "ru": "Полупансион без лечения",
+        "en": "Half board without treatment",
     },
 }
 
@@ -181,6 +223,11 @@ _ROOM_AMENITY_GROUP: dict[str, Label] = {
 def room_meta() -> dict[str, list[Option]]:
     return {
         "board_types": from_enum(BoardType, _BOARD),
+        "stay_option_guest_types": from_enum(
+            StayOptionGuestType, _STAY_OPTION_GUEST_TYPE
+        ),
+        "room_offer_package_kinds": from_labels(_ROOM_OFFER_PACKAGE_KIND),
+        "room_guest_option_presets": from_labels(_ROOM_GUEST_OPTION_PRESET),
         "payment_timings": from_enum(PaymentTiming, _PAYMENT_TIMING),
         "confirmation_types": from_enum(ConfirmationType, _CONFIRMATION),
         "room_views": from_enum(RoomView, _ROOM_VIEW),

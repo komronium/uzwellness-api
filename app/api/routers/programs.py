@@ -26,7 +26,7 @@ router = APIRouter(prefix="/programs", tags=["Treatments"])
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=TreatmentProgramList | TreatmentProgramAdminList)
 async def list_programs(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
@@ -52,7 +52,9 @@ async def list_programs(
     )
 
 
-@router.get("/{program_id}", response_model=None)
+@router.get(
+    "/{program_id}", response_model=TreatmentProgramRead | TreatmentProgramAdminRead
+)
 async def get_program(
     program_id: uuid.UUID,
     locale: LocaleDep,

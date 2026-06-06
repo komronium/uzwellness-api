@@ -34,7 +34,7 @@ require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_sanatorium_admin = require_roles(UserRole.ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=PackageList | PackageAdminList)
 async def list_packages(
     current_user: OptionalUser,
     locale: LocaleDep,
@@ -96,7 +96,7 @@ async def list_featured_packages(
     )
 
 
-@router.get("/{package_id_or_slug}", response_model=None)
+@router.get("/{package_id_or_slug}", response_model=PackageRead | PackageAdminRead)
 async def get_package(
     package_id_or_slug: str,
     current_user: OptionalUser,

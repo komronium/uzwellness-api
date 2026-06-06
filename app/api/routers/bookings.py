@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, not_found, require_roles
+from app.api.deps import CurrentUser, LocaleDep, not_found, require_roles
 from app.api.rate_limits import booking_rate_limit
 from app.core.database import get_db
 from app.core.pagination import Pagination
@@ -18,6 +18,7 @@ from app.schemas.booking import (
     BookingList,
     BookingRead,
     InvoiceRead,
+    RoomOfferBookingCreate,
 )
 from app.services.admin_reservation_service import (
     AdminReservationService,
@@ -25,6 +26,10 @@ from app.services.admin_reservation_service import (
 )
 from app.services.booking_invoice import build_invoice
 from app.services.booking_service import BookingService, get_booking_service
+from app.services.room_offer_booking_service import (
+    RoomOfferBookingService,
+    get_room_offer_booking_service,
+)
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -51,6 +56,22 @@ async def create_booking(
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.create(payload, current_user)
+    return _to_read(booking, current_user)
+
+
+@router.post(
+    "/room-offer",
+    response_model=BookingRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(booking_rate_limit)],
+)
+async def create_room_offer_booking(
+    payload: RoomOfferBookingCreate,
+    current_user: CurrentUser,
+    locale: LocaleDep,
+    bookings: RoomOfferBookingService = Depends(get_room_offer_booking_service),
+) -> BookingRead:
+    booking = await bookings.create(payload, current_user, locale=locale)
     return _to_read(booking, current_user)
 
 
@@ -152,7 +173,8 @@ async def get_booking_invoice(
     return InvoiceRead(**data)
 
 
-@router.patch("/{booking_id}/cancel", response_model=BookingRead)
+@router.post("/{booking_id}/cancel", response_model=BookingRead)
+@router.patch("/{booking_id}/cancel", response_model=BookingRead, deprecated=True)
 async def cancel_booking(
     booking_id: uuid.UUID,
     current_user: CurrentUser,

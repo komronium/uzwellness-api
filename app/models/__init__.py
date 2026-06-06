@@ -18,7 +18,13 @@ from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
-from app.models.program import TreatmentFocus, TreatmentProgram
+from app.models.program import (
+    TreatmentFocus,
+    TreatmentGuestApplicability,
+    TreatmentProgram,
+    TreatmentProgramType,
+    TreatmentStayPackageKind,
+)
 from app.models.promotion import (
     Promotion,
     PromotionAudience,
@@ -50,6 +56,7 @@ from app.models.sanatorium import (
     SanatoriumStatus,
     WellnessCategory,
 )
+from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
 from app.models.transfer_request import (
     TransferDirection,
     TransferRequest,
@@ -107,11 +114,16 @@ __all__ = [
     "SanatoriumImage",
     "SanatoriumReview",
     "SanatoriumStatus",
+    "SanatoriumStayOptionPrice",
+    "StayOptionGuestType",
     "TransferDirection",
     "TransferRequest",
     "TransferStatus",
     "TreatmentFocus",
+    "TreatmentGuestApplicability",
     "TreatmentProgram",
+    "TreatmentProgramType",
+    "TreatmentStayPackageKind",
     "User",
     "UserRole",
     "VehicleType",

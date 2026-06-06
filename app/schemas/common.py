@@ -11,3 +11,7 @@ class TranslationsCreate(BaseModel):
     uz: str = Field(min_length=1)
     ru: str = Field(min_length=1)
     en: str = Field(min_length=1)
+
+
+class ErrorResponse(BaseModel):
+    detail: str | list | dict

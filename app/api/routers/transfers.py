@@ -83,12 +83,15 @@ async def update_transfer(
     transfer = await transfers.get_by_id(transfer_id)
     if transfer is None:
         raise not_found("Transfer request not found")
-    return TransferRequestRead.model_validate(
-        await transfers.update(transfer, payload)
-    )
+    return TransferRequestRead.model_validate(await transfers.update(transfer, payload))
 
 
-@router.patch("/{transfer_id}/cancel", response_model=TransferRequestRead)
+@router.post("/{transfer_id}/cancel", response_model=TransferRequestRead)
+@router.patch(
+    "/{transfer_id}/cancel",
+    response_model=TransferRequestRead,
+    deprecated=True,
+)
 async def cancel_transfer(
     transfer_id: uuid.UUID,
     current_user: CurrentUser,

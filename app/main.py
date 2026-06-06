@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
 from app.api.openapi_tags import OPENAPI_TAGS
+from app.api.openapi_responses import COMMON_ERROR_RESPONSES
 from app.core.config import settings
 from app.core.redis_client import close_redis, get_redis
 
@@ -23,6 +24,7 @@ app = FastAPI(
     debug=settings.DEBUG,
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
+    responses=COMMON_ERROR_RESPONSES,
 )
 
 app.add_middleware(
@@ -44,6 +46,6 @@ app.mount(
 )
 
 
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root() -> dict[str, str]:
     return {"name": settings.PROJECT_NAME, "docs": "/docs"}

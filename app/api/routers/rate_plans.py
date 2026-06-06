@@ -29,7 +29,9 @@ router = APIRouter(prefix="/rate-plans", tags=["Rooms"])
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get(
+    "", response_model=RatePlanList | RatePlanAdminList | RatePlanAdminDirectoryList
+)
 async def list_rate_plans(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
@@ -90,7 +92,7 @@ async def list_rate_plans(
     )
 
 
-@router.get("/{rate_plan_id}", response_model=None)
+@router.get("/{rate_plan_id}", response_model=RatePlanRead | RatePlanAdminRead)
 async def get_rate_plan(
     rate_plan_id: uuid.UUID,
     locale: LocaleDep,

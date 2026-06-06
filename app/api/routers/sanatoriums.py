@@ -42,6 +42,11 @@ from app.schemas.sanatorium_reservation import (
     SanatoriumReservationSettingsRead,
     SanatoriumReservationSettingsUpdate,
 )
+from app.schemas.stay_option import (
+    StayOptionPriceBulkUpdate,
+    StayOptionPriceList,
+    StayOptionPriceRead,
+)
 from app.services.sanatorium_content_service import (
     SanatoriumContentService,
     get_sanatorium_content_service,
@@ -53,6 +58,10 @@ from app.services.sanatorium_service import (
 from app.services.sanatorium_query_service import (
     SanatoriumQueryService,
     get_sanatorium_query_service,
+)
+from app.services.stay_option_service import (
+    StayOptionService,
+    get_stay_option_service,
 )
 
 router = APIRouter(prefix="/sanatoriums", tags=["Sanatoriums"])
@@ -181,6 +190,46 @@ async def update_sanatorium_policies(
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update_policies(sanatorium, payload)
     return SanatoriumPolicies.model_validate(updated.policies or {})
+
+
+@router.get(
+    "/{sanatorium_id}/stay-option-prices",
+    response_model=StayOptionPriceList,
+)
+async def get_stay_option_prices(
+    sanatorium_id: uuid.UUID,
+    current_user: OptionalUser,
+    sanatoriums: SanatoriumQueryService = Depends(get_sanatorium_query_service),
+    stay_options: StayOptionService = Depends(get_stay_option_service),
+) -> StayOptionPriceList:
+    sanatorium = await sanatoriums.get_visible(sanatorium_id, current_user)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    items = await stay_options.list_for_sanatorium(sanatorium_id)
+    return StayOptionPriceList(
+        items=[StayOptionPriceRead.model_validate(i) for i in items]
+    )
+
+
+@router.put(
+    "/{sanatorium_id}/stay-option-prices",
+    response_model=StayOptionPriceList,
+)
+async def replace_stay_option_prices(
+    sanatorium_id: uuid.UUID,
+    payload: StayOptionPriceBulkUpdate,
+    current_user: User = Depends(require_admin_or_above),
+    sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
+    stay_options: StayOptionService = Depends(get_stay_option_service),
+) -> StayOptionPriceList:
+    sanatorium = await sanatoriums.get_by_id(sanatorium_id)
+    if sanatorium is None:
+        raise not_found("Sanatorium not found")
+    ensure_can_edit_sanatorium(sanatorium, current_user)
+    items = await stay_options.replace_for_sanatorium(sanatorium_id, payload)
+    return StayOptionPriceList(
+        items=[StayOptionPriceRead.model_validate(i) for i in items]
+    )
 
 
 @router.get("/{sanatorium_id}", response_model=SanatoriumRead | SanatoriumAdminRead)

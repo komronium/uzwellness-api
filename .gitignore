@@ -52,6 +52,7 @@ uploads/
 TASKS.md
 FRONTEND*.md
 
+.codex/
 .claude/
 AGENTS.md
 CLAUDE.md

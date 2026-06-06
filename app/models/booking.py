@@ -103,6 +103,8 @@ class Booking(Base):
     check_in: Mapped[date] = mapped_column(Date, nullable=False)
     check_out: Mapped[date] = mapped_column(Date, nullable=False)
     guests: Mapped[int] = mapped_column(Integer, nullable=False)
+    adults: Mapped[int | None] = mapped_column(Integer)
+    children: Mapped[int | None] = mapped_column(Integer)
     rooms_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
@@ -127,6 +129,18 @@ class Booking(Base):
     )
     guest_details: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
+    )
+    room_distribution: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    treatment_selections: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    guest_options: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    offer_snapshot: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
     )
     special_requests: Mapped[str | None] = mapped_column(String(1000))
 

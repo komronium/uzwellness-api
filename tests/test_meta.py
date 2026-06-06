@@ -89,6 +89,14 @@ async def test_meta_contains_demo_medical_and_media_labels(
     )
     assert {"yes", "no", "not_specified"} == _values(body["amenity_statuses"])
     assert {"sanatorium", "room", "both"} == _values(body["amenity_scopes"])
+    assert {"adult", "child"} == _values(body["stay_option_guest_types"])
+    assert {"treatment", "special"} == _values(body["room_offer_package_kinds"])
+    assert {
+        "full_board_and_treatment",
+        "half_board_and_treatment",
+        "full_board_without_treatment",
+        "half_board_without_treatment",
+    } == _values(body["room_guest_option_presets"])
 
 
 async def test_meta_contains_admin_reservation_and_availability_labels(

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/amenities", tags=["Amenities"])
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=AmenityList | AmenityAdminList)
 async def list_amenities(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
@@ -53,7 +53,7 @@ async def list_amenities(
     )
 
 
-@router.get("/{amenity_id}", response_model=None)
+@router.get("/{amenity_id}", response_model=AmenityRead | AmenityAdminRead)
 async def get_amenity(
     amenity_id: uuid.UUID,
     locale: LocaleDep,

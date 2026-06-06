@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Uuid,
     func,
 )
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -55,6 +57,22 @@ class TreatmentFocus(Base):
     programs: Mapped[list["TreatmentProgram"]] = relationship(back_populates="focus")
 
 
+class TreatmentProgramType(StrEnum):
+    SESSION = "session"
+    STAY_PACKAGE = "stay_package"
+
+
+class TreatmentStayPackageKind(StrEnum):
+    TREATMENT = "treatment"
+    SPECIAL = "special"
+
+
+class TreatmentGuestApplicability(StrEnum):
+    ALL = "all"
+    ADULT = "adult"
+    CHILD = "child"
+
+
 class TreatmentProgram(Base):
     __tablename__ = "treatment_programs"
 
@@ -73,6 +91,41 @@ class TreatmentProgram(Base):
     name: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     description: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    program_type: Mapped[TreatmentProgramType] = mapped_column(
+        SQLEnum(
+            TreatmentProgramType,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        nullable=False,
+        default=TreatmentProgramType.SESSION,
+        server_default=TreatmentProgramType.SESSION.value,
+        index=True,
+    )
+    stay_package_kind: Mapped[TreatmentStayPackageKind] = mapped_column(
+        SQLEnum(
+            TreatmentStayPackageKind,
+            native_enum=False,
+            length=20,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        nullable=False,
+        default=TreatmentStayPackageKind.TREATMENT,
+        server_default=TreatmentStayPackageKind.TREATMENT.value,
+        index=True,
+    )
+    guest_applicability: Mapped[TreatmentGuestApplicability] = mapped_column(
+        SQLEnum(
+            TreatmentGuestApplicability,
+            native_enum=False,
+            length=20,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        nullable=False,
+        default=TreatmentGuestApplicability.ALL,
+        server_default=TreatmentGuestApplicability.ALL.value,
     )
 
     min_nights: Mapped[int | None] = mapped_column(Integer)
@@ -93,8 +146,30 @@ class TreatmentProgram(Base):
     what_to_bring: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    medical_exam_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    medical_procedure_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    drink_cure_included: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    sauna_entries: Mapped[int | None] = mapped_column(Integer)
+    pool_access_included: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    included_services: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_default_stay_package: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    display_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

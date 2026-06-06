@@ -20,7 +20,7 @@ router = APIRouter(prefix="/regions", tags=["Destinations"])
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=RegionList | RegionAdminList)
 async def list_regions(
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
@@ -46,7 +46,7 @@ async def list_regions(
     )
 
 
-@router.get("/{slug_or_id}", response_model=None)
+@router.get("/{slug_or_id}", response_model=RegionRead | RegionAdminRead)
 async def get_region(
     slug_or_id: str,
     locale: LocaleDep,

@@ -10,6 +10,11 @@ from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 from app.models.user import UserRole
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
 from app.schemas.payment import BookingPaymentSummary
+from app.schemas.room_offer import (
+    RoomOfferGuestOption,
+    RoomOfferRequestedRoom,
+    RoomOfferTreatmentSelection,
+)
 
 
 class BookingCustomerRead(BaseModel):
@@ -56,6 +61,41 @@ class BookingCreate(BaseModel):
         return self
 
 
+class RoomOfferBookingCreate(BaseModel):
+    sanatorium_id: uuid.UUID
+    room_id: uuid.UUID
+    rate_plan_id: uuid.UUID | None = None
+    check_in: date
+    check_out: date
+    rooms: list[RoomOfferRequestedRoom] = Field(min_length=1, max_length=8)
+    guest_options: list[RoomOfferGuestOption] = Field(default_factory=list)
+    treatment_selections: list[RoomOfferTreatmentSelection] = Field(
+        default_factory=list
+    )
+    guest_details: list[GuestDetail] = Field(default_factory=list)
+    special_requests: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if self.check_out <= self.check_in:
+            raise ValueError("check_out must be after check_in")
+        if self.guest_details and len(self.guest_details) > self.guests:
+            raise ValueError("guest_details cannot exceed guests count")
+        return self
+
+    @property
+    def adults(self) -> int:
+        return sum(room.adults for room in self.rooms)
+
+    @property
+    def children(self) -> int:
+        return sum(len(room.children) for room in self.rooms)
+
+    @property
+    def guests(self) -> int:
+        return self.adults + self.children
+
+
 class BookingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,6 +111,8 @@ class BookingRead(BaseModel):
     check_in: date
     check_out: date
     guests: int
+    adults: int | None = None
+    children: int | None = None
     rooms_count: int
     status: BookingStatus
     final_price: Decimal
@@ -88,6 +130,10 @@ class BookingRead(BaseModel):
     board_guests: int | None = None
     is_b2b: bool
     guest_details: list[GuestDetail] = Field(default_factory=list)
+    room_distribution: list[dict] = Field(default_factory=list)
+    guest_options: list[dict] = Field(default_factory=list)
+    treatment_selections: list[dict] = Field(default_factory=list)
+    offer_snapshot: dict = Field(default_factory=dict)
     special_requests: str | None = None
     is_processed: bool
     processed_at: datetime | None = None
