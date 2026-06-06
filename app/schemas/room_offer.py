@@ -32,6 +32,7 @@ class RoomOfferChild(BaseModel):
 class RoomOfferRequestedRoom(BaseModel):
     adults: int = Field(ge=1)
     children: list[RoomOfferChild] = Field(default_factory=list)
+    board: BoardType = BoardType.FULL_BOARD
 
     @property
     def guests_count(self) -> int:
@@ -64,7 +65,7 @@ class RoomOfferTreatmentSelection(BaseModel):
 class RoomOfferGuestOption(BaseModel):
     room_index: int = Field(ge=0)
     guest_index: int = Field(ge=0)
-    board: BoardType = BoardType.FULL_BOARD
+    board: BoardType | None = None
     treatment_included: bool = True
 
     @property

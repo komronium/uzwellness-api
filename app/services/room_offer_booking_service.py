@@ -108,7 +108,8 @@ class RoomOfferBookingService:
                 room_request.model_dump(mode="json") for room_request in payload.rooms
             ],
             guest_options=[
-                option.model_dump(mode="json") for option in payload.guest_options
+                option.model_dump(mode="json", exclude_none=True)
+                for option in payload.guest_options
             ],
             treatment_selections=[
                 selection.model_dump(mode="json")

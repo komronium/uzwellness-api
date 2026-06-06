@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +16,52 @@ from app.models.program import (
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming, RatePlan
 from app.models.sanatorium import SanatoriumStatus
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
+from app.schemas.room_offer import RoomOfferSearchRequest
+from app.services.room_offer_service import RoomOfferService
 from tests.factories import make_room, make_sanatorium
+
+
+def test_room_offer_guest_options_use_room_board() -> None:
+    payload = RoomOfferSearchRequest(
+        check_in=date(2026, 10, 2),
+        check_out=date(2026, 10, 4),
+        rooms=[{"adults": 2, "children": [], "board": "half_board"}],
+        guest_options=[
+            {
+                "room_index": 0,
+                "guest_index": 0,
+                "treatment_included": False,
+            }
+        ],
+    )
+
+    options = RoomOfferService._guest_options(payload)
+
+    assert options[(0, 0)].board == BoardType.HALF_BOARD
+    assert options[(0, 0)].treatment_included is False
+    assert options[(0, 1)].board == BoardType.HALF_BOARD
+    assert options[(0, 1)].treatment_included is True
+
+
+def test_room_offer_guest_options_reject_mixed_legacy_boards() -> None:
+    payload = RoomOfferSearchRequest(
+        check_in=date(2026, 10, 2),
+        check_out=date(2026, 10, 4),
+        rooms=[{"adults": 2, "children": []}],
+        guest_options=[
+            {"room_index": 0, "guest_index": 0, "board": "full_board"},
+            {"room_index": 0, "guest_index": 1, "board": "half_board"},
+        ],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        RoomOfferService._guest_options(payload)
+
+    assert getattr(exc_info.value, "status_code", None) == 400
+    assert (
+        getattr(exc_info.value, "detail", None)
+        == "All guests in one room-offer search must use the same board"
+    )
 
 
 async def _rate_plan(
@@ -138,7 +185,7 @@ async def test_room_offer_search_returns_guest_level_treatment_and_inclusions(
     assert len(body["offers"][0]["inclusions"]) == 3
 
 
-async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
+async def test_room_offer_search_supports_room_board_and_guest_treatment_options(
     client, db: AsyncSession, admin_user
 ) -> None:
     sanatorium = await make_sanatorium(
@@ -163,24 +210,21 @@ async def test_room_offer_search_supports_guest_board_and_no_treatment_options(
         json={
             "check_in": "2026-10-02",
             "check_out": "2026-10-04",
-            "rooms": [{"adults": 2, "children": [{"age": 11}]}],
+            "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
                     "room_index": 0,
                     "guest_index": 0,
-                    "board": "half_board",
                     "treatment_included": False,
                 },
                 {
                     "room_index": 0,
                     "guest_index": 1,
-                    "board": "half_board",
                     "treatment_included": True,
                 },
                 {
                     "room_index": 0,
                     "guest_index": 2,
-                    "board": "half_board",
                     "treatment_included": False,
                 },
             ],
@@ -320,24 +364,21 @@ async def test_room_offer_search_prices_guest_stay_options(
         json={
             "check_in": "2026-10-02",
             "check_out": "2026-10-04",
-            "rooms": [{"adults": 2, "children": [{"age": 11}]}],
+            "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
                     "room_index": 0,
                     "guest_index": 0,
-                    "board": "half_board",
                     "treatment_included": False,
                 },
                 {
                     "room_index": 0,
                     "guest_index": 1,
-                    "board": "half_board",
                     "treatment_included": True,
                 },
                 {
                     "room_index": 0,
                     "guest_index": 2,
-                    "board": "half_board",
                     "treatment_included": False,
                 },
             ],
@@ -497,7 +538,7 @@ async def test_room_offer_booking_recalculates_and_reserves_inventory(
         capacity=3,
         inventory_count=2,
     )
-    rate_plan = await _rate_plan(db, room.id)
+    rate_plan = await _rate_plan(db, room.id, board=BoardType.HALF_BOARD)
     program = await _program(db, sanatorium.id, price="10.00")
 
     resp = await client.post(
@@ -509,12 +550,11 @@ async def test_room_offer_booking_recalculates_and_reserves_inventory(
             "rate_plan_id": str(rate_plan.id),
             "check_in": "2026-10-02",
             "check_out": "2026-10-04",
-            "rooms": [{"adults": 2, "children": [{"age": 11}]}],
+            "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
                     "room_index": 0,
                     "guest_index": 0,
-                    "board": "half_board",
                     "treatment_included": True,
                 }
             ],
@@ -541,11 +581,12 @@ async def test_room_offer_booking_recalculates_and_reserves_inventory(
         {
             "room_index": 0,
             "guest_index": 0,
-            "board": "half_board",
             "treatment_included": True,
         }
     ]
-    assert body["room_distribution"] == [{"adults": 2, "children": [{"age": 11}]}]
+    assert body["room_distribution"] == [
+        {"adults": 2, "children": [{"age": 11}], "board": "half_board"}
+    ]
     assert body["offer_snapshot"]["room_name"] == "Double Room Lux"
 
     availability_rows = (
