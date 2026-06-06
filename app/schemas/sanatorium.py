@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -281,7 +282,7 @@ def _public_core(obj, locale: str) -> dict:
         "address": pick_locale(obj.address, locale),
         "lat": obj.lat,
         "lng": obj.lng,
-        "phones": obj.phones,
+        "phones": _phones(obj.phones),
         "postal_code": obj.postal_code,
         "customer_support_email": obj.customer_support_email,
         "website": obj.website,
@@ -316,9 +317,9 @@ def _public_detail(obj, locale: str) -> dict:
         "highlights": obj.highlights,
         "is_featured": obj.is_featured,
         "display_order": obj.display_order,
-        "surroundings": obj.surroundings,
-        "venues": obj.venues,
-        "meal_schedule": obj.meal_schedule,
+        "surroundings": _surroundings(obj.surroundings),
+        "venues": _venues(obj.venues),
+        "meal_schedule": _meal_schedule(obj.meal_schedule),
         "avg_rating": obj.avg_rating,
         "review_count": obj.review_count,
         "admin_user_id": obj.admin_user_id,
@@ -359,6 +360,101 @@ def _active_promo_badges(obj, locale: str) -> list[PromoBadgeRead]:
         for badge in (obj.promo_badges or [])
         if (badge.get("is_active", True) if isinstance(badge, dict) else True)
     ]
+
+
+def _phones(value: Any) -> list[str]:
+    result: list[str] = []
+    for item in value or []:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            phone = item.get("phone") or item.get("number") or item.get("value")
+            if phone:
+                result.append(str(phone))
+    return result
+
+
+def _surroundings(value: Any) -> list[dict]:
+    result: list[dict] = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            continue
+        distance_m = item.get("distance_m")
+        if distance_m is None:
+            distance_m = _distance_to_meters(item.get("distance"))
+        result.append(
+            {
+                "name": str(item.get("name") or ""),
+                "type": str(item.get("type") or "point_of_interest"),
+                "distance_m": max(int(distance_m or 0), 0),
+            }
+        )
+    return [item for item in result if item["name"]]
+
+
+def _venues(value: Any) -> list[dict]:
+    result: list[dict] = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not name:
+            continue
+        result.append(
+            {
+                "name": str(name),
+                "type": str(item.get("type") or "general"),
+                "building": item.get("building"),
+                "hours": item.get("hours"),
+            }
+        )
+    return result
+
+
+def _meal_schedule(value: Any) -> list[dict]:
+    result: list[dict] = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            continue
+        time_from = item.get("time_from")
+        time_to = item.get("time_to")
+        if (not time_from or not time_to) and isinstance(item.get("time"), str):
+            time_from, time_to = _split_time_range(item["time"])
+        meal = item.get("meal") or item.get("name")
+        if meal and time_from and time_to:
+            result.append(
+                {
+                    "meal": str(meal).lower(),
+                    "time_from": time_from,
+                    "time_to": time_to,
+                    "style": item.get("style") or item.get("board"),
+                }
+            )
+    return result
+
+
+def _distance_to_meters(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, int | float | Decimal):
+        return int(value)
+    text = str(value).lower().replace("approx.", "").strip()
+    if "near" in text:
+        return 0
+    number = "".join(char for char in text if char.isdigit() or char == ".")
+    if not number:
+        return 0
+    meters = float(number)
+    if "km" in text:
+        meters *= 1000
+    return int(meters)
+
+
+def _split_time_range(value: str) -> tuple[str | None, str | None]:
+    if "-" not in value:
+        return None, None
+    start, end = [part.strip() for part in value.split("-", 1)]
+    return (start or None), (end or None)
 
 
 def _normalize_tiers(value: list[AgentDiscountTier]) -> list[AgentDiscountTier]:

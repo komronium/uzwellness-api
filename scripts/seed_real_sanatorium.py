@@ -203,10 +203,7 @@ async def upsert_sanatorium(
     )
     sanatorium.lat = Decimal("41.071000")
     sanatorium.lng = Decimal("71.824000")
-    sanatorium.phones = [
-        {"label": "Reception", "phone": "+998 69 433 10 00"},
-        {"label": "Booking", "phone": "+998 90 213 10 00"},
-    ]
+    sanatorium.phones = ["+998 69 433 10 00", "+998 90 213 10 00"]
     sanatorium.postal_code = "160800"
     sanatorium.customer_support_email = "info@chortoqsan.uz"
     sanatorium.website = OFFICIAL_SITE
@@ -1457,9 +1454,9 @@ PROMO_BADGES = [
 ]
 
 SURROUNDINGS = [
-    {"name": "Chortoq mineral area", "distance": "nearby", "type": "wellness"},
-    {"name": "Namangan city", "distance": "approx. 25 km", "type": "city"},
-    {"name": "Local bazaar", "distance": "approx. 3 km", "type": "shopping"},
+    {"name": "Chortoq mineral area", "distance_m": 0, "type": "wellness"},
+    {"name": "Namangan city", "distance_m": 25000, "type": "city"},
+    {"name": "Local bazaar", "distance_m": 3000, "type": "shopping"},
 ]
 
 VENUES = [
@@ -1470,9 +1467,24 @@ VENUES = [
 ]
 
 MEAL_SCHEDULE = [
-    {"name": "Breakfast", "time": "08:00-09:30", "board": "all"},
-    {"name": "Lunch", "time": "13:00-14:30", "board": "full_board"},
-    {"name": "Dinner", "time": "18:30-20:00", "board": "all"},
+    {
+        "meal": "breakfast",
+        "time_from": "08:00",
+        "time_to": "09:30",
+        "style": "diet buffet",
+    },
+    {
+        "meal": "lunch",
+        "time_from": "13:00",
+        "time_to": "14:30",
+        "style": "full_board",
+    },
+    {
+        "meal": "dinner",
+        "time_from": "18:30",
+        "time_to": "20:00",
+        "style": "diet menu",
+    },
 ]
 
 SERVICE_MATRIX = {
