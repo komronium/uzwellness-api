@@ -36,7 +36,6 @@ from app.schemas.room_offer import (
     RoomOfferCard,
     RoomOfferGuest,
     RoomOfferGuestInclusions,
-    RoomOfferGuestOption,
     RoomOfferGuestType,
     RoomOfferInclusion,
     RoomOfferPackageKind,
@@ -59,6 +58,22 @@ _ZERO = Decimal("0")
 
 
 @dataclass(slots=True)
+class _GuestStayChoice:
+    room_index: int
+    guest_index: int
+    board: BoardType
+    treatment_included: bool
+
+    @property
+    def package_kind(self) -> RoomOfferPackageKind:
+        return (
+            RoomOfferPackageKind.TREATMENT
+            if self.treatment_included
+            else RoomOfferPackageKind.SPECIAL
+        )
+
+
+@dataclass(slots=True)
 class _OfferContext:
     locale: str
     sanatorium_id: uuid.UUID
@@ -67,7 +82,7 @@ class _OfferContext:
     nights: int
     dates: list[date]
     requested_rooms: list[RoomOfferRequestedRoom]
-    guest_options: dict[tuple[int, int], RoomOfferGuestOption]
+    guest_options: dict[tuple[int, int], _GuestStayChoice]
     treatment_by_guest: dict[tuple[int, int], TreatmentProgram]
     treatments: list[TreatmentProgram]
     stay_option_prices: dict[
@@ -242,7 +257,7 @@ class RoomOfferService:
         *,
         payload: RoomOfferSearchRequest,
         treatments: list[TreatmentProgram],
-        guest_options: dict[tuple[int, int], RoomOfferGuestOption],
+        guest_options: dict[tuple[int, int], _GuestStayChoice],
     ) -> dict[tuple[int, int], TreatmentProgram]:
         by_id = {program.id: program for program in treatments}
         selected: dict[tuple[int, int], TreatmentProgram] = {}
@@ -471,7 +486,7 @@ class RoomOfferService:
         self,
         context: _OfferContext,
         guest: RoomOfferGuest,
-        option: RoomOfferGuestOption,
+        option: _GuestStayChoice,
     ) -> SanatoriumStayOptionPrice:
         guest_type = (
             StayOptionGuestType.ADULT
@@ -709,15 +724,15 @@ class RoomOfferService:
     @classmethod
     def _guest_options(
         cls, payload: RoomOfferSearchRequest
-    ) -> dict[tuple[int, int], RoomOfferGuestOption]:
+    ) -> dict[tuple[int, int], _GuestStayChoice]:
         room_boards = cls._room_boards(payload)
-        options: dict[tuple[int, int], RoomOfferGuestOption] = {}
+        options: dict[tuple[int, int], _GuestStayChoice] = {}
         for item in payload.guest_options:
             if item.room_index >= len(payload.rooms):
                 continue
             if item.guest_index >= payload.rooms[item.room_index].guests_count:
                 continue
-            options[(item.room_index, item.guest_index)] = RoomOfferGuestOption(
+            options[(item.room_index, item.guest_index)] = _GuestStayChoice(
                 room_index=item.room_index,
                 guest_index=item.guest_index,
                 board=room_boards[item.room_index],
@@ -738,31 +753,16 @@ class RoomOfferService:
 
     @classmethod
     def _room_boards(cls, payload: RoomOfferSearchRequest) -> dict[int, BoardType]:
-        boards: dict[int, BoardType] = {}
-        for room_index, room in enumerate(payload.rooms):
-            option_boards = {
-                item.board
-                for item in payload.guest_options
-                if item.room_index == room_index and item.board is not None
-            }
-            if len(option_boards) > 1:
-                cls._raise_mixed_board_error()
-            room_board_was_sent = "board" in room.model_fields_set
-            if room_board_was_sent and option_boards and option_boards != {room.board}:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="guest_options board must match rooms board",
-                )
-            boards[room_index] = (
-                next(iter(option_boards))
-                if option_boards and not room_board_was_sent
-                else room.board
-            )
+        boards = {
+            room_index: room.board for room_index, room in enumerate(payload.rooms)
+        }
+        if len(set(boards.values())) > 1:
+            cls._raise_mixed_board_error()
         return boards
 
     @staticmethod
     def _assert_single_board(
-        options: dict[tuple[int, int], RoomOfferGuestOption],
+        options: dict[tuple[int, int], _GuestStayChoice],
     ) -> None:
         boards = {option.board for option in options.values()}
         if len(boards) > 1:
@@ -778,7 +778,7 @@ class RoomOfferService:
     @staticmethod
     def _guest_option(
         context: _OfferContext, room_index: int, guest_index: int
-    ) -> RoomOfferGuestOption:
+    ) -> _GuestStayChoice:
         return context.guest_options.get(
             (room_index, guest_index),
             RoomOfferService._default_guest_option(room_index, guest_index),
@@ -790,8 +790,8 @@ class RoomOfferService:
         guest_index: int,
         *,
         board: BoardType = BoardType.FULL_BOARD,
-    ) -> RoomOfferGuestOption:
-        return RoomOfferGuestOption(
+    ) -> _GuestStayChoice:
+        return _GuestStayChoice(
             room_index=room_index,
             guest_index=guest_index,
             board=board,
@@ -799,7 +799,7 @@ class RoomOfferService:
         )
 
     @staticmethod
-    def _program_kind(option: RoomOfferGuestOption) -> TreatmentStayPackageKind:
+    def _program_kind(option: _GuestStayChoice) -> TreatmentStayPackageKind:
         return (
             TreatmentStayPackageKind.TREATMENT
             if option.treatment_included

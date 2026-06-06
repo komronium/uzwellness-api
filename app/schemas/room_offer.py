@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingType
 from app.models.rate_plan import BoardType
@@ -63,9 +63,10 @@ class RoomOfferTreatmentSelection(BaseModel):
 
 
 class RoomOfferGuestOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     room_index: int = Field(ge=0)
     guest_index: int = Field(ge=0)
-    board: BoardType | None = None
     treatment_included: bool = True
 
     @property

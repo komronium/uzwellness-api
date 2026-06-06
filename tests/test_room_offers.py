@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,14 +44,25 @@ def test_room_offer_guest_options_use_room_board() -> None:
     assert options[(0, 1)].treatment_included is True
 
 
-def test_room_offer_guest_options_reject_mixed_legacy_boards() -> None:
+def test_room_offer_guest_options_reject_board_field() -> None:
+    with pytest.raises(ValidationError):
+        RoomOfferSearchRequest(
+            check_in=date(2026, 10, 2),
+            check_out=date(2026, 10, 4),
+            rooms=[{"adults": 2, "children": []}],
+            guest_options=[
+                {"room_index": 0, "guest_index": 0, "board": "full_board"},
+            ],
+        )
+
+
+def test_room_offer_rejects_mixed_room_boards() -> None:
     payload = RoomOfferSearchRequest(
         check_in=date(2026, 10, 2),
         check_out=date(2026, 10, 4),
-        rooms=[{"adults": 2, "children": []}],
-        guest_options=[
-            {"room_index": 0, "guest_index": 0, "board": "full_board"},
-            {"room_index": 0, "guest_index": 1, "board": "half_board"},
+        rooms=[
+            {"adults": 1, "children": [], "board": "full_board"},
+            {"adults": 1, "children": [], "board": "half_board"},
         ],
     )
 
@@ -260,7 +272,7 @@ async def test_room_offer_search_supports_room_board_and_guest_treatment_options
     assert body["offers"][0]["price"]["total"] == "216.00"
 
 
-async def test_room_offer_search_rejects_conflicting_guest_boards(
+async def test_room_offer_search_rejects_conflicting_room_boards(
     client, db: AsyncSession, admin_user
 ) -> None:
     sanatorium = await make_sanatorium(
@@ -285,26 +297,9 @@ async def test_room_offer_search_rejects_conflicting_guest_boards(
         json={
             "check_in": "2026-10-02",
             "check_out": "2026-10-04",
-            "rooms": [{"adults": 3, "children": []}],
-            "guest_options": [
-                {
-                    "room_index": 0,
-                    "guest_index": 0,
-                    "board": "full_board",
-                    "treatment_included": True,
-                },
-                {
-                    "room_index": 0,
-                    "guest_index": 1,
-                    "board": "full_board",
-                    "treatment_included": True,
-                },
-                {
-                    "room_index": 0,
-                    "guest_index": 2,
-                    "board": "half_board",
-                    "treatment_included": False,
-                },
+            "rooms": [
+                {"adults": 1, "children": [], "board": "full_board"},
+                {"adults": 2, "children": [], "board": "half_board"},
             ],
         },
     )
