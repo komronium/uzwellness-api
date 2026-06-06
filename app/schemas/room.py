@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.utils import pick_locale
 from app.models.amenity import AmenityCost, AmenitySelectionStatus
@@ -155,6 +155,41 @@ class RoomFeatures(BaseModel):
     )
     comfort: RoomComfortFeatures = Field(default_factory=RoomComfortFeatures)
     highlights: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_shape(cls, value):
+        if isinstance(value, BaseModel) or not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        bathroom = data.get("bathroom")
+        if isinstance(bathroom, str):
+            bathroom_value = bathroom.strip().lower()
+            if bathroom_value in {"private", "private_bathroom", "ensuite"}:
+                data["bathroom"] = {"private": True}
+            elif bathroom_value in {"shared", "shared_bathroom"}:
+                data["bathroom"] = {"private": False}
+
+        windows = data.pop("windows", None)
+        if "has_window" not in data and windows is not None:
+            if isinstance(windows, bool):
+                data["has_window"] = windows
+            elif isinstance(windows, str):
+                windows_value = windows.strip().lower()
+                if windows_value in {"all", "some", "yes", "true", "1"}:
+                    data["has_window"] = True
+                elif windows_value in {"none", "no", "false", "0"}:
+                    data["has_window"] = False
+
+        if "balcony" in data:
+            comfort = data.get("comfort")
+            if not isinstance(comfort, dict):
+                comfort = {}
+            comfort.setdefault("balcony", data.pop("balcony"))
+            data["comfort"] = comfort
+
+        return data
 
 
 class RoomAmenityItem(BaseModel):
