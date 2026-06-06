@@ -58,9 +58,7 @@ class StayProgramInclusionRead(BaseModel):
     note: str = ""
 
     @classmethod
-    def from_obj(
-        cls, obj: dict | BaseModel, locale: str
-    ) -> "StayProgramInclusionRead":
+    def from_obj(cls, obj: dict | BaseModel, locale: str) -> "StayProgramInclusionRead":
         if isinstance(obj, dict):
             return cls(
                 code=obj.get("code", ""),
@@ -142,7 +140,14 @@ class MedicalBaseRead(BaseModel):
             )
 
         proc_dict: dict[str, list[MedicalProcedureItemRead]] = {}
-        for cat, items in (obj.get("procedures", {}) or {}).items():
+        procedures = obj.get("procedures", {}) or {}
+        if isinstance(procedures, list):
+            procedures = {"general": procedures}
+        if not isinstance(procedures, dict):
+            procedures = {}
+        for cat, items in procedures.items():
+            if not isinstance(items, list):
+                continue
             proc_dict[cat] = [
                 MedicalProcedureItemRead.from_obj(item, locale) for item in items
             ]

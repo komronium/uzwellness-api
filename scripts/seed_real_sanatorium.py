@@ -1398,17 +1398,48 @@ POLICIES = {
 }
 
 TREATMENT_PROFILE = {
-    "doctor_supervision": True,
-    "medical_license": "local",
-    "main_natural_factor": "mineral_water",
-    "procedure_categories": [
-        "hydrotherapy",
-        "physiotherapy",
-        "massage",
-        "diet_therapy",
-        "drinking_cure",
+    "main_indications": [
+        {
+            "code": "digestive_health",
+            "title": tr("Digestive health", "Ovqat hazm qilish", "Пищеварение"),
+            "description": tr("Mineral-water and diet therapy."),
+        },
+        {
+            "code": "musculoskeletal",
+            "title": tr(
+                "Musculoskeletal recovery",
+                "Tayanch-harakat tizimi",
+                "Опорно-двигательная система",
+            ),
+            "description": tr("Physiotherapy, hydrotherapy, and massage support."),
+        },
+        {
+            "code": "cardiovascular",
+            "title": tr("Cardiovascular care", "Yurak-qon tomir", "Сердце и сосуды"),
+            "description": tr("Gentle recovery under doctor supervision."),
+        },
     ],
-    "contraindications_note": "Procedures are assigned after doctor consultation.",
+    "additional_indications": [
+        {
+            "code": "stress_recovery",
+            "title": tr("Stress recovery", "Stressdan tiklanish", "Восстановление"),
+            "description": tr("Quiet recreation and light wellness routines."),
+        }
+    ],
+    "contraindications": [
+        {
+            "code": "doctor_assignment_required",
+            "title": tr("Doctor assignment required"),
+            "description": tr("Procedures are assigned after doctor consultation."),
+        }
+    ],
+    "diagnostics": [
+        "doctor examination",
+        "blood pressure monitoring",
+        "ECG by request",
+    ],
+    "doctor_specialties": ["therapist", "physiotherapist"],
+    "notes": tr("All medical procedures are assigned by a doctor."),
 }
 
 HIGHLIGHTS = [
@@ -1456,18 +1487,107 @@ SERVICE_MATRIX = {
 }
 
 MEDICAL_BASE = {
-    "departments": ["therapy", "physiotherapy", "hydrotherapy"],
-    "diagnostics": [
-        "doctor examination",
-        "blood pressure monitoring",
-        "ECG by request",
+    "description": tr(
+        "Medical base focused on mineral-water therapy, physiotherapy, massage, "
+        "and diet-supported sanatorium recovery."
+    ),
+    "procedures_per_week": 8,
+    "min_age_for_treatment": 4,
+    "checkups_included": 1,
+    "natural_resources": ["mineral_water", "clean_mountain_air"],
+    "procedures": {
+        "hydrotherapy": [
+            {
+                "code": "mineral_bath",
+                "description": tr("Mineral bath assigned by doctor."),
+            },
+            {
+                "code": "therapeutic_shower",
+                "description": tr("Therapeutic shower procedures."),
+            },
+            {
+                "code": "drinking_cure",
+                "description": tr("Mineral-water drinking cure."),
+            },
+        ],
+        "physiotherapy": [
+            {
+                "code": "electrotherapy",
+                "description": tr("Electrotherapy procedures."),
+            },
+            {
+                "code": "paraffin_therapy",
+                "description": tr("Paraffin therapy for recovery support."),
+            },
+        ],
+        "manual_therapy": [
+            {
+                "code": "massage",
+                "description": tr("Manual massage session."),
+            }
+        ],
+    },
+    "stay_inclusions": [
+        {
+            "min_days": 3,
+            "inclusions": [
+                "doctor examination",
+                "mineral-water drinking cure",
+                "basic procedures",
+            ],
+        },
+        {
+            "min_days": 7,
+            "inclusions": [
+                "doctor examination",
+                "extended physiotherapy",
+                "massage",
+                "hydrotherapy",
+            ],
+        },
     ],
-    "procedures": [
-        "mineral bath",
-        "therapeutic shower",
-        "massage",
-        "electrotherapy",
-        "paraffin therapy",
+    "stay_duration_columns": [
+        {
+            "code": "short",
+            "label": tr("1-4 days"),
+            "min_days": 1,
+            "max_days": 4,
+        },
+        {
+            "code": "standard",
+            "label": tr("5-7 days"),
+            "min_days": 5,
+            "max_days": 7,
+        },
+        {
+            "code": "full",
+            "label": tr("10+ days"),
+            "min_days": 10,
+            "max_days": None,
+        },
+    ],
+    "stay_program_inclusions": [
+        {
+            "code": "doctor_check",
+            "title": tr("Doctor check"),
+            "category": "medical",
+            "included_for": {"short": True, "standard": True, "full": True},
+            "note": tr("Initial doctor examination."),
+        },
+        {
+            "code": "physiotherapy",
+            "title": tr("Physiotherapy"),
+            "category": "medical",
+            "included_for": {"short": False, "standard": True, "full": True},
+            "note": tr("Assigned according to health condition."),
+        },
+        {
+            "code": "sauna",
+            "title": tr("Sauna"),
+            "category": "wellness",
+            "included_for": {"short": False, "standard": False, "full": True},
+            "note": tr("One visit for longer stays."),
+        },
     ],
 }
 
