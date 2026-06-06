@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import uuid
 
 import pytest
 from fastapi import HTTPException
@@ -18,7 +19,7 @@ from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming, Rat
 from app.models.sanatorium import SanatoriumStatus
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
 from app.schemas.room_offer import RoomOfferSearchRequest
-from app.services.room_offer_service import RoomOfferService
+from app.services.room_offer_service import RoomOfferService, _OfferContext
 from tests.factories import make_room, make_sanatorium
 
 
@@ -74,6 +75,63 @@ def test_room_offer_rejects_mixed_room_boards() -> None:
         getattr(exc_info.value, "detail", None)
         == "All guests in one room-offer search must use the same board"
     )
+
+
+def test_room_offer_inclusions_are_compact_package_summary() -> None:
+    sanatorium_id = uuid.uuid4()
+    payload = RoomOfferSearchRequest(
+        check_in=date(2026, 10, 2),
+        check_out=date(2026, 10, 4),
+        rooms=[{"adults": 1, "children": []}],
+    )
+    program = TreatmentProgram(
+        sanatorium_id=sanatorium_id,
+        name={"en": "Body Vital"},
+        description={"en": "6 medical procedures, access to wellness"},
+        program_type=TreatmentProgramType.STAY_PACKAGE,
+        stay_package_kind=TreatmentStayPackageKind.TREATMENT,
+        guest_applicability=TreatmentGuestApplicability.ALL,
+        min_nights=1,
+        price=Decimal("0.00"),
+        currency="USD",
+        instructor_bio={},
+        what_to_bring={},
+        medical_exam_count=0,
+        medical_procedure_count=6,
+        drink_cure_included=False,
+        pool_access_included=True,
+        included_services=["doctor consultation", "pool access"],
+        is_active=True,
+    )
+    context = _OfferContext(
+        locale="en",
+        sanatorium_id=sanatorium_id,
+        check_in=payload.check_in,
+        check_out=payload.check_out,
+        nights=2,
+        dates=[date(2026, 10, 2), date(2026, 10, 3)],
+        requested_rooms=payload.rooms,
+        guest_options=RoomOfferService._guest_options(payload),
+        treatment_by_guest={},
+        treatments=[program],
+        stay_option_prices={},
+        exchange_rate=None,
+    )
+
+    rows = object.__new__(RoomOfferService)._inclusions(context)
+
+    assert [item.model_dump() for item in rows[0].items] == [
+        {
+            "type": "accommodation",
+            "title": "Accommodation",
+            "description": "2 night(s), 3 meals a day",
+        },
+        {
+            "type": "treatment",
+            "title": "Body Vital",
+            "description": "6 medical procedures, access to wellness",
+        },
+    ]
 
 
 async def _rate_plan(
@@ -195,6 +253,18 @@ async def test_room_offer_search_returns_guest_level_treatment_and_inclusions(
     assert body["offers"][0]["price"]["total"] == "230.00"
     assert body["offers"][0]["price"]["payment_timing"] == "at_hotel"
     assert len(body["offers"][0]["inclusions"]) == 3
+    assert body["offers"][0]["inclusions"][0]["items"] == [
+        {
+            "type": "accommodation",
+            "title": "Accommodation",
+            "description": "2 night(s), 3 meals a day",
+        },
+        {
+            "type": "treatment",
+            "title": "Traditional cure Basic",
+            "description": "1 medical examination, 10 medical procedures",
+        },
+    ]
 
 
 async def test_room_offer_search_supports_room_board_and_guest_treatment_options(
@@ -265,8 +335,10 @@ async def test_room_offer_search_supports_room_board_and_guest_treatment_options
     assert groups[2]["package_kind"] == "special"
 
     inclusions = body["offers"][0]["inclusions"]
+    assert len(inclusions[0]["items"]) == 2
     assert inclusions[0]["items"][0]["description"] == "2 night(s), 2 meals a day"
     assert inclusions[0]["items"][-1]["type"] == "special_package"
+    assert len(inclusions[1]["items"]) == 2
     assert inclusions[1]["items"][0]["description"] == "2 night(s), 2 meals a day"
     assert inclusions[1]["items"][-1]["type"] == "treatment"
     assert body["offers"][0]["price"]["total"] == "216.00"

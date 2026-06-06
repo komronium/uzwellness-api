@@ -195,7 +195,6 @@ class RoomOfferService:
                 selectinload(Room.images),
                 selectinload(Room.amenity_links).selectinload(RoomAmenity.amenity),
                 selectinload(Room.amenities),
-                selectinload(Room.rate_plans).selectinload(RatePlan.amenities),
                 selectinload(Room.rate_plans).selectinload(RatePlan.date_rules),
             )
             .order_by(Room.display_order.asc(), Room.base_price.asc())
@@ -439,7 +438,7 @@ class RoomOfferService:
                 if rate_plan
                 else None,
             ),
-            inclusions=self._inclusions(context, rate_plan),
+            inclusions=self._inclusions(context),
         )
 
     def _room_total(
@@ -616,9 +615,7 @@ class RoomOfferService:
             price_delta=(price - selected_price).quantize(_CENTS, ROUND_HALF_UP),
         )
 
-    def _inclusions(
-        self, context: _OfferContext, rate_plan: RatePlan | None
-    ) -> list[RoomOfferGuestInclusions]:
+    def _inclusions(self, context: _OfferContext) -> list[RoomOfferGuestInclusions]:
         rows: list[RoomOfferGuestInclusions] = []
         for room_index, requested_room in enumerate(context.requested_rooms):
             for guest in self._guests(requested_room):
@@ -633,8 +630,6 @@ class RoomOfferService:
                     (room_index, guest.guest_index), default
                 )
                 items = [self._accommodation_inclusion(context, option.board)]
-                if rate_plan is not None:
-                    items.extend(self._rate_plan_service_inclusions(rate_plan, context))
                 if program is not None:
                     package_type = (
                         "treatment"
@@ -667,19 +662,6 @@ class RoomOfferService:
             title="Accommodation",
             description=f"{context.nights} night(s), {self._board_label(board)}",
         )
-
-    @staticmethod
-    def _rate_plan_service_inclusions(
-        rate_plan: RatePlan, context: _OfferContext
-    ) -> list[RoomOfferInclusion]:
-        return [
-            RoomOfferInclusion(
-                type="service",
-                title=pick_locale(amenity.name, context.locale),
-                description=pick_locale(amenity.description, context.locale) or None,
-            )
-            for amenity in rate_plan.amenities
-        ]
 
     @staticmethod
     def _guests(requested_room: RoomOfferRequestedRoom) -> list[RoomOfferGuest]:
