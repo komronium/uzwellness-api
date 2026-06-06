@@ -678,7 +678,7 @@ async def create_reviews(
                 translated_body=item.get("translated_body"),
                 positive_tags=item["positive_tags"],
                 negative_tags=item["negative_tags"],
-                photos=[sanatorium_image_urls["mineral_pool"]],
+                photos=[{"url": sanatorium_image_urls["mineral_pool"]}],
                 reply_body=item.get("reply_body"),
                 reply_language="en" if item.get("reply_body") else None,
                 reply_status=(
