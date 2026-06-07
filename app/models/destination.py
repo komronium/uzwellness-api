@@ -66,6 +66,4 @@ class Destination(Base):
         nullable=False,
     )
 
-    sanatoriums: Mapped[list["Sanatorium"]] = relationship(
-        back_populates="destination"
-    )
+    sanatoriums: Mapped[list["Sanatorium"]] = relationship(back_populates="destination")

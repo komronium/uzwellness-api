@@ -23,8 +23,8 @@ from app.core.ids import uuid7
 
 
 class TransferDirection(StrEnum):
-    ARRIVAL = "arrival"        # airport → hotel
-    DEPARTURE = "departure"    # hotel → airport
+    ARRIVAL = "arrival"  # airport → hotel
+    DEPARTURE = "departure"  # hotel → airport
     ROUND_TRIP = "round_trip"  # both legs
 
 
@@ -73,9 +73,7 @@ class TransferRequest(Base):
 
     # Return leg — only used when direction = round_trip.
     return_flight_number: Mapped[str | None] = mapped_column(String(20))
-    return_flight_time: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
+    return_flight_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     passengers_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     vehicle_type: Mapped[VehicleType] = mapped_column(
