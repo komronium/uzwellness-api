@@ -41,6 +41,7 @@ class SessionBookingFlow(BookingFlowBase):
             pricing=pricing,
             is_b2b=is_b2b,
         )
+        await self._assign_reservation_number(booking)
         self.db.add(booking)
         await self.db.flush()
         self.db.add(self._queue_created_notification(booking))

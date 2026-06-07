@@ -7,6 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
     Boolean,
@@ -34,14 +35,11 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 _ALPHABET = string.ascii_uppercase + string.digits
+_TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
 
 
 def _generate_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(8))
-
-
-def _generate_reservation_number() -> str:
-    return f"{secrets.randbelow(10**16):016d}"
 
 
 class BookingStatus(StrEnum):
@@ -55,6 +53,46 @@ class BookingType(StrEnum):
     ROOM = "room"
     SESSION = "session"
     PACKAGE = "package"
+
+
+def generate_reservation_number(
+    *,
+    booking_type: BookingType | str | None = None,
+    is_b2b: bool = False,
+    created_at: datetime | None = None,
+) -> str:
+    """Customer-facing 16-digit reservation number.
+
+    Format: YYMMDDTCXXXXXXXX
+      YYMMDD   booking creation date in Asia/Tashkent
+      T        booking type: 1 room, 2 treatment/session, 3 package, 0 unknown
+      C        channel: 1 customer/direct, 2 B2B agent
+      XXXXXXXX random digits, not sequential
+    """
+
+    created_at = created_at or datetime.now(_TASHKENT_TZ)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=_TASHKENT_TZ)
+    date_part = created_at.astimezone(_TASHKENT_TZ).strftime("%y%m%d")
+    type_digit = _booking_type_digit(booking_type)
+    channel_digit = "2" if is_b2b else "1"
+    random_part = f"{secrets.randbelow(10**8):08d}"
+    return f"{date_part}{type_digit}{channel_digit}{random_part}"
+
+
+def _generate_reservation_number() -> str:
+    return generate_reservation_number()
+
+
+def _booking_type_digit(booking_type: BookingType | str | None) -> str:
+    value = (
+        booking_type.value if isinstance(booking_type, BookingType) else booking_type
+    )
+    return {
+        BookingType.ROOM.value: "1",
+        BookingType.SESSION.value: "2",
+        BookingType.PACKAGE.value: "3",
+    }.get(value or "", "0")
 
 
 class Booking(Base):

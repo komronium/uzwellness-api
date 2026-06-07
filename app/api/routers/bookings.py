@@ -130,13 +130,27 @@ async def reservation_dashboard(
     )
 
 
-@router.get("/{booking_id}", response_model=BookingRead)
-async def get_booking(
-    booking_id: uuid.UUID,
+@router.get("/by-number/{reservation_number}", response_model=BookingRead)
+async def get_booking_by_reservation_number(
+    reservation_number: str,
     current_user: CurrentUser,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
-    booking = await bookings.get_visible(booking_id, current_user)
+    booking = await bookings.get_visible_by_reservation_number(
+        reservation_number, current_user
+    )
+    if booking is None:
+        raise not_found("Booking not found")
+    return _to_read(booking, current_user)
+
+
+@router.get("/{booking_id}", response_model=BookingRead)
+async def get_booking(
+    booking_id: str,
+    current_user: CurrentUser,
+    bookings: BookingService = Depends(get_booking_service),
+) -> BookingRead:
+    booking = await bookings.get_visible_by_reference(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
     return _to_read(booking, current_user)

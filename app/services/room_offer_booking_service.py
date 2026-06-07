@@ -22,6 +22,7 @@ from app.services.booking_pricing_policy import (
     BookingPricingPolicy,
     get_booking_pricing_policy,
 )
+from app.services.reservation_numbers import next_reservation_number
 from app.services.room_offer_service import RoomOfferService, get_room_offer_service
 
 
@@ -137,6 +138,11 @@ class RoomOfferBookingService:
             confirmation=rate_plan.confirmation if rate_plan is not None else None,
             rate_plan_name=rate_plan.name if rate_plan is not None else None,
             board_guests=rate_plan.board_guests if rate_plan is not None else None,
+        )
+        booking.reservation_number = await next_reservation_number(
+            self.db,
+            booking_type=booking.booking_type,
+            is_b2b=booking.is_b2b,
         )
         self.db.add(booking)
         await self.db.flush()

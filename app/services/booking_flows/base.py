@@ -17,6 +17,7 @@ from app.models.user import User
 from app.schemas.booking import BookingCreate
 from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext, send_booking_received
+from app.services.reservation_numbers import next_reservation_number
 
 
 class BookingFlow(Protocol):
@@ -100,6 +101,13 @@ class BookingFlowBase:
     def _queue_created_notification(booking: Booking) -> Notification:
         return Notification(
             booking_id=booking.id, type="booking_created", channel="email"
+        )
+
+    async def _assign_reservation_number(self, booking: Booking) -> None:
+        booking.reservation_number = await next_reservation_number(
+            self.db,
+            booking_type=booking.booking_type,
+            is_b2b=booking.is_b2b,
         )
 
     @staticmethod

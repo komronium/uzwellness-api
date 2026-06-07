@@ -120,6 +120,30 @@ class BookingService:
             stmt = stmt.where(clause)
         return await self.db.scalar(stmt)
 
+    async def get_visible_by_reference(
+        self, booking_ref: str, user: User
+    ) -> Booking | None:
+        try:
+            booking_id = uuid.UUID(booking_ref)
+        except ValueError:
+            return await self.get_visible_by_reservation_number(booking_ref, user)
+        return await self.get_visible(booking_id, user)
+
+    async def get_visible_by_reservation_number(
+        self, reservation_number: str, user: User
+    ) -> Booking | None:
+        digits = "".join(ch for ch in reservation_number if ch.isdigit())
+        if not digits:
+            return None
+        stmt = (
+            select(Booking)
+            .options(*_LOAD_OPTIONS)
+            .where(Booking.reservation_number == digits)
+        )
+        for clause in booking_visibility_clauses(user):
+            stmt = stmt.where(clause)
+        return await self.db.scalar(stmt)
+
     async def mark_processed(self, booking: Booking, user: User) -> Booking:
         if user.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN}:
             raise HTTPException(

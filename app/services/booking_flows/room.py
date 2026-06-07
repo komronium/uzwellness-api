@@ -67,6 +67,7 @@ class RoomBookingFlow(BookingFlowBase):
 
         quote = await self._quote(payload, user, context)
         booking = self._build_booking(payload, user, context, quote)
+        await self._assign_reservation_number(booking)
         self.db.add(booking)
         await self.db.flush()
         self._attach_extra_beds(booking, quote.extra_beds)
