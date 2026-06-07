@@ -33,6 +33,7 @@ from app.models.amenity import (
     SanatoriumAmenity,
 )
 from app.models.availability import RoomAvailability
+from app.models.booking import Booking
 from app.models.destination import Destination
 from app.models.extra_bed import ExtraBedConfig
 from app.models.package import Package, PackageItem, PackageItemType
@@ -442,7 +443,8 @@ async def main() -> None:
             await db.rollback()
             action = "Dry run complete; rolled back"
     print(
-        f"{action}: deleted {stats['deleted_sanatoriums']} sanatorium(s), "
+        f"{action}: deleted {stats['deleted_bookings']} booking(s), "
+        f"{stats['deleted_sanatoriums']} sanatorium(s), "
         f"created {stats['created_sanatoriums']} sanatoriums, "
         f"{stats['created_rooms']} rooms, {stats['created_programs']} programs, "
         f"{stats['created_packages']} packages."
@@ -465,8 +467,10 @@ def parse_args() -> argparse.Namespace:
 
 
 async def replace_catalog(db: AsyncSession) -> dict[str, int]:
+    deleted_bookings = await db.scalar(select(func.count()).select_from(Booking))
     deleted_count = await db.scalar(select(func.count()).select_from(Sanatorium))
 
+    await db.execute(delete(Booking))
     await db.execute(delete(Package))
     await db.execute(delete(Sanatorium))
     await db.flush()
@@ -475,6 +479,7 @@ async def replace_catalog(db: AsyncSession) -> dict[str, int]:
     focuses = await upsert_focuses(db)
 
     stats = {
+        "deleted_bookings": int(deleted_bookings or 0),
         "deleted_sanatoriums": int(deleted_count or 0),
         "created_sanatoriums": 0,
         "created_rooms": 0,
