@@ -568,6 +568,7 @@ async def test_room_offer_search_returns_alternative_dates_when_requested_dates_
         capacity=2,
         inventory_count=1,
     )
+    await _program(db, sanatorium.id, price="10.00")
     db.add_all(
         [
             RoomAvailability(
@@ -601,6 +602,7 @@ async def test_room_offer_search_returns_alternative_dates_when_requested_dates_
     assert body["offers"] == []
     assert body["alternatives"]
     assert body["alternatives"][0]["nights"] == 2
+    assert body["alternatives"][0]["min_total_price"] == "220.00"
 
 
 async def test_room_offer_booking_recalculates_and_reserves_inventory(

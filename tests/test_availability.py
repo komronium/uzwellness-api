@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.amenity import Amenity, AmenityScope
@@ -557,6 +558,37 @@ class TestRoomSearch:
         assert rows[0]["unavailable_reason"] == "exceeds_inventory"
         assert rows[0]["rooms_count_needed"] == 3
         assert str(room.id) == rows[0]["id"]
+
+    async def test_search_accepts_legacy_room_features(self, client, db, admin_user):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        sanatorium_id = san.id
+        room = await make_room(db, sanatorium=san, capacity=2, inventory_count=1)
+        await db.execute(
+            update(type(room))
+            .where(type(room).id == room.id)
+            .values(
+                room_features={
+                    "windows": "all",
+                    "bathroom": "private",
+                    "balcony": True,
+                }
+            )
+        )
+        await db.commit()
+        db.expire_all()
+
+        resp = await client.get(
+            f"/api/rooms/search?sanatorium_id={sanatorium_id}"
+            "&check_in=2026-10-02&check_out=2026-10-05&guests=2"
+        )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body[0]["room_features"]["has_window"] is True
+        assert body[0]["room_features"]["bathroom"]["private"] is True
+        assert body[0]["room_features"]["comfort"]["balcony"] is True
 
     async def test_excludes_room_fully_booked(
         self, client, db, admin_user, admin_headers

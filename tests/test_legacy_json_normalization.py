@@ -3,6 +3,10 @@ from scripts.normalize_legacy_json_shapes import (
     normalize_review_photos,
     normalize_room_features,
 )
+from app.schemas.room import (
+    RoomFeatures,
+    normalize_room_features as normalize_room_read_features,
+)
 
 
 def test_normalizes_legacy_room_features():
@@ -15,6 +19,24 @@ def test_normalizes_legacy_room_features():
         "bathroom": {"private": True},
         "comfort": {"balcony": True},
     }
+
+
+def test_room_read_accepts_legacy_room_features():
+    result = RoomFeatures.model_validate(
+        normalize_room_read_features(
+            {
+                "windows": "all",
+                "bathroom": "private",
+                "balcony": True,
+                "sitting_area": True,
+            }
+        )
+    )
+
+    assert result.has_window is True
+    assert result.bathroom.private is True
+    assert result.comfort.balcony is True
+    assert result.comfort.sofa is True
 
 
 def test_normalizes_legacy_flat_beds():

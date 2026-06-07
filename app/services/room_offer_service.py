@@ -855,13 +855,24 @@ class RoomOfferService:
             exchange_rate=context.exchange_rate,
         )
         for room in rooms:
-            if not self._room_fits_request(
-                alt_context, room, self._available_rooms(room, usage)
-            ):
+            available_rooms = self._available_rooms(room, usage)
+            if not self._room_fits_request(alt_context, room, available_rooms):
                 continue
-            total = self._room_total(alt_context, room, None)
-            if cheapest is None or total < cheapest[0]:
-                cheapest = (total, room.base_currency)
+            rate_plans = [rp for rp in room.rate_plans if rp.is_active] or [None]
+            for rate_plan in rate_plans:
+                if rate_plan is not None and not self._rate_plan_fits(
+                    rate_plan, alt_context
+                ):
+                    continue
+                offer = self._offer(
+                    context=alt_context,
+                    room=room,
+                    rate_plan=rate_plan,
+                    available_rooms=available_rooms,
+                )
+                total = offer.price.total
+                if cheapest is None or total < cheapest[0]:
+                    cheapest = (total, room.base_currency)
         return cheapest
 
 

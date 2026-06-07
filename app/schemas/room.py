@@ -77,6 +77,59 @@ def normalize_floor(value) -> str | None:
     raise ValueError("floor must look like '2', '2-4', or '2,4'")
 
 
+def normalize_room_features(value) -> dict:
+    if not isinstance(value, dict):
+        return {}
+
+    data = dict(value)
+
+    bathroom = data.get("bathroom")
+    if isinstance(bathroom, str):
+        bathroom_value = bathroom.strip().lower()
+        if bathroom_value in {"private", "private_bathroom", "ensuite"}:
+            data["bathroom"] = {"private": True}
+        elif bathroom_value in {"shared", "shared_bathroom"}:
+            data["bathroom"] = {"private": False}
+        else:
+            data.pop("bathroom", None)
+
+    windows = data.pop("windows", None)
+    if "has_window" not in data and windows is not None:
+        if isinstance(windows, bool):
+            data["has_window"] = windows
+        elif isinstance(windows, str):
+            windows_value = windows.strip().lower()
+            if windows_value in {"all", "some", "yes", "true", "1"}:
+                data["has_window"] = True
+            elif windows_value in {"none", "no", "false", "0"}:
+                data["has_window"] = False
+
+    for legacy_key, comfort_key in (("balcony", "balcony"), ("sitting_area", "sofa")):
+        if legacy_key in data:
+            comfort = (
+                data.get("comfort") if isinstance(data.get("comfort"), dict) else {}
+            )
+            comfort.setdefault(comfort_key, data.pop(legacy_key))
+            data["comfort"] = comfort
+
+    for section in (
+        "bathroom",
+        "climate",
+        "kitchen",
+        "accessibility",
+        "safety",
+        "entertainment",
+        "comfort",
+    ):
+        if section in data and not isinstance(data[section], dict):
+            data.pop(section)
+
+    if "highlights" in data and not isinstance(data["highlights"], list):
+        data["highlights"] = []
+
+    return data
+
+
 class BedConfig(BaseModel):
     type: BedType
     count: int = Field(default=1, ge=1)
@@ -316,6 +369,13 @@ class _RoomReadCommon(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("room_features", mode="before")
+    @classmethod
+    def _normalize_room_features(cls, value):
+        if isinstance(value, RoomFeatures):
+            return value
+        return normalize_room_features(value)
+
 
 class RoomRead(_RoomReadCommon):
     """Public read: i18n fields resolved to a single locale string."""
@@ -345,7 +405,9 @@ class RoomRead(_RoomReadCommon):
             smoking_policy=obj.smoking_policy,
             window_policy=obj.window_policy,
             window_description=obj.window_description,
-            room_features=RoomFeatures.model_validate(obj.room_features or {}),
+            room_features=RoomFeatures.model_validate(
+                normalize_room_features(obj.room_features)
+            ),
             accommodation_type=obj.accommodation_type,
             gender_restriction=obj.gender_restriction,
             capacity=obj.capacity,
