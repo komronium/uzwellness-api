@@ -15,6 +15,9 @@ def from_labels(labels: dict[str, Label]) -> list[Option]:
 
 def from_enum(enum_cls: type[StrEnum], labels: dict[str, Label]) -> list[Option]:
     return [
-        {"value": item.value, "label": labels.get(item.value, default_label(item.value))}
+        {
+            "value": item.value,
+            "label": labels.get(item.value, default_label(item.value)),
+        }
         for item in enum_cls
     ]
