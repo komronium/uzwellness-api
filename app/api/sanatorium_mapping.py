@@ -26,7 +26,10 @@ def sanatorium_list(
     locale: str,
 ) -> SanatoriumList:
     return SanatoriumList(
-        items=[sanatorium_public_read(sanatorium, locale=locale) for sanatorium in sanatoriums],
+        items=[
+            sanatorium_public_read(sanatorium, locale=locale)
+            for sanatorium in sanatoriums
+        ],
         total=total,
         limit=limit,
         offset=offset,

@@ -40,9 +40,7 @@ def create_token(
     if jti is not None:
         payload["jti"] = jti
     return (
-        jwt.encode(
-            payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
-        ),
+        jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM),
         expires_at,
     )
 

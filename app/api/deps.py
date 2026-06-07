@@ -75,12 +75,36 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 
 def _parse_accept_language(header: str) -> str | None:
-    for part in header.split(","):
-        tag = part.split(";", 1)[0].strip().lower()
+    best_locale: str | None = None
+    best_q = -1.0
+    best_index = len(header)
+
+    for index, part in enumerate(header.split(",")):
+        pieces = [piece.strip() for piece in part.split(";")]
+        tag = pieces[0].lower()
+        q = _accept_language_q(pieces[1:])
+        if q <= 0:
+            continue
         primary = tag.split("-", 1)[0]
-        if primary in SUPPORTED_LOCALES:
-            return primary
-    return None
+        if primary in SUPPORTED_LOCALES and (
+            q > best_q or (q == best_q and index < best_index)
+        ):
+            best_locale = primary
+            best_q = q
+            best_index = index
+    return best_locale
+
+
+def _accept_language_q(params: list[str]) -> float:
+    for param in params:
+        key, separator, value = param.partition("=")
+        if key.strip().lower() != "q" or separator != "=":
+            continue
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 1.0
 
 
 def get_locale(

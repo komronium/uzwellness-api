@@ -12,7 +12,5 @@ _booking_rate_limit = RateLimiter(
 )
 
 
-async def booking_rate_limit(
-    request: Request, user: OptionalUser = None
-) -> None:
+async def booking_rate_limit(request: Request, user: OptionalUser = None) -> None:
     await _booking_rate_limit.check(request, user)

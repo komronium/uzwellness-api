@@ -35,9 +35,7 @@ def pick_locale(translations: dict | None, locale: str = "uz") -> str:
     return ""
 
 
-def merge_translation_fields(
-    obj, data: dict, fields: tuple[str, ...]
-) -> None:
+def merge_translation_fields(obj, data: dict, fields: tuple[str, ...]) -> None:
     """Merge partial Translations payloads into the existing JSONB dict on `obj`.
 
     For each named field present in `data`:

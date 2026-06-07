@@ -1,7 +1,9 @@
 """Tests for the get_locale dependency: ?lang= > Accept-Language > default."""
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_locale
 from tests.factories import make_sanatorium
 
 
@@ -43,9 +45,7 @@ async def test_accept_language_used_when_no_query(
     client: AsyncClient, db: AsyncSession
 ) -> None:
     await _seed_trilingual(db)
-    resp = await client.get(
-        "/api/sanatoriums", headers={"Accept-Language": "ru"}
-    )
+    resp = await client.get("/api/sanatoriums", headers={"Accept-Language": "ru"})
     assert resp.json()["items"][0]["name"] == "Долина"
 
 
@@ -61,13 +61,13 @@ async def test_accept_language_q_values_parsed(
     assert resp.json()["items"][0]["name"] == "Долина"
 
 
-async def test_region_subtag_stripped(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+def test_accept_language_honors_highest_supported_q_value() -> None:
+    assert get_locale(accept_language="ru;q=0.2,en;q=0.9,uz;q=0.1") == "en"
+
+
+async def test_region_subtag_stripped(client: AsyncClient, db: AsyncSession) -> None:
     await _seed_trilingual(db)
-    resp = await client.get(
-        "/api/sanatoriums", headers={"Accept-Language": "en-US"}
-    )
+    resp = await client.get("/api/sanatoriums", headers={"Accept-Language": "en-US"})
     assert resp.json()["items"][0]["name"] == "Valley"
 
 
@@ -92,8 +92,6 @@ async def test_pick_locale_falls_back_when_locale_missing(
     client: AsyncClient, db: AsyncSession
 ) -> None:
     # Sanatorium has only uz; request en — must fall back via uz.
-    await make_sanatorium(
-        db, name={"uz": "Faqat Uzbek"}, slug="uz-only"
-    )
+    await make_sanatorium(db, name={"uz": "Faqat Uzbek"}, slug="uz-only")
     resp = await client.get("/api/sanatoriums?lang=en")
     assert resp.json()["items"][0]["name"] == "Faqat Uzbek"
