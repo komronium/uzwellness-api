@@ -597,11 +597,7 @@ async def create_sanatorium(
         highlights=item["highlights"],
         is_featured=True,
         display_order=display_order * 10,
-        promo_badges=[
-            "Free cancellation",
-            "Treatment packages",
-            "Instant confirmation",
-        ],
+        promo_badges=promo_badges(),
         surroundings=surroundings(item),
         venues=venues(item),
         meal_schedule=meal_schedule(),
@@ -1170,21 +1166,55 @@ async def create_package(
 
 
 def house_rules() -> dict[str, Any]:
-    return {
-        "check_in": "12:00",
-        "check_out": "10:00",
-        "quiet_hours": "22:00-07:00",
-        "smoking": "Rooms are non-smoking.",
-        "documents": "Passport and relevant medical documents are required.",
-    }
+    return tr(
+        "Check-in is from 12:00, check-out is until 10:00. Rooms are non-smoking. Passport and relevant medical documents are required.",
+        "Kirish 12:00 dan, chiqish 10:00 gacha. Xonalarda chekish mumkin emas. Pasport va tegishli tibbiy hujjatlar talab qilinadi.",
+        "Заезд с 12:00, выезд до 10:00. Курение в номерах запрещено. Требуются паспорт и медицинские документы.",
+    )
 
 
 def cancellation_policy() -> dict[str, Any]:
-    return {
-        "free_cancellation_days": 3,
-        "penalty_percent": "30.00",
-        "no_show_policy": "First night may be charged for no-show.",
-    }
+    return tr(
+        "Free cancellation is available up to 3 days before arrival. Later cancellation may be charged 30%.",
+        "Kelishdan 3 kun oldingacha bepul bekor qilish mumkin. Keyin bekor qilish uchun 30% jarima qo'llanishi mumkin.",
+        "Бесплатная отмена доступна за 3 дня до заезда. Поздняя отмена может удерживаться в размере 30%.",
+    )
+
+
+def promo_badges() -> list[dict[str, Any]]:
+    return [
+        {
+            "code": "free_cancellation",
+            "kind": "benefit",
+            "title": tr("Free cancellation", "Bepul bekor qilish", "Бесплатная отмена"),
+            "description": tr("Cancel free up to 3 days before arrival."),
+            "icon": "calendar-x",
+            "is_active": True,
+            "priority": 10,
+        },
+        {
+            "code": "treatment_packages",
+            "kind": "medical",
+            "title": tr("Treatment packages", "Davolash paketlari", "Лечебные пакеты"),
+            "description": tr("Doctor consultation and procedures are available."),
+            "icon": "stethoscope",
+            "is_active": True,
+            "priority": 20,
+        },
+        {
+            "code": "instant_confirmation",
+            "kind": "booking",
+            "title": tr(
+                "Instant confirmation",
+                "Tezkor tasdiqlash",
+                "Мгновенное подтверждение",
+            ),
+            "description": tr("Room offers can be booked instantly."),
+            "icon": "badge-check",
+            "is_active": True,
+            "priority": 30,
+        },
+    ]
 
 
 def weekly_schedule() -> dict[str, Any]:
@@ -1196,9 +1226,24 @@ def weekly_schedule() -> dict[str, Any]:
 
 def meal_schedule() -> list[dict[str, str]]:
     return [
-        {"meal": "breakfast", "time": "08:00-09:30"},
-        {"meal": "lunch", "time": "13:00-14:30"},
-        {"meal": "dinner", "time": "18:30-20:00"},
+        {
+            "meal": "breakfast",
+            "time_from": "08:00",
+            "time_to": "09:30",
+            "style": "diet buffet",
+        },
+        {
+            "meal": "lunch",
+            "time_from": "13:00",
+            "time_to": "14:30",
+            "style": "diet menu",
+        },
+        {
+            "meal": "dinner",
+            "time_from": "18:30",
+            "time_to": "20:00",
+            "style": "diet menu",
+        },
     ]
 
 
