@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -412,39 +412,3 @@ class RoomSearchResult(RoomRead):
     available: bool
     rooms_count_needed: int
     unavailable_reason: str | None = None
-
-
-class RoomPricePeriodCreate(BaseModel):
-    label: str | None = Field(default=None, max_length=120)
-    date_from: date
-    date_to: date
-    base_price: Decimal = Field(ge=0, decimal_places=2)
-    base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
-    discount_percent: Decimal | None = Field(
-        default=None, ge=0, le=100, decimal_places=2
-    )
-
-
-class RoomPricePeriodUpdate(BaseModel):
-    label: str | None = Field(default=None, max_length=120)
-    date_from: date | None = None
-    date_to: date | None = None
-    base_price: Decimal | None = Field(default=None, ge=0, decimal_places=2)
-    base_price_weekend: Decimal | None = Field(default=None, ge=0, decimal_places=2)
-    discount_percent: Decimal | None = Field(
-        default=None, ge=0, le=100, decimal_places=2
-    )
-
-
-class RoomPricePeriodRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    room_id: uuid.UUID
-    label: str | None
-    date_from: date
-    date_to: date
-    base_price: Decimal
-    base_price_weekend: Decimal | None
-    discount_percent: Decimal | None
-    created_at: datetime
