@@ -2,9 +2,6 @@ from datetime import date
 from decimal import Decimal
 import uuid
 
-import pytest
-from fastapi import HTTPException
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,36 +42,27 @@ def test_room_offer_guest_options_use_room_board() -> None:
     assert options[(0, 1)].treatment_included is True
 
 
-def test_room_offer_guest_options_reject_board_field() -> None:
-    with pytest.raises(ValidationError):
-        RoomOfferSearchRequest(
-            check_in=date(2026, 10, 2),
-            check_out=date(2026, 10, 4),
-            rooms=[{"adults": 2, "children": []}],
-            guest_options=[
-                {"room_index": 0, "guest_index": 0, "board": "full_board"},
-            ],
-        )
-
-
-def test_room_offer_rejects_mixed_room_boards() -> None:
+def test_room_offer_guest_options_board_overrides_room_default() -> None:
     payload = RoomOfferSearchRequest(
         check_in=date(2026, 10, 2),
         check_out=date(2026, 10, 4),
-        rooms=[
-            {"adults": 1, "children": [], "board": "full_board"},
-            {"adults": 1, "children": [], "board": "half_board"},
+        rooms=[{"adults": 2, "children": [], "board": "full_board"}],
+        guest_options=[
+            {
+                "room_index": 0,
+                "guest_index": 0,
+                "board": "half_board",
+                "treatment_included": False,
+            },
         ],
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        RoomOfferService._guest_options(payload)
+    options = RoomOfferService._guest_options(payload)
 
-    assert getattr(exc_info.value, "status_code", None) == 400
-    assert (
-        getattr(exc_info.value, "detail", None)
-        == "All guests in one room-offer search must use the same board"
-    )
+    assert options[(0, 0)].board == BoardType.HALF_BOARD
+    assert options[(0, 0)].treatment_included is False
+    assert options[(0, 1)].board == BoardType.FULL_BOARD
+    assert options[(0, 1)].treatment_included is True
 
 
 def test_room_offer_inclusions_are_compact_package_summary() -> None:
@@ -344,7 +332,7 @@ async def test_room_offer_search_supports_room_board_and_guest_treatment_options
     assert body["offers"][0]["price"]["total"] == "216.00"
 
 
-async def test_room_offer_search_rejects_conflicting_room_boards(
+async def test_room_offer_search_supports_mixed_guest_boards(
     client, db: AsyncSession, admin_user
 ) -> None:
     sanatorium = await make_sanatorium(
@@ -369,18 +357,43 @@ async def test_room_offer_search_rejects_conflicting_room_boards(
         json={
             "check_in": "2026-10-02",
             "check_out": "2026-10-04",
-            "rooms": [
-                {"adults": 1, "children": [], "board": "full_board"},
-                {"adults": 2, "children": [], "board": "half_board"},
+            "rooms": [{"adults": 3, "children": [], "board": "full_board"}],
+            "guest_options": [
+                {
+                    "room_index": 0,
+                    "guest_index": 0,
+                    "board": "full_board",
+                    "treatment_included": True,
+                },
+                {
+                    "room_index": 0,
+                    "guest_index": 1,
+                    "board": "full_board",
+                    "treatment_included": True,
+                },
+                {
+                    "room_index": 0,
+                    "guest_index": 2,
+                    "board": "half_board",
+                    "treatment_included": False,
+                },
             ],
         },
     )
 
-    assert resp.status_code == 400
-    assert (
-        resp.json()["detail"]
-        == "All guests in one room-offer search must use the same board"
-    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["available_count"] == 1
+    assert body["offers"][0]["rate_plan_name"] == "Full board and treatment"
+    groups = body["treatment_selection"]
+    assert [group["board"] for group in groups] == [
+        "full_board",
+        "full_board",
+        "half_board",
+    ]
+    assert groups[2]["package_kind"] == "special"
+    inclusions = body["offers"][0]["inclusions"]
+    assert inclusions[2]["items"][0]["description"] == "2 night(s), 2 meals a day"
 
 
 async def test_room_offer_search_prices_guest_stay_options(

@@ -353,7 +353,7 @@ class RoomOfferService:
         return True
 
     def _rate_plan_fits(self, rate_plan: RatePlan, context: _OfferContext) -> bool:
-        if not self._rate_plan_matches_guest_boards(rate_plan, context):
+        if not self._rate_plan_matches_requested_room_boards(rate_plan, context):
             return False
         if rate_plan.min_nights is not None and context.nights < rate_plan.min_nights:
             return False
@@ -379,12 +379,10 @@ class RoomOfferService:
         )
 
     @staticmethod
-    def _rate_plan_matches_guest_boards(
+    def _rate_plan_matches_requested_room_boards(
         rate_plan: RatePlan, context: _OfferContext
     ) -> bool:
-        return all(
-            option.board == rate_plan.board for option in context.guest_options.values()
-        )
+        return all(room.board == rate_plan.board for room in context.requested_rooms)
 
     def _offer(
         self,
@@ -717,7 +715,7 @@ class RoomOfferService:
             options[(item.room_index, item.guest_index)] = _GuestStayChoice(
                 room_index=item.room_index,
                 guest_index=item.guest_index,
-                board=room_boards[item.room_index],
+                board=item.board or room_boards[item.room_index],
                 treatment_included=item.treatment_included,
             )
         for room_index, room in enumerate(payload.rooms):
@@ -730,32 +728,11 @@ class RoomOfferService:
                         board=room_boards[room_index],
                     ),
                 )
-        cls._assert_single_board(options)
         return options
 
-    @classmethod
-    def _room_boards(cls, payload: RoomOfferSearchRequest) -> dict[int, BoardType]:
-        boards = {
-            room_index: room.board for room_index, room in enumerate(payload.rooms)
-        }
-        if len(set(boards.values())) > 1:
-            cls._raise_mixed_board_error()
-        return boards
-
     @staticmethod
-    def _assert_single_board(
-        options: dict[tuple[int, int], _GuestStayChoice],
-    ) -> None:
-        boards = {option.board for option in options.values()}
-        if len(boards) > 1:
-            RoomOfferService._raise_mixed_board_error()
-
-    @staticmethod
-    def _raise_mixed_board_error() -> None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="All guests in one room-offer search must use the same board",
-        )
+    def _room_boards(payload: RoomOfferSearchRequest) -> dict[int, BoardType]:
+        return {room_index: room.board for room_index, room in enumerate(payload.rooms)}
 
     @staticmethod
     def _guest_option(

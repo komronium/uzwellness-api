@@ -67,6 +67,7 @@ class RoomOfferGuestOption(BaseModel):
 
     room_index: int = Field(ge=0)
     guest_index: int = Field(ge=0)
+    board: BoardType | None = None
     treatment_included: bool = True
 
     @property
