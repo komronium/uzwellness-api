@@ -88,18 +88,8 @@ def detect_image_mime(data: bytes) -> str | None:
     return None
 
 
-def detect_document_mime(data: bytes) -> str | None:
-    image = detect_image_mime(data)
-    if image is not None:
-        return image
-    if data.startswith(b"%PDF-"):
-        return "application/pdf"
-    return None
-
-
 MIME_EXTENSIONS: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
-    "application/pdf": "pdf",
 }

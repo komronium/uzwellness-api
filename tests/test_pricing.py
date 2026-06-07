@@ -1,8 +1,9 @@
 """Unit tests for the pricing service (no DB needed)."""
+
 from decimal import Decimal
 
 
-from app.core.pricing import calculate_final_price, convert_to_uzs, convert_to_usd
+from app.core.pricing import convert_to_uzs, convert_to_usd
 
 
 def _rate(value: str):
@@ -12,27 +13,6 @@ def _rate(value: str):
         rate = Decimal(value)
 
     return _FakeRate()
-
-
-class TestCalculateFinalPrice:
-    def test_zero_markup(self):
-        assert calculate_final_price(Decimal("100.00"), Decimal("0")) == Decimal("100.00")
-
-    def test_ten_percent_markup(self):
-        assert calculate_final_price(Decimal("100.00"), Decimal("10")) == Decimal("110.00")
-
-    def test_fractional_markup(self):
-        result = calculate_final_price(Decimal("100.00"), Decimal("15.5"))
-        assert result == Decimal("115.50")
-
-    def test_rounding(self):
-        # 100 * 1.333 = 133.3 → rounds to 133.30
-        result = calculate_final_price(Decimal("100.00"), Decimal("33.3"))
-        assert result == Decimal("133.30")
-
-    def test_large_base_price(self):
-        result = calculate_final_price(Decimal("500000.00"), Decimal("20"))
-        assert result == Decimal("600000.00")
 
 
 class TestConvertToUzs:

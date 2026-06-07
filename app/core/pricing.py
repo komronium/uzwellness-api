@@ -10,10 +10,6 @@ _TWO = Decimal("0.01")
 WEEKEND_DAYS = frozenset({4, 5})
 
 
-def calculate_final_price(base_price: Decimal, markup_percent: Decimal) -> Decimal:
-    return (base_price * (1 + markup_percent / 100)).quantize(_TWO, ROUND_HALF_UP)
-
-
 def effective_prices_for_date(
     room: Room,
     target: date,
