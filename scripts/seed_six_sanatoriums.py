@@ -79,6 +79,7 @@ from app.models.sanatorium import (
     WellnessCategory,
 )
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
+from app.schemas.room import BeddingOption, RoomFeatures
 from app.schemas.sanatorium_policies import SanatoriumPolicies
 
 
@@ -98,31 +99,46 @@ def money(value: str | int) -> Decimal:
 
 
 ROOM_FEATURES = {
+    "has_window": True,
     "bathroom": {
-        "type": "private",
-        "shower": True,
+        "private": True,
+        "type": "shower",
         "toiletries": True,
         "hairdryer": True,
+        "slippers": True,
     },
-    "comfort": {
+    "climate": {
         "air_conditioning": True,
         "heating": True,
-        "desk": True,
-        "wardrobe": True,
     },
-    "media": {"tv": True, "wifi": True},
-    "kitchen": {"kettle": True, "mini_fridge": True},
+    "kitchen": {"refrigerator": True, "kettle": True},
+    "safety": {"safe": True, "smoke_detector": True},
+    "entertainment": {"tv": True, "satellite_channels": True},
+    "comfort": {
+        "desk": True,
+        "carpet": True,
+    },
+    "highlights": ["private bathroom", "Wi-Fi", "diet meals"],
 }
+ROOM_FEATURES = RoomFeatures.model_validate(ROOM_FEATURES).model_dump(mode="json")
 
-BEDS = {
-    "single": [{"type": "single", "count": 1, "width_cm": 90, "beds": 1}],
-    "twin": [{"type": "single", "count": 2, "width_cm": 90, "beds": 2}],
-    "double": [{"type": "double", "count": 1, "width_cm": 160, "beds": 1}],
+BEDS: dict[str, list[dict[str, Any]]] = {
+    "single": [{"label": "1 single bed", "beds": [{"type": "single", "count": 1}]}],
+    "twin": [{"label": "2 single beds", "beds": [{"type": "single", "count": 2}]}],
+    "double": [{"label": "1 double bed", "beds": [{"type": "double", "count": 1}]}],
     "family": [
-        {"type": "double", "count": 1, "width_cm": 160, "beds": 1},
-        {"type": "single", "count": 2, "width_cm": 90, "beds": 2},
+        {
+            "label": "1 double bed and 2 single beds",
+            "beds": [
+                {"type": "double", "count": 1},
+                {"type": "single", "count": 2},
+            ],
+        }
     ],
 }
+for bed_options in BEDS.values():
+    for bed_option in bed_options:
+        BeddingOption.model_validate(bed_option)
 
 IMAGE_BANK = {
     "chortoq": [
