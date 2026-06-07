@@ -79,6 +79,7 @@ from app.models.sanatorium import (
     WellnessCategory,
 )
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
+from app.schemas.sanatorium_policies import SanatoriumPolicies
 
 
 CATALOG_SOURCE_NOTE = (
@@ -1307,11 +1308,118 @@ def medical_base(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def policies() -> dict[str, Any]:
-    return {
-        "children": "Children are accepted with parents; medical procedures require doctor approval.",
-        "pets": "Pets are not allowed.",
-        "medical": "Treatment plan is assigned after doctor consultation.",
+    payload = {
+        "check_in": {
+            "instructions": tr(
+                "Passport and medical documents are required at check-in."
+            ),
+            "required_documents": ["passport", "medical documents"],
+            "latest_check_in_time": "22:00",
+            "earliest_check_out_time": "07:00",
+            "front_desk_available": True,
+            "front_desk_24h": False,
+            "front_desk_opens_at": "08:00",
+            "front_desk_closes_at": "20:00",
+        },
+        "important_notices": {
+            "items": [
+                {
+                    "title": tr("Doctor consultation required"),
+                    "body": tr(
+                        "Treatment procedures are assigned after a doctor consultation."
+                    ),
+                    "category": "medical",
+                }
+            ]
+        },
+        "children": {
+            "allowed": True,
+            "min_age": 0,
+            "treatment_min_age": 12,
+            "child_rate_mode": "standard",
+            "child_rates_prepaid": True,
+            "existing_bed_price_bands": [
+                {
+                    "min_age": 0,
+                    "max_age": 5,
+                    "pricing_method": "free",
+                    "price_per_night": "0",
+                    "currency": "UZS",
+                    "notes": tr("Free when sharing existing bed."),
+                },
+                {
+                    "min_age": 6,
+                    "max_age": 11,
+                    "pricing_method": "fixed",
+                    "price_per_night": "180000",
+                    "currency": "UZS",
+                    "notes": tr("Child meal and stay supplement."),
+                },
+            ],
+        },
+        "extra_bed": {
+            "available": True,
+            "crib_available": True,
+            "price": "70000",
+            "currency": "UZS",
+            "age_price_bands": [
+                {
+                    "min_age": 4,
+                    "max_age": None,
+                    "price_per_night": "70000",
+                    "currency": "UZS",
+                    "includes": ["linen"],
+                    "notes": tr("Portable extra bed with linen."),
+                }
+            ],
+        },
+        "breakfast": {
+            "included": True,
+            "available": True,
+            "style": "diet buffet",
+            "serving_style": "buffet",
+            "cuisine": "uzbek wellness",
+            "hours": "08:00-09:30",
+            "hours_by_weekday": {
+                day: "08:00-09:30"
+                for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            },
+        },
+        "pets": {
+            "allowed": False,
+            "service_animals_allowed": False,
+            "advance_notice_required": False,
+        },
+        "cancellation": {
+            "free_cancellation_until_days_before": 3,
+            "penalty_percent": "30.00",
+        },
+        "deposit": {
+            "required": False,
+            "percent": "0",
+            "currency": "UZS",
+            "type": "none",
+        },
+        "payment": {
+            "methods": ["cash", "uzcard", "humo", "bank_transfer"],
+            "deposit_required": False,
+            "deposit_percent": "0",
+            "guarantee_methods": ["phone confirmation"],
+            "accepted_cards": ["uzcard", "humo"],
+        },
+        "fees": {
+            "pricing_mode": "tax_inclusive",
+            "tax_rules": [],
+            "mandatory_fees": [],
+            "optional_fees": ["transfer", "extra bed", "laundry"],
+        },
+        "reservation_restrictions": {
+            "cutoff_hours_before_check_in": 12,
+            "min_advance_hours": 12,
+            "max_advance_days": 180,
+        },
     }
+    return SanatoriumPolicies.model_validate(payload).model_dump(mode="json")
 
 
 if __name__ == "__main__":
