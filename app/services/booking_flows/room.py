@@ -6,7 +6,6 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.core.pricing import (
     calculate_rate_plan_night_price,
@@ -88,7 +87,7 @@ class RoomBookingFlow(BookingFlowBase):
         nights = (payload.check_out - payload.check_in).days
         all_dates = list(date_range(payload.check_in, payload.check_out))
 
-        room = await self._lock_room(payload.room_id)
+        room = await self._lock_room(payload.room_id, load_price_periods=True)
         sanatorium = await self._approved_sanatorium(room.sanatorium_id)
         rooms_count = self._validate_and_compute_rooms(room, payload, nights)
         rate_plan = await self._load_rate_plan(payload.rate_plan_id, room, nights)
@@ -233,19 +232,6 @@ class RoomBookingFlow(BookingFlowBase):
         for eb in records:
             eb.booking_id = booking.id
             self.db.add(eb)
-
-    async def _lock_room(self, room_id) -> Room:
-        room = await self.db.scalar(
-            select(Room)
-            .where(Room.id == room_id)
-            .options(selectinload(Room.price_periods))
-            .with_for_update(of=Room)
-        )
-        if room is None or not room.is_active or room.deleted_at is not None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
-            )
-        return room
 
     async def _load_rate_plan(
         self, rate_plan_id, room: Room, nights: int

@@ -1,21 +1,18 @@
 import calendar
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, not_found, require_roles
-from app.core.database import get_db
+from app.api.deps import CurrentUser, require_roles
 from app.core.pagination import Pagination
-from app.models.availability import RoomAvailability
 from app.models.availability_log import AvailabilityLogCategory
-from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import UserRole
-from app.schemas.availability_calendar import AvailabilityCalendarRead
+from app.schemas.availability_calendar import (
+    AvailabilityCalendarRead,
+    PublicMonthAvailability,
+)
 from app.schemas.availability_log import (
     AvailabilityOperationLogList,
     AvailabilityOperationLogRead,
@@ -59,65 +56,22 @@ def _parse_month(value: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, last_day)
 
 
-@router.get("")
+@router.get(
+    "",
+    response_model=PublicMonthAvailability,
+    response_model_exclude_none=True,
+)
 async def get_availability(
     sanatorium_id: uuid.UUID = Query(...),
     month: str = Query(..., description="YYYY-MM"),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
+    calendar_service: AvailabilityCalendarService = Depends(
+        get_availability_calendar_service
+    ),
+) -> PublicMonthAvailability:
     first, last = _parse_month(month)
-
-    sanatorium = await db.scalar(
-        select(Sanatorium).where(
-            Sanatorium.id == sanatorium_id,
-            Sanatorium.status == SanatoriumStatus.APPROVED,
-        )
+    return await calendar_service.get_public_month(
+        sanatorium_id=sanatorium_id, first=first, last=last
     )
-    if sanatorium is None:
-        raise not_found("Sanatorium not found")
-
-    total_inventory = await db.scalar(
-        select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
-            Room.sanatorium_id == sanatorium_id,
-            Room.is_active.is_(True),
-            Room.deleted_at.is_(None),
-        )
-    )
-
-    # Per-day blocked + booked across active rooms.
-    stmt = (
-        select(
-            RoomAvailability.date,
-            func.sum(
-                RoomAvailability.units_blocked + RoomAvailability.units_booked
-            ).label("used"),
-        )
-        .join(Room, RoomAvailability.room_id == Room.id)
-        .where(
-            Room.sanatorium_id == sanatorium_id,
-            Room.is_active.is_(True),
-            Room.deleted_at.is_(None),
-            RoomAvailability.date >= first,
-            RoomAvailability.date <= last,
-        )
-        .group_by(RoomAvailability.date)
-    )
-    used_per_date = {row.date: int(row.used) for row in (await db.execute(stmt)).all()}
-
-    dates: dict[str, dict] = {}
-    current = first
-    while current <= last:
-        used = used_per_date.get(current, 0)
-        rooms_left = max(int(total_inventory) - used, 0)
-        if total_inventory == 0:
-            dates[current.isoformat()] = {"available": False}
-        elif rooms_left <= 0:
-            dates[current.isoformat()] = {"available": False, "rooms_left": 0}
-        else:
-            dates[current.isoformat()] = {"available": True, "rooms_left": rooms_left}
-        current += timedelta(days=1)
-
-    return {"dates": dates}
 
 
 @router.get(

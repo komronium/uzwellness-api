@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,7 +15,6 @@ from app.core.database import get_db
 from app.core.pricing import calculate_stay_total, convert_to_usd
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity, SanatoriumAmenity
-from app.models.availability import RoomAvailability
 from app.models.destination import Destination
 from app.models.region import Region
 from app.models.room import Room
@@ -26,6 +25,7 @@ from app.models.sanatorium import (
     SanatoriumStatus,
 )
 from app.schemas.search import StaySearchItem
+from app.services.availability_usage import max_used_by_room
 from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
@@ -193,14 +193,15 @@ class SearchService:
     async def _available_items(
         self, context: _SearchContext, candidates: list[_Candidate]
     ) -> list[StaySearchItem]:
-        max_used_by_room = await self._max_used_by_room(
+        usage_by_room = await max_used_by_room(
+            self.db,
             room_ids=[candidate.room.id for candidate in candidates],
             dates=context.dates,
         )
         rate = await self.rates.get_usd_uzs()
         items: list[StaySearchItem] = []
         for candidate in candidates:
-            item = self._candidate_item(candidate, context, max_used_by_room, rate)
+            item = self._candidate_item(candidate, context, usage_by_room, rate)
             if item is not None:
                 items.append(item)
         return items
@@ -232,26 +233,6 @@ class SearchService:
             total=total,
             total_usd=total_usd,
         )
-
-    async def _max_used_by_room(
-        self, *, room_ids: list[uuid.UUID], dates: list[date]
-    ) -> dict[uuid.UUID, int]:
-        usage_rows = (
-            await self.db.execute(
-                select(
-                    RoomAvailability.room_id,
-                    func.max(
-                        RoomAvailability.units_blocked + RoomAvailability.units_booked
-                    ).label("max_used"),
-                )
-                .where(
-                    RoomAvailability.room_id.in_(room_ids),
-                    RoomAvailability.date.in_(dates),
-                )
-                .group_by(RoomAvailability.room_id)
-            )
-        ).all()
-        return {row.room_id: int(row.max_used) for row in usage_rows}
 
     def _to_item(
         self,

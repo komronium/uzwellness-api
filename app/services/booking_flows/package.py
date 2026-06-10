@@ -4,7 +4,6 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
 
 from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
@@ -27,7 +26,9 @@ class PackageBookingFlow(BookingFlowBase):
         package = await self._load_package(payload.package_id)
         sanatorium = await self._approved_sanatorium(package.sanatorium_id)
         check_out = self._check_out(payload, package)
-        room = await self._lock_room(package.room_id)
+        room = await self._lock_room(
+            package.room_id, detail="Package's assigned room is unavailable"
+        )
         rooms_count = rooms_count_for_guests(room, payload.guests)
         all_dates = list(date_range(payload.check_in, check_out))
         await self._reserve_units(room, all_dates, rooms_count)
@@ -117,14 +118,3 @@ class PackageBookingFlow(BookingFlowBase):
                 pricing.agent_discount_percent if is_b2b else None
             ),
         )
-
-    async def _lock_room(self, room_id) -> Room:
-        room = await self.db.scalar(
-            select(Room).where(Room.id == room_id).with_for_update(of=Room)
-        )
-        if room is None or not room.is_active or room.deleted_at is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Package's assigned room is unavailable",
-            )
-        return room

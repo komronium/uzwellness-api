@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,7 +19,6 @@ from app.core.pricing import (
 )
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity
-from app.models.availability import RoomAvailability
 from app.models.exchange_rate import ExchangeRate
 from app.models.program import (
     TreatmentGuestApplicability,
@@ -48,6 +47,7 @@ from app.schemas.room_offer import (
     RoomOfferTreatmentGroup,
     RoomOfferTreatmentOption,
 )
+from app.services.availability_usage import max_used_by_room
 from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
@@ -116,7 +116,8 @@ class RoomOfferService:
             locale=locale,
         )
         rooms = await self._rooms(sanatorium_id=sanatorium_id, payload=payload)
-        usage = await self._max_used_by_room(
+        usage = await max_used_by_room(
+            self.db,
             room_ids=[room.id for room in rooms],
             dates=context.dates,
         )
@@ -279,28 +280,6 @@ class RoomOfferService:
                 continue
             selected[(item.room_index, item.guest_index)] = program
         return selected
-
-    async def _max_used_by_room(
-        self, *, room_ids: list[uuid.UUID], dates: list[date]
-    ) -> dict[uuid.UUID, int]:
-        if not room_ids:
-            return {}
-        rows = (
-            await self.db.execute(
-                select(
-                    RoomAvailability.room_id,
-                    func.max(
-                        RoomAvailability.units_blocked + RoomAvailability.units_booked
-                    ).label("max_used"),
-                )
-                .where(
-                    RoomAvailability.room_id.in_(room_ids),
-                    RoomAvailability.date.in_(dates),
-                )
-                .group_by(RoomAvailability.room_id)
-            )
-        ).all()
-        return {row.room_id: int(row.max_used or 0) for row in rows}
 
     def _offers(
         self,
@@ -813,8 +792,8 @@ class RoomOfferService:
             check_in = context.check_in + timedelta(days=delta)
             check_out = check_in + timedelta(days=context.nights)
             dates = list(date_range(check_in, check_out))
-            usage = await self._max_used_by_room(
-                room_ids=[room.id for room in rooms], dates=dates
+            usage = await max_used_by_room(
+                self.db, room_ids=[room.id for room in rooms], dates=dates
             )
             cheapest = self._cheapest_alternative(context, rooms, usage, dates)
             if cheapest is None:

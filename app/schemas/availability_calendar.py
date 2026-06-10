@@ -59,3 +59,12 @@ class AvailableAllotmentSet(BaseModel):
     date_from: date
     date_to: date
     units_available: int = Field(ge=0)
+
+
+class PublicAvailabilityDay(BaseModel):
+    available: bool
+    rooms_left: int | None = None
+
+
+class PublicMonthAvailability(BaseModel):
+    dates: dict[str, PublicAvailabilityDay]

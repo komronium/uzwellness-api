@@ -1,9 +1,9 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,7 @@ from app.core.utils import date_range
 from app.models.availability import RoomAvailability
 from app.models.rate_plan import RatePlan, RatePlanDateRule
 from app.models.room import Room
+from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
 from app.schemas.availability_calendar import (
     AvailabilityCalendarRatePlan,
@@ -21,7 +22,10 @@ from app.schemas.availability_calendar import (
     AvailabilityCalendarRead,
     AvailabilityCalendarRoom,
     AvailabilityCalendarRoomDay,
+    PublicAvailabilityDay,
+    PublicMonthAvailability,
 )
+from app.services.availability_usage import used_per_date
 
 
 class AvailabilityCalendarService:
@@ -64,6 +68,42 @@ class AvailabilityCalendarService:
                 for room in rooms
             ],
         )
+
+    async def get_public_month(
+        self, *, sanatorium_id: uuid.UUID, first: date, last: date
+    ) -> PublicMonthAvailability:
+        sanatorium = await self.db.scalar(
+            select(Sanatorium).where(
+                Sanatorium.id == sanatorium_id,
+                Sanatorium.status == SanatoriumStatus.APPROVED,
+            )
+        )
+        if sanatorium is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
+            )
+        total_inventory = int(
+            await self.db.scalar(
+                select(func.coalesce(func.sum(Room.inventory_count), 0)).where(
+                    Room.sanatorium_id == sanatorium_id,
+                    Room.is_active.is_(True),
+                    Room.deleted_at.is_(None),
+                )
+            )
+        )
+        used = await used_per_date(
+            self.db, sanatorium_id=sanatorium_id, date_from=first, date_to=last
+        )
+        days: dict[str, PublicAvailabilityDay] = {}
+        for current in date_range(first, last + timedelta(days=1)):
+            if total_inventory == 0:
+                days[current.isoformat()] = PublicAvailabilityDay(available=False)
+                continue
+            rooms_left = max(total_inventory - used.get(current, 0), 0)
+            days[current.isoformat()] = PublicAvailabilityDay(
+                available=rooms_left > 0, rooms_left=rooms_left
+            )
+        return PublicMonthAvailability(dates=days)
 
     async def _rooms(
         self,

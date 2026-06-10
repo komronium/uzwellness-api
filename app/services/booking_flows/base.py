@@ -8,13 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.availability import RoomAvailability
 from app.models.booking import Booking
 from app.models.notification import Notification
 from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumStatus
+from app.models.sanatorium import Sanatorium
 from app.models.user import User
 from app.schemas.booking import BookingCreate
+from app.services.booking_guards import (
+    ROOM_UNAVAILABLE_DETAIL,
+    approved_sanatorium,
+    lock_room,
+    reserve_units,
+)
 from app.services.booking_pricing_policy import BookingPricingPolicy
 from app.services.email_service import BookingEmailContext, send_booking_received
 from app.services.reservation_numbers import next_reservation_number
@@ -36,13 +41,18 @@ class BookingFlowBase:
         self.pricing = pricing
 
     async def _approved_sanatorium(self, sanatorium_id) -> Sanatorium:
-        sanatorium = await self.db.get(Sanatorium, sanatorium_id)
-        if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sanatorium is not available for booking",
-            )
-        return sanatorium
+        return await approved_sanatorium(self.db, sanatorium_id)
+
+    async def _lock_room(
+        self,
+        room_id,
+        *,
+        load_price_periods: bool = False,
+        detail: str = ROOM_UNAVAILABLE_DETAIL,
+    ) -> Room:
+        return await lock_room(
+            self.db, room_id, load_price_periods=load_price_periods, detail=detail
+        )
 
     async def _load(self, booking_id) -> Booking:
         return await self.db.scalar(
@@ -56,46 +66,7 @@ class BookingFlowBase:
         )
 
     async def _reserve_units(self, room: Room, dates: list, rooms_count: int) -> None:
-        if room.inventory_count < 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Room has no inventory",
-            )
-        existing = {
-            row.date: row
-            for row in await self.db.scalars(
-                select(RoomAvailability)
-                .where(
-                    RoomAvailability.room_id == room.id,
-                    RoomAvailability.date.in_(dates),
-                )
-                .with_for_update()
-            )
-        }
-        for d in dates:
-            row = existing.get(d)
-            if row is None:
-                self.db.add(
-                    RoomAvailability(
-                        room_id=room.id,
-                        date=d,
-                        units_blocked=0,
-                        units_booked=rooms_count,
-                    )
-                )
-                continue
-            if (
-                row.units_blocked + row.units_booked + rooms_count
-                > room.inventory_count
-            ):
-                free = room.inventory_count - row.units_blocked - row.units_booked
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Only {max(free, 0)} unit(s) free on {d}, need {rooms_count}"
-                    ),
-                )
-            row.units_booked += rooms_count
+        await reserve_units(self.db, room, dates=dates, rooms_count=rooms_count)
 
     @staticmethod
     def _queue_created_notification(booking: Booking) -> Notification:
