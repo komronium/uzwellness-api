@@ -46,7 +46,8 @@ def test_public_sanatorium_helpers_normalize_legacy_contact_and_detail_json() ->
                 "type": "city",
                 "distance": "approx. 25 km",
             }
-        ]
+        ],
+        "en",
     ) == [{"name": "Namangan city", "type": "city", "distance_m": 25000}]
 
     assert _meal_schedule(

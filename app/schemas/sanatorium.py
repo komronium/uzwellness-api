@@ -311,8 +311,8 @@ def _public_detail(obj, locale: str) -> dict:
         "highlights": obj.highlights,
         "is_featured": obj.is_featured,
         "display_order": obj.display_order,
-        "surroundings": _surroundings(obj.surroundings),
-        "venues": _venues(obj.venues),
+        "surroundings": _surroundings(obj.surroundings, locale),
+        "venues": _venues(obj.venues, locale),
         "meal_schedule": _meal_schedule(obj.meal_schedule),
         "avg_rating": obj.avg_rating,
         "review_count": obj.review_count,
@@ -368,7 +368,13 @@ def _phones(value: Any) -> list[str]:
     return result
 
 
-def _surroundings(value: Any) -> list[dict]:
+def _item_name(value: Any, locale: str) -> str:
+    if isinstance(value, dict):
+        return pick_locale(value, locale)
+    return str(value or "")
+
+
+def _surroundings(value: Any, locale: str) -> list[dict]:
     result: list[dict] = []
     for item in value or []:
         if not isinstance(item, dict):
@@ -378,7 +384,7 @@ def _surroundings(value: Any) -> list[dict]:
             distance_m = _distance_to_meters(item.get("distance"))
         result.append(
             {
-                "name": str(item.get("name") or ""),
+                "name": _item_name(item.get("name"), locale),
                 "type": str(item.get("type") or "point_of_interest"),
                 "distance_m": max(int(distance_m or 0), 0),
             }
@@ -386,17 +392,17 @@ def _surroundings(value: Any) -> list[dict]:
     return [item for item in result if item["name"]]
 
 
-def _venues(value: Any) -> list[dict]:
+def _venues(value: Any, locale: str) -> list[dict]:
     result: list[dict] = []
     for item in value or []:
         if not isinstance(item, dict):
             continue
-        name = item.get("name")
+        name = _item_name(item.get("name"), locale)
         if not name:
             continue
         result.append(
             {
-                "name": str(name),
+                "name": name,
                 "type": str(item.get("type") or "general"),
                 "building": item.get("building"),
                 "hours": item.get("hours"),

@@ -337,6 +337,57 @@ async def test_patch_property_information_fields(
     assert body["host_type"] == "professional_host"
 
 
+async def test_patch_venues_with_i18n_names(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(db, name="I18n Venues", slug="i18n-venues")
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={
+            "venues": [
+                {
+                    "name": {
+                        "en": "Medical block",
+                        "ru": "Медблок",
+                        "uz": "Tibbiy blok",
+                    },
+                    "type": "medical",
+                }
+            ],
+            "surroundings": [
+                {
+                    "name": {"en": "Walking area", "ru": "Зона прогулок"},
+                    "type": "park",
+                    "distance_m": 150,
+                }
+            ],
+        },
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["venues"][0]["name"]["en"] == "Medical block"
+    assert body["surroundings"][0]["name"]["ru"] == "Зона прогулок"
+
+    public = await client.get(f"/api/sanatoriums/{sanatorium.id}?lang=ru")
+    assert public.status_code == 200, public.text
+    assert public.json()["venues"][0]["name"] == "Медблок"
+    assert public.json()["surroundings"][0]["name"] == "Зона прогулок"
+
+
+async def test_patch_venues_with_legacy_string_names(
+    client: AsyncClient, db: AsyncSession, super_admin_headers
+) -> None:
+    sanatorium = await make_sanatorium(db, name="Str Venues", slug="str-venues")
+    resp = await client.patch(
+        f"/api/sanatoriums/{sanatorium.id}",
+        json={"venues": [{"name": "Dining hall", "type": "dining"}]},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["venues"][0]["name"] == "Dining hall"
+
+
 async def test_patch_as_other_admin_returns_403(
     client: AsyncClient, db: AsyncSession, admin_headers
 ) -> None:

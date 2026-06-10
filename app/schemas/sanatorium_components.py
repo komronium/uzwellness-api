@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.utils import pick_locale
 from app.models.amenity import AmenityCost, AmenitySelectionStatus
@@ -50,17 +50,48 @@ class SanatoriumAmenityAdminRead(BaseModel):
     amenity: AmenityAdminRead
 
 
+def _validate_i18n_name(value: str | dict, max_length: int) -> str | dict:
+    """Names arrive either as a plain string (legacy) or a {uz,ru,en} dict."""
+    if isinstance(value, str):
+        if not value.strip():
+            raise ValueError("name must not be empty")
+        if len(value) > max_length:
+            raise ValueError(f"name must be at most {max_length} characters")
+        return value
+    translations = {
+        key: text
+        for key, text in value.items()
+        if isinstance(text, str) and text.strip()
+    }
+    if not translations:
+        raise ValueError("name must contain at least one non-empty translation")
+    for text in translations.values():
+        if len(text) > max_length:
+            raise ValueError(f"name must be at most {max_length} characters")
+    return value
+
+
 class Surrounding(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str | dict
     type: str = Field(min_length=1, max_length=40)
     distance_m: int = Field(ge=0)
 
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str | dict) -> str | dict:
+        return _validate_i18n_name(value, 200)
+
 
 class Venue(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    name: str | dict
     type: str = Field(min_length=1, max_length=40)
     building: str | None = Field(default=None, max_length=120)
     hours: str | None = Field(default=None, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str | dict) -> str | dict:
+        return _validate_i18n_name(value, 120)
 
 
 class MealService(BaseModel):
