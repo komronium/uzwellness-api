@@ -11,17 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.pricing import (
-    calculate_rate_plan_night_price,
-    calculate_stay_total,
-    convert_to_usd,
-    convert_to_uzs,
-)
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity
 from app.models.exchange_rate import ExchangeRate
 from app.models.program import (
-    TreatmentGuestApplicability,
     TreatmentProgram,
     TreatmentProgramType,
     TreatmentStayPackageKind,
@@ -33,9 +26,7 @@ from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestTyp
 from app.schemas.room_offer import (
     RoomOfferAlternativeDate,
     RoomOfferCard,
-    RoomOfferGuest,
     RoomOfferGuestInclusions,
-    RoomOfferGuestType,
     RoomOfferInclusion,
     RoomOfferPackageKind,
     RoomOfferPhoto,
@@ -52,25 +43,26 @@ from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
 )
-
-_CENTS = Decimal("0.01")
-_ZERO = Decimal("0")
-
-
-@dataclass(slots=True)
-class _GuestStayChoice:
-    room_index: int
-    guest_index: int
-    board: BoardType
-    treatment_included: bool
-
-    @property
-    def package_kind(self) -> RoomOfferPackageKind:
-        return (
-            RoomOfferPackageKind.TREATMENT
-            if self.treatment_included
-            else RoomOfferPackageKind.SPECIAL
-        )
+from app.services.room_offer_guests import (
+    GuestKey,
+    GuestStayChoice,
+    guest_option,
+    guest_options,
+    guests,
+    program_kind,
+    programs_for_guest,
+    resolve_guest_program,
+    selected_treatments,
+)
+from app.services.room_offer_pricing import (
+    CENTS,
+    ZERO,
+    apply_promo,
+    original_total,
+    room_total,
+    stay_option_total,
+    treatment_total,
+)
 
 
 @dataclass(slots=True)
@@ -82,8 +74,8 @@ class _OfferContext:
     nights: int
     dates: list[date]
     requested_rooms: list[RoomOfferRequestedRoom]
-    guest_options: dict[tuple[int, int], _GuestStayChoice]
-    treatment_by_guest: dict[tuple[int, int], TreatmentProgram]
+    guest_options: dict[GuestKey, GuestStayChoice]
+    treatment_by_guest: dict[GuestKey, TreatmentProgram]
     treatments: list[TreatmentProgram]
     stay_option_prices: dict[
         tuple[StayOptionGuestType, BoardType, bool], SanatoriumStayOptionPrice
@@ -160,12 +152,8 @@ class RoomOfferService:
             nights=nights,
         )
         stay_option_prices = await self._stay_option_prices(sanatorium_id)
-        guest_options = self._guest_options(payload)
-        selected = self._selected_treatments(
-            payload=payload,
-            treatments=treatments,
-            guest_options=guest_options,
-        )
+        options = guest_options(payload)
+        selected = selected_treatments(payload, treatments, options)
         return _OfferContext(
             locale=locale,
             sanatorium_id=sanatorium_id,
@@ -174,7 +162,7 @@ class RoomOfferService:
             nights=nights,
             dates=list(date_range(payload.check_in, payload.check_out)),
             requested_rooms=payload.rooms,
-            guest_options=guest_options,
+            guest_options=options,
             treatment_by_guest=selected,
             treatments=treatments,
             stay_option_prices=stay_option_prices,
@@ -251,35 +239,6 @@ class RoomOfferService:
         return {
             (row.guest_type, row.board, row.treatment_included): row for row in rows
         }
-
-    def _selected_treatments(
-        self,
-        *,
-        payload: RoomOfferSearchRequest,
-        treatments: list[TreatmentProgram],
-        guest_options: dict[tuple[int, int], _GuestStayChoice],
-    ) -> dict[tuple[int, int], TreatmentProgram]:
-        by_id = {program.id: program for program in treatments}
-        selected: dict[tuple[int, int], TreatmentProgram] = {}
-        for item in payload.treatment_selections:
-            program = by_id.get(item.program_id)
-            if program is None:
-                continue
-            if item.room_index >= len(payload.rooms):
-                continue
-            if item.guest_index >= payload.rooms[item.room_index].guests_count:
-                continue
-            guest = self._guests(payload.rooms[item.room_index])[item.guest_index]
-            option = guest_options.get(
-                (item.room_index, item.guest_index),
-                self._default_guest_option(item.room_index, item.guest_index),
-            )
-            if program not in self._programs_for_guest(
-                [program], guest, self._program_kind(option)
-            ):
-                continue
-            selected[(item.room_index, item.guest_index)] = program
-        return selected
 
     def _offers(
         self,
@@ -371,14 +330,25 @@ class RoomOfferService:
         rate_plan: RatePlan | None,
         available_rooms: int,
     ) -> RoomOfferCard:
-        room_total = self._room_total(context, room, rate_plan)
-        stay_option_total = self._stay_option_total(context, room.base_currency)
-        treatment_total = self._treatment_total(context, room.base_currency)
-        subtotal = (room_total + stay_option_total + treatment_total).quantize(
-            _CENTS, ROUND_HALF_UP
-        )
-        original_total = self._original_total(subtotal, rate_plan)
-        total = self._apply_promo(subtotal, rate_plan)
+        subtotal = (
+            room_total(room, rate_plan, context.dates, len(context.requested_rooms))
+            + stay_option_total(
+                prices=context.stay_option_prices,
+                requested_rooms=context.requested_rooms,
+                options=context.guest_options,
+                nights=context.nights,
+                exchange_rate=context.exchange_rate,
+                currency=room.base_currency,
+            )
+            + treatment_total(
+                requested_rooms=context.requested_rooms,
+                options=context.guest_options,
+                treatments=context.treatments,
+                treatment_by_guest=context.treatment_by_guest,
+                exchange_rate=context.exchange_rate,
+                currency=room.base_currency,
+            )
+        ).quantize(CENTS, ROUND_HALF_UP)
         return RoomOfferCard(
             offer_id=f"{room.id}:{rate_plan.id if rate_plan else 'base'}",
             room_id=room.id,
@@ -394,8 +364,8 @@ class RoomOfferService:
             photo_count=len(room.images),
             photos=[self._photo(image, context.locale) for image in room.images[:8]],
             price=RoomOfferPrice(
-                total=total,
-                original_total=original_total,
+                total=apply_promo(subtotal, rate_plan),
+                original_total=original_total(subtotal, rate_plan),
                 currency=room.base_currency,
                 rooms_count=len(context.requested_rooms),
                 adults=sum(room.adults for room in context.requested_rooms),
@@ -418,141 +388,26 @@ class RoomOfferService:
             inclusions=self._inclusions(context),
         )
 
-    def _room_total(
-        self, context: _OfferContext, room: Room, rate_plan: RatePlan | None
-    ) -> Decimal:
-        if rate_plan is None:
-            return (
-                calculate_stay_total(room, context.dates, room.price_periods)
-                * len(context.requested_rooms)
-            ).quantize(_CENTS, ROUND_HALF_UP)
-        rules = {rule.date: rule for rule in rate_plan.date_rules}
-        total = _ZERO
-        for target in context.dates:
-            rule = rules.get(target)
-            total += calculate_rate_plan_night_price(
-                room,
-                rate_plan,
-                target,
-                room.price_periods,
-                selling_rate_override=rule.selling_rate if rule else None,
-            )
-        return (total * len(context.requested_rooms)).quantize(_CENTS, ROUND_HALF_UP)
-
-    def _stay_option_total(self, context: _OfferContext, currency: str) -> Decimal:
-        if not context.stay_option_prices:
-            return _ZERO
-        total = _ZERO
-        for room_index, requested_room in enumerate(context.requested_rooms):
-            for guest in self._guests(requested_room):
-                option = self._guest_option(context, room_index, guest.guest_index)
-                price = self._stay_option_price(context, guest, option)
-                converted = self._convert(
-                    price.price_delta, price.currency, currency, context
-                )
-                if converted is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Exchange rate is required for stay option pricing",
-                    )
-                total += converted * context.nights
-        return total.quantize(_CENTS, ROUND_HALF_UP)
-
-    def _stay_option_price(
-        self,
-        context: _OfferContext,
-        guest: RoomOfferGuest,
-        option: _GuestStayChoice,
-    ) -> SanatoriumStayOptionPrice:
-        guest_type = (
-            StayOptionGuestType.ADULT
-            if guest.type == RoomOfferGuestType.ADULT
-            else StayOptionGuestType.CHILD
-        )
-        price = context.stay_option_prices.get(
-            (guest_type, option.board, option.treatment_included)
-        )
-        if price is None or not price.is_available:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Selected stay option is not available",
-            )
-        return price
-
-    def _treatment_total(self, context: _OfferContext, currency: str) -> Decimal:
-        total = _ZERO
-        for room_index, requested_room in enumerate(context.requested_rooms):
-            for guest in self._guests(requested_room):
-                option = self._guest_option(context, room_index, guest.guest_index)
-                programs = self._programs_for_guest(
-                    context.treatments,
-                    guest,
-                    self._program_kind(option),
-                )
-                default = programs[0] if programs else None
-                program = context.treatment_by_guest.get(
-                    (room_index, guest.guest_index), default
-                )
-                if program is None or program.price is None or program.currency is None:
-                    continue
-                converted = self._convert(
-                    program.price, program.currency, currency, context
-                )
-                if converted is not None:
-                    total += converted
-        return total.quantize(_CENTS, ROUND_HALF_UP)
-
-    @staticmethod
-    def _convert(
-        amount: Decimal,
-        source_currency: str,
-        target_currency: str,
-        context: _OfferContext,
-    ) -> Decimal | None:
-        if source_currency == target_currency:
-            return amount.quantize(_CENTS, ROUND_HALF_UP)
-        if target_currency == "UZS":
-            return convert_to_uzs(amount, source_currency, context.exchange_rate)
-        if target_currency == "USD":
-            return convert_to_usd(amount, source_currency, context.exchange_rate)
-        return None
-
-    @staticmethod
-    def _original_total(
-        subtotal: Decimal, rate_plan: RatePlan | None
-    ) -> Decimal | None:
-        if rate_plan is None or not rate_plan.promo_percent:
-            return None
-        return subtotal
-
-    @staticmethod
-    def _apply_promo(subtotal: Decimal, rate_plan: RatePlan | None) -> Decimal:
-        if rate_plan is None or not rate_plan.promo_percent:
-            return subtotal
-        return (subtotal * (1 - rate_plan.promo_percent / 100)).quantize(
-            _CENTS, ROUND_HALF_UP
-        )
-
     def _treatment_selection(
         self, context: _OfferContext
     ) -> list[RoomOfferTreatmentGroup]:
         groups: list[RoomOfferTreatmentGroup] = []
         for room_index, requested_room in enumerate(context.requested_rooms):
-            for guest in self._guests(requested_room):
-                option = self._guest_option(context, room_index, guest.guest_index)
+            for guest in guests(requested_room):
+                option = guest_option(
+                    context.guest_options, room_index, guest.guest_index
+                )
                 package_kind = RoomOfferPackageKind(option.package_kind.value)
-                programs = self._programs_for_guest(
+                programs = programs_for_guest(
                     context.treatments,
                     guest,
-                    self._program_kind(option),
+                    program_kind(option),
                 )
                 default = programs[0] if programs else None
                 selected = context.treatment_by_guest.get(
                     (room_index, guest.guest_index), default
                 )
-                selected_price = (
-                    selected.price if selected and selected.price else _ZERO
-                )
+                selected_price = selected.price if selected and selected.price else ZERO
                 groups.append(
                     RoomOfferTreatmentGroup(
                         room_index=room_index,
@@ -574,7 +429,7 @@ class RoomOfferService:
         selected_price: Decimal,
         context: _OfferContext,
     ) -> RoomOfferTreatmentOption:
-        price = program.price or _ZERO
+        price = program.price or ZERO
         return RoomOfferTreatmentOption(
             id=program.id,
             package_kind=RoomOfferPackageKind(program.stay_package_kind.value),
@@ -589,22 +444,22 @@ class RoomOfferService:
             included_services=program.included_services,
             price=program.price,
             currency=program.currency,
-            price_delta=(price - selected_price).quantize(_CENTS, ROUND_HALF_UP),
+            price_delta=(price - selected_price).quantize(CENTS, ROUND_HALF_UP),
         )
 
     def _inclusions(self, context: _OfferContext) -> list[RoomOfferGuestInclusions]:
         rows: list[RoomOfferGuestInclusions] = []
         for room_index, requested_room in enumerate(context.requested_rooms):
-            for guest in self._guests(requested_room):
-                option = self._guest_option(context, room_index, guest.guest_index)
-                programs = self._programs_for_guest(
-                    context.treatments,
-                    guest,
-                    self._program_kind(option),
+            for guest in guests(requested_room):
+                option = guest_option(
+                    context.guest_options, room_index, guest.guest_index
                 )
-                default = programs[0] if programs else None
-                program = context.treatment_by_guest.get(
-                    (room_index, guest.guest_index), default
+                program = resolve_guest_program(
+                    context.treatments,
+                    context.treatment_by_guest,
+                    room_index,
+                    guest,
+                    option,
                 )
                 items = [self._accommodation_inclusion(context, option.board)]
                 if program is not None:
@@ -638,110 +493,6 @@ class RoomOfferService:
             type="accommodation",
             title="Accommodation",
             description=f"{context.nights} night(s), {self._board_label(board)}",
-        )
-
-    @staticmethod
-    def _guests(requested_room: RoomOfferRequestedRoom) -> list[RoomOfferGuest]:
-        guests = [
-            RoomOfferGuest(guest_index=index, type=RoomOfferGuestType.ADULT)
-            for index in range(requested_room.adults)
-        ]
-        offset = requested_room.adults
-        guests.extend(
-            RoomOfferGuest(
-                guest_index=offset + index,
-                type=RoomOfferGuestType.CHILD,
-                age=child.age,
-            )
-            for index, child in enumerate(requested_room.children)
-        )
-        return guests
-
-    @staticmethod
-    def _programs_for_guest(
-        programs: list[TreatmentProgram],
-        guest: RoomOfferGuest,
-        package_kind: TreatmentStayPackageKind,
-    ) -> list[TreatmentProgram]:
-        if guest.type == RoomOfferGuestType.ADULT:
-            allowed = {
-                TreatmentGuestApplicability.ALL,
-                TreatmentGuestApplicability.ADULT,
-            }
-        else:
-            allowed = {
-                TreatmentGuestApplicability.ALL,
-                TreatmentGuestApplicability.CHILD,
-            }
-        return [
-            program
-            for program in programs
-            if program.guest_applicability in allowed
-            and program.stay_package_kind == package_kind
-        ]
-
-    @classmethod
-    def _guest_options(
-        cls, payload: RoomOfferSearchRequest
-    ) -> dict[tuple[int, int], _GuestStayChoice]:
-        room_boards = cls._room_boards(payload)
-        options: dict[tuple[int, int], _GuestStayChoice] = {}
-        for item in payload.guest_options:
-            if item.room_index >= len(payload.rooms):
-                continue
-            if item.guest_index >= payload.rooms[item.room_index].guests_count:
-                continue
-            options[(item.room_index, item.guest_index)] = _GuestStayChoice(
-                room_index=item.room_index,
-                guest_index=item.guest_index,
-                board=item.board or room_boards[item.room_index],
-                treatment_included=item.treatment_included,
-            )
-        for room_index, room in enumerate(payload.rooms):
-            for guest in cls._guests(room):
-                options.setdefault(
-                    (room_index, guest.guest_index),
-                    cls._default_guest_option(
-                        room_index,
-                        guest.guest_index,
-                        board=room_boards[room_index],
-                    ),
-                )
-        return options
-
-    @staticmethod
-    def _room_boards(payload: RoomOfferSearchRequest) -> dict[int, BoardType]:
-        return {room_index: room.board for room_index, room in enumerate(payload.rooms)}
-
-    @staticmethod
-    def _guest_option(
-        context: _OfferContext, room_index: int, guest_index: int
-    ) -> _GuestStayChoice:
-        return context.guest_options.get(
-            (room_index, guest_index),
-            RoomOfferService._default_guest_option(room_index, guest_index),
-        )
-
-    @staticmethod
-    def _default_guest_option(
-        room_index: int,
-        guest_index: int,
-        *,
-        board: BoardType = BoardType.FULL_BOARD,
-    ) -> _GuestStayChoice:
-        return _GuestStayChoice(
-            room_index=room_index,
-            guest_index=guest_index,
-            board=board,
-            treatment_included=True,
-        )
-
-    @staticmethod
-    def _program_kind(option: _GuestStayChoice) -> TreatmentStayPackageKind:
-        return (
-            TreatmentStayPackageKind.TREATMENT
-            if option.treatment_included
-            else TreatmentStayPackageKind.SPECIAL
         )
 
     @staticmethod

@@ -16,6 +16,7 @@ from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming, Rat
 from app.models.sanatorium import SanatoriumStatus
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
 from app.schemas.room_offer import RoomOfferSearchRequest
+from app.services.room_offer_guests import guest_options
 from app.services.room_offer_service import RoomOfferService, _OfferContext
 from tests.factories import make_room, make_sanatorium
 
@@ -34,7 +35,7 @@ def test_room_offer_guest_options_use_room_board() -> None:
         ],
     )
 
-    options = RoomOfferService._guest_options(payload)
+    options = guest_options(payload)
 
     assert options[(0, 0)].board == BoardType.HALF_BOARD
     assert options[(0, 0)].treatment_included is False
@@ -57,7 +58,7 @@ def test_room_offer_guest_options_board_overrides_room_default() -> None:
         ],
     )
 
-    options = RoomOfferService._guest_options(payload)
+    options = guest_options(payload)
 
     assert options[(0, 0)].board == BoardType.HALF_BOARD
     assert options[(0, 0)].treatment_included is False
@@ -99,7 +100,7 @@ def test_room_offer_inclusions_are_compact_package_summary() -> None:
         nights=2,
         dates=[date(2026, 10, 2), date(2026, 10, 3)],
         requested_rooms=payload.rooms,
-        guest_options=RoomOfferService._guest_options(payload),
+        guest_options=guest_options(payload),
         treatment_by_guest={},
         treatments=[program],
         stay_option_prices={},
