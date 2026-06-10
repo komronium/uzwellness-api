@@ -88,6 +88,16 @@ class UserService:
 
     async def update(self, user: User, payload: UserUpdate) -> User:
         data = payload.model_dump(exclude_unset=True)
+        email = data.pop("email", None)
+        if email is not None:
+            email = email.lower()
+            existing = await self.get_by_email(email)
+            if existing is not None and existing.id != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered",
+                )
+            data["email"] = email
         sanatorium_id = data.pop("sanatorium_id", _MISSING)
         for field, value in data.items():
             setattr(user, field, value)

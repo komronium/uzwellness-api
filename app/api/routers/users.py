@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, not_found, require_roles
 from app.core.pagination import LargePagination
@@ -11,6 +11,26 @@ from app.services.user_service import UserService, get_user_service
 router = APIRouter(prefix="/users", tags=["Identity"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
+
+_SELF_EDITABLE_FIELDS = {"email", "full_name", "phone"}
+
+
+def _ensure_can_patch_user(
+    current_user: User, user_id: uuid.UUID, payload: UserUpdate
+) -> None:
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to modify this user",
+        )
+    blocked = set(payload.model_dump(exclude_unset=True)) - _SELF_EDITABLE_FIELDS
+    if blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Not allowed to change: {', '.join(sorted(blocked))}",
+        )
 
 
 @router.get("/me", response_model=UserRead)
@@ -69,9 +89,10 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     payload: UserUpdate,
-    _: User = Depends(require_super_admin),
+    current_user: CurrentUser,
     users: UserService = Depends(get_user_service),
 ) -> UserRead:
+    _ensure_can_patch_user(current_user, user_id, payload)
     user = await users.get_by_id(user_id)
     if user is None:
         raise not_found("User not found")

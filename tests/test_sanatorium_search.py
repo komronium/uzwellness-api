@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.availability import RoomAvailability
 from app.models.destination import Destination
 from app.models.region import Region
-from app.models.sanatorium import Sanatorium, SanatoriumImage, SanatoriumStatus
+from app.models.sanatorium import (
+    PropertyType,
+    Sanatorium,
+    SanatoriumImage,
+    SanatoriumStatus,
+)
 from tests.factories import make_room
 
 
@@ -44,6 +49,7 @@ async def _make_sanatorium(
     region: Region | None = None,
     treatment_focuses: list[str] | None = None,
     avg_rating: Decimal | None = None,
+    property_type: PropertyType = PropertyType.SANATORIUM,
 ) -> Sanatorium:
     sanatorium = Sanatorium(
         name={"en": name_en, "uz": name_en, "ru": name_en},
@@ -58,6 +64,7 @@ async def _make_sanatorium(
         avg_rating=avg_rating,
         review_count=7 if avg_rating is not None else 0,
         status=SanatoriumStatus.APPROVED,
+        property_type=property_type,
     )
     db.add(sanatorium)
     await db.commit()
@@ -218,3 +225,42 @@ async def test_sanatorium_search_rejects_invalid_date_range(
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == "check_out must be after check_in"
+
+
+async def test_sanatorium_search_filters_by_property_type(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    sanatorium = await _make_sanatorium(
+        db, slug="medical-resort", name_en="Medical Resort"
+    )
+    wellness = await _make_sanatorium(
+        db,
+        slug="zen-retreat",
+        name_en="Zen Retreat",
+        property_type=PropertyType.WELLNESS,
+    )
+    await make_room(db, sanatorium=sanatorium, name="Standard", base_price="100.00")
+    await make_room(db, sanatorium=wellness, name="Studio", base_price="80.00")
+
+    base_params = {"check_in": "2026-10-02", "check_out": "2026-10-04", "adults": 2}
+
+    resp = await client.get(
+        "/api/sanatoriums/search",
+        params={**base_params, "property_type": "wellness"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["sanatorium_slug"] == "zen-retreat"
+
+    resp = await client.get(
+        "/api/sanatoriums/search",
+        params={**base_params, "property_type": "sanatorium"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["sanatorium_slug"] == "medical-resort"
+
+    resp = await client.get("/api/sanatoriums/search", params=base_params)
+    assert resp.json()["total"] == 2

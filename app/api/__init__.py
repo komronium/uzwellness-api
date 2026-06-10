@@ -13,6 +13,7 @@ from app.api.routers import (
     finance,
     health,
     meta,
+    newsletter,
     packages,
     payments,
     programs,
@@ -64,3 +65,4 @@ api_router.include_router(transfers.router)
 api_router.include_router(treatment_focuses.router)
 api_router.include_router(regions.router)
 api_router.include_router(destinations.router)
+api_router.include_router(newsletter.router)

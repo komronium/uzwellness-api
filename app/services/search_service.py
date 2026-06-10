@@ -19,7 +19,12 @@ from app.models.availability import RoomAvailability
 from app.models.destination import Destination
 from app.models.region import Region
 from app.models.room import Room
-from app.models.sanatorium import Sanatorium, SanatoriumImage, SanatoriumStatus
+from app.models.sanatorium import (
+    PropertyType,
+    Sanatorium,
+    SanatoriumImage,
+    SanatoriumStatus,
+)
 from app.schemas.search import StaySearchItem
 from app.services.exchange_rate_service import (
     ExchangeRateService,
@@ -66,6 +71,7 @@ class SearchService:
         sanatorium_id: uuid.UUID | None = None,
         destination_id: uuid.UUID | None = None,
         treatment_focus: str | None = None,
+        property_type: PropertyType | None = None,
     ) -> tuple[list[StaySearchItem], int]:
         nights = (check_out - check_in).days
         if nights <= 0:
@@ -88,6 +94,7 @@ class SearchService:
             sanatorium_id=sanatorium_id,
             destination_id=destination_id,
             treatment_focus=treatment_focus,
+            property_type=property_type,
         )
         if not candidates:
             return [], 0
@@ -113,6 +120,7 @@ class SearchService:
         sanatorium_id: uuid.UUID | None,
         destination_id: uuid.UUID | None,
         treatment_focus: str | None,
+        property_type: PropertyType | None,
     ) -> list[_Candidate]:
         stmt = self._candidate_statement(
             nights=nights,
@@ -121,6 +129,7 @@ class SearchService:
             sanatorium_id=sanatorium_id,
             destination_id=destination_id,
             treatment_focus=treatment_focus,
+            property_type=property_type,
         )
         rows = (await self.db.execute(stmt)).all()
         return [
@@ -142,6 +151,7 @@ class SearchService:
         sanatorium_id: uuid.UUID | None,
         destination_id: uuid.UUID | None,
         treatment_focus: str | None,
+        property_type: PropertyType | None,
     ):
         stmt = (
             select(Room, Sanatorium, Destination, Region)
@@ -170,6 +180,8 @@ class SearchService:
         )
         if sanatorium_id is not None:
             stmt = stmt.where(Sanatorium.id == sanatorium_id)
+        if property_type is not None:
+            stmt = stmt.where(Sanatorium.property_type == property_type)
         if destination_id is not None:
             stmt = stmt.where(Sanatorium.destination_id == destination_id)
         if treatment_focus:

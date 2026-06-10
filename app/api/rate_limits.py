@@ -7,6 +7,9 @@ login_rate_limit = RateLimiter(prefix="login", limit=10, window_seconds=600, sco
 register_rate_limit = RateLimiter(
     prefix="register", limit=5, window_seconds=3600, scope="ip"
 )
+newsletter_rate_limit = RateLimiter(
+    prefix="newsletter", limit=5, window_seconds=3600, scope="ip"
+)
 _booking_rate_limit = RateLimiter(
     prefix="booking", limit=20, window_seconds=86400, scope="user"
 )

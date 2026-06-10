@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import LocaleDep
 from app.core.pagination import Pagination
+from app.models.sanatorium import PropertyType
 from app.schemas.search import StaySearchList
 from app.services.search_service import SearchService, get_search_service
 
@@ -24,6 +25,7 @@ async def search_sanatorium_stays(
     sanatorium_id: uuid.UUID | None = Query(default=None),
     destination_id: uuid.UUID | None = Query(default=None),
     treatment_focus: str | None = Query(default=None, max_length=60),
+    property_type: PropertyType | None = Query(default=None),
 ) -> StaySearchList:
     if check_out <= check_in:
         raise HTTPException(
@@ -40,7 +42,10 @@ async def search_sanatorium_stays(
         sanatorium_id=sanatorium_id,
         destination_id=destination_id,
         treatment_focus=treatment_focus or None,
+        property_type=property_type,
         limit=page.limit,
         offset=page.offset,
     )
-    return StaySearchList(items=items, total=total, limit=page.limit, offset=page.offset)
+    return StaySearchList(
+        items=items, total=total, limit=page.limit, offset=page.offset
+    )

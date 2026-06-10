@@ -6,6 +6,7 @@ from app.models.amenity import (
     RoomAmenity,
     SanatoriumAmenity,
 )
+from app.models.app_config import AppConfig
 from app.models.availability import RoomAvailability
 from app.models.availability_log import (
     AvailabilityLogCategory,
@@ -15,6 +16,7 @@ from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.destination import Destination
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
+from app.models.newsletter import NewsletterSubscriber
 from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
@@ -70,6 +72,7 @@ __all__ = [
     "AmenityCost",
     "AmenityScope",
     "AmenitySelectionStatus",
+    "AppConfig",
     "AvailabilityLogCategory",
     "AvailabilityOperationLog",
     "BoardType",
@@ -82,6 +85,7 @@ __all__ = [
     "ExchangeRate",
     "ExtraBedConfig",
     "HostType",
+    "NewsletterSubscriber",
     "Notification",
     "Package",
     "PackageItem",

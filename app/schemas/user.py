@@ -22,6 +22,7 @@ class UserAdminCreate(UserCreate):
 
 
 class UserUpdate(BaseModel):
+    email: EmailStr | None = None
     full_name: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=32)
     role: UserRole | None = None
