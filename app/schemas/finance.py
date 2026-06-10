@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.models.booking import BookingStatus, BookingType
+from app.schemas.common import Page
 
 PaymentRollupStatus = Literal[
     "unpaid",
@@ -63,8 +64,5 @@ class FinanceOrderItem(BaseModel):
     created_at: datetime
 
 
-class FinanceOrdersList(BaseModel):
-    items: list[FinanceOrderItem]
-    total: int
-    limit: int
-    offset: int
+class FinanceOrdersList(Page[FinanceOrderItem]):
+    pass

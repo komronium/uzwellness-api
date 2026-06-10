@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
 from app.models.package import PackageItemType
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class PackageItemCreate(BaseModel):
@@ -143,15 +143,9 @@ class PackageAdminRead(_PackageReadCommon):
     items: list[PackageItemAdminRead] = Field(default_factory=list)
 
 
-class PackageList(BaseModel):
-    items: list[PackageRead]
-    total: int
-    limit: int
-    offset: int
+class PackageList(Page[PackageRead]):
+    pass
 
 
-class PackageAdminList(BaseModel):
-    items: list[PackageAdminRead]
-    total: int
-    limit: int
-    offset: int
+class PackageAdminList(Page[PackageAdminRead]):
+    pass

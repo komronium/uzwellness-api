@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.booking import BookingStatus, BookingType
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 from app.models.user import UserRole
+from app.schemas.common import Page
 from app.schemas.extra_bed import BookingExtraBedRead, ExtraBedItem
 from app.schemas.payment import BookingPaymentSummary
 from app.schemas.room_offer import (
@@ -145,11 +146,8 @@ class BookingRead(BaseModel):
     updated_at: datetime
 
 
-class BookingList(BaseModel):
-    items: list[BookingRead]
-    total: int
-    limit: int
-    offset: int
+class BookingList(Page[BookingRead]):
+    pass
 
 
 class BookingDateFilter(StrEnum):

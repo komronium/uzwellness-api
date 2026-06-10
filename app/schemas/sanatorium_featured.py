@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.core.utils import pick_locale
 from app.models.sanatorium import PropertyType, WellnessCategory
+from app.schemas.common import Page
 
 
 class FeaturedSanatoriumCard(BaseModel):
@@ -71,11 +72,8 @@ class FeaturedSanatoriumCard(BaseModel):
         )
 
 
-class FeaturedSanatoriumList(BaseModel):
-    items: list[FeaturedSanatoriumCard]
-    total: int
-    limit: int
-    offset: int
+class FeaturedSanatoriumList(Page[FeaturedSanatoriumCard]):
+    pass
 
 
 def _primary_image_url(images) -> str | None:

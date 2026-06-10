@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
 from app.models.amenity import AmenityScope
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class AmenityCreate(BaseModel):
@@ -73,15 +73,9 @@ class AmenityAdminRead(BaseModel):
     created_at: datetime
 
 
-class AmenityList(BaseModel):
-    items: list[AmenityRead]
-    total: int
-    limit: int
-    offset: int
+class AmenityList(Page[AmenityRead]):
+    pass
 
 
-class AmenityAdminList(BaseModel):
-    items: list[AmenityAdminRead]
-    total: int
-    limit: int
-    offset: int
+class AmenityAdminList(Page[AmenityAdminRead]):
+    pass

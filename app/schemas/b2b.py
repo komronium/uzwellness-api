@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from app.models.booking import BookingStatus
+from app.schemas.common import Page
 
 
 class B2BDashboard(BaseModel):
@@ -41,8 +42,5 @@ class B2BOrderItem(BaseModel):
     created_at: datetime
 
 
-class B2BOrdersList(BaseModel):
-    items: list[B2BOrderItem]
-    total: int
-    limit: int
-    offset: int
+class B2BOrdersList(Page[B2BOrderItem]):
+    pass

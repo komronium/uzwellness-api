@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class TreatmentFocusCreate(BaseModel):
@@ -68,18 +68,12 @@ class TreatmentFocusTileRead(TreatmentFocusRead):
     sanatoriums_count: int
 
 
-class TreatmentFocusList(BaseModel):
-    items: list[TreatmentFocusRead]
-    total: int
-    limit: int
-    offset: int
+class TreatmentFocusList(Page[TreatmentFocusRead]):
+    pass
 
 
-class TreatmentFocusAdminList(BaseModel):
-    items: list[TreatmentFocusAdminRead]
-    total: int
-    limit: int
-    offset: int
+class TreatmentFocusAdminList(Page[TreatmentFocusAdminRead]):
+    pass
 
 
 class TreatmentFocusTileList(BaseModel):

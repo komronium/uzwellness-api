@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 from app.models.availability_log import AvailabilityLogCategory
+from app.schemas.common import Page
 
 
 class AvailabilityOperationLogRead(BaseModel):
@@ -46,8 +47,5 @@ class AvailabilityOperationLogRead(BaseModel):
         )
 
 
-class AvailabilityOperationLogList(BaseModel):
-    items: list[AvailabilityOperationLogRead]
-    total: int
-    limit: int
-    offset: int
+class AvailabilityOperationLogList(Page[AvailabilityOperationLogRead]):
+    pass

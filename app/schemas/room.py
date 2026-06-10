@@ -16,7 +16,7 @@ from app.models.room import (
     WindowPolicy,
 )
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 from app.schemas.room_availability import (
     AvailabilityBlock,
     AvailabilityRead,
@@ -444,18 +444,12 @@ class RoomAdminRead(_RoomReadCommon):
     )
 
 
-class RoomList(BaseModel):
-    items: list[RoomRead]
-    total: int
-    limit: int
-    offset: int
+class RoomList(Page[RoomRead]):
+    pass
 
 
-class RoomAdminList(BaseModel):
-    items: list[RoomAdminRead]
-    total: int
-    limit: int
-    offset: int
+class RoomAdminList(Page[RoomAdminRead]):
+    pass
 
 
 class RoomOrderItem(BaseModel):

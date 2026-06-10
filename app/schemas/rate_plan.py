@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.utils import pick_locale
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class RatePlanCreate(BaseModel):
@@ -192,25 +192,16 @@ class RatePlanAdminDirectoryItem(_RatePlanCommon):
         )
 
 
-class RatePlanList(BaseModel):
-    items: list[RatePlanRead]
-    total: int
-    limit: int
-    offset: int
+class RatePlanList(Page[RatePlanRead]):
+    pass
 
 
-class RatePlanAdminList(BaseModel):
-    items: list[RatePlanAdminRead]
-    total: int
-    limit: int
-    offset: int
+class RatePlanAdminList(Page[RatePlanAdminRead]):
+    pass
 
 
-class RatePlanAdminDirectoryList(BaseModel):
-    items: list[RatePlanAdminDirectoryItem]
-    total: int
-    limit: int
-    offset: int
+class RatePlanAdminDirectoryList(Page[RatePlanAdminDirectoryItem]):
+    pass
 
 
 def _cancellation_policy_summary(obj) -> str:

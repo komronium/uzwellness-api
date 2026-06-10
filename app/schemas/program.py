@@ -11,7 +11,7 @@ from app.models.program import (
     TreatmentStayPackageKind,
 )
 from app.schemas.amenity import AmenityAdminRead, AmenityRead
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class TreatmentProgramCreate(BaseModel):
@@ -175,15 +175,9 @@ class TreatmentProgramAdminRead(BaseModel):
     updated_at: datetime
 
 
-class TreatmentProgramList(BaseModel):
-    items: list[TreatmentProgramRead]
-    total: int
-    limit: int
-    offset: int
+class TreatmentProgramList(Page[TreatmentProgramRead]):
+    pass
 
 
-class TreatmentProgramAdminList(BaseModel):
-    items: list[TreatmentProgramAdminRead]
-    total: int
-    limit: int
-    offset: int
+class TreatmentProgramAdminList(Page[TreatmentProgramAdminRead]):
+    pass

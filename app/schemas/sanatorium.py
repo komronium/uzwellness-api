@@ -12,7 +12,7 @@ from app.models.sanatorium import (
     SanatoriumStatus,
     WellnessCategory,
 )
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 from app.schemas.destination import DestinationAdminRead, DestinationRead
 from app.schemas.region import RegionAdminRead, RegionRead
 from app.schemas.sanatorium_components import (
@@ -256,18 +256,12 @@ class SanatoriumAdminRead(_SanatoriumReadCommon):
     service_matrix: ServiceMatrix
 
 
-class SanatoriumList(BaseModel):
-    items: list[SanatoriumRead]
-    total: int
-    limit: int
-    offset: int
+class SanatoriumList(Page[SanatoriumRead]):
+    pass
 
 
-class SanatoriumAdminList(BaseModel):
-    items: list[SanatoriumAdminRead]
-    total: int
-    limit: int
-    offset: int
+class SanatoriumAdminList(Page[SanatoriumAdminRead]):
+    pass
 
 
 def _public_core(obj, locale: str) -> dict:

@@ -5,7 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class DestinationCreate(BaseModel):
@@ -91,18 +91,12 @@ class DestinationTileRead(DestinationRead):
         )
 
 
-class DestinationList(BaseModel):
-    items: list[DestinationRead]
-    total: int
-    limit: int
-    offset: int
+class DestinationList(Page[DestinationRead]):
+    pass
 
 
-class DestinationAdminList(BaseModel):
-    items: list[DestinationAdminRead]
-    total: int
-    limit: int
-    offset: int
+class DestinationAdminList(Page[DestinationAdminRead]):
+    pass
 
 
 class DestinationTileList(BaseModel):

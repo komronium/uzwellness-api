@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class RegionCreate(BaseModel):
@@ -47,15 +47,9 @@ class RegionAdminRead(_RegionReadCommon):
     name: dict
 
 
-class RegionList(BaseModel):
-    items: list[RegionRead]
-    total: int
-    limit: int
-    offset: int
+class RegionList(Page[RegionRead]):
+    pass
 
 
-class RegionAdminList(BaseModel):
-    items: list[RegionAdminRead]
-    total: int
-    limit: int
-    offset: int
+class RegionAdminList(Page[RegionAdminRead]):
+    pass

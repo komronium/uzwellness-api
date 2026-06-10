@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from app.models.sanatorium import PropertyType, WellnessCategory
+from app.schemas.common import Page
 
 
 class StaySearchItem(BaseModel):
@@ -37,8 +38,5 @@ class StaySearchItem(BaseModel):
     min_total_price_usd: Decimal | None
 
 
-class StaySearchList(BaseModel):
-    items: list[StaySearchItem]
-    total: int
-    limit: int
-    offset: int
+class StaySearchList(Page[StaySearchItem]):
+    pass

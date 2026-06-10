@@ -11,7 +11,7 @@ from app.models.promotion import (
     PromotionCategory,
     PromotionStatus,
 )
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 from app.schemas.rate_plan import RatePlanAdminListRoom
 
 
@@ -175,11 +175,8 @@ class PromotionRead(PromotionListItem):
         )
 
 
-class PromotionList(BaseModel):
-    items: list[PromotionListItem]
-    total: int
-    limit: int
-    offset: int
+class PromotionList(Page[PromotionListItem]):
+    pass
 
 
 def _validate_date_pair(start: date | None, end: date | None, label: str) -> None:

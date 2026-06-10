@@ -5,7 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils import pick_locale
-from app.schemas.common import Translations, TranslationsCreate
+from app.schemas.common import Page, Translations, TranslationsCreate
 
 
 class ExtraBedConfigCreate(BaseModel):
@@ -70,18 +70,12 @@ class ExtraBedConfigAdminRead(BaseModel):
     created_at: datetime
 
 
-class ExtraBedConfigList(BaseModel):
-    items: list[ExtraBedConfigRead]
-    total: int
-    limit: int
-    offset: int
+class ExtraBedConfigList(Page[ExtraBedConfigRead]):
+    pass
 
 
-class ExtraBedConfigAdminList(BaseModel):
-    items: list[ExtraBedConfigAdminRead]
-    total: int
-    limit: int
-    offset: int
+class ExtraBedConfigAdminList(Page[ExtraBedConfigAdminRead]):
+    pass
 
 
 class ExtraBedItem(BaseModel):

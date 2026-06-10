@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.common import Page
 from app.models.transfer_request import (
     TransferDirection,
     TransferStatus,
@@ -27,10 +28,14 @@ class TransferRequestCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self):
-        if self.direction in (
-            TransferDirection.ARRIVAL,
-            TransferDirection.ROUND_TRIP,
-        ) and self.flight_time is None:
+        if (
+            self.direction
+            in (
+                TransferDirection.ARRIVAL,
+                TransferDirection.ROUND_TRIP,
+            )
+            and self.flight_time is None
+        ):
             raise ValueError(
                 "flight_time is required for arrival and round_trip transfers"
             )
@@ -43,9 +48,7 @@ class TransferRequestCreate(BaseModel):
                 self.flight_time is not None
                 and self.return_flight_time <= self.flight_time
             ):
-                raise ValueError(
-                    "return_flight_time must be after flight_time"
-                )
+                raise ValueError("return_flight_time must be after flight_time")
         if (
             self.direction != TransferDirection.ROUND_TRIP
             and self.return_flight_time is not None
@@ -93,8 +96,5 @@ class TransferRequestRead(BaseModel):
     updated_at: datetime
 
 
-class TransferRequestList(BaseModel):
-    items: list[TransferRequestRead]
-    total: int
-    limit: int
-    offset: int
+class TransferRequestList(Page[TransferRequestRead]):
+    pass

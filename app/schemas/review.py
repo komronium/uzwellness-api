@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.review import ReviewAppealStatus, ReviewReplyStatus, ReviewSource
+from app.schemas.common import Page
 
 
 class ReviewCreate(BaseModel):
@@ -94,11 +95,8 @@ class ReviewRead(BaseModel):
     created_at: datetime
 
 
-class ReviewList(BaseModel):
-    items: list[ReviewRead]
-    total: int
-    limit: int
-    offset: int
+class ReviewList(Page[ReviewRead]):
+    pass
 
 
 class ReviewTagCount(BaseModel):

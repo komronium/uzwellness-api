@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.user import UserRole
+from app.schemas.common import Page
 
 
 class UserBase(BaseModel):
@@ -40,8 +41,5 @@ class UserRead(UserBase):
     created_at: datetime
 
 
-class UserList(BaseModel):
-    items: list[UserRead]
-    total: int
-    limit: int
-    offset: int
+class UserList(Page[UserRead]):
+    pass
