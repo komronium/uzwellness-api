@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.db_utils import assert_fk
-from app.core.config import settings
 from app.core.ids import uuid7
 from app.core.pagination import paginated
 from app.core.permissions import assert_sanatorium_access
