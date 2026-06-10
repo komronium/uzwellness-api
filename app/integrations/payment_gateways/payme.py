@@ -63,10 +63,14 @@ class PaymeGateway:
             )
         is_paid = method in ("", "PerformTransaction")
         is_failed = method == "CancelTransaction"
+        amount = None
+        if params.get("amount") is not None:
+            amount = Decimal(str(params["amount"])) / _AMOUNT_FACTOR
         return WebhookResult(
             merchant_trans_id=str(merchant_trans_id),
             provider_payment_id=str(params["id"]) if params.get("id") else None,
             is_paid=is_paid,
             is_failed=is_failed,
+            amount=amount,
             response_body={"result": {"state": 2 if is_paid else 1}},
         )

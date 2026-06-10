@@ -62,6 +62,7 @@ class ClickGateway:
             ),
             is_paid=is_paid,
             is_failed=is_failed,
+            amount=_parse_amount(payload.get("amount")),
             response_body={"error": 0, "error_note": "Success"},
         )
 
@@ -79,3 +80,12 @@ class ClickGateway:
         return hashlib.md5(
             "".join(parts).encode("utf-8"), usedforsecurity=False
         ).hexdigest()
+
+
+def _parse_amount(value) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except ArithmeticError:
+        return None

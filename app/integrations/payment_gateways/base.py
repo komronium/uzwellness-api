@@ -14,6 +14,7 @@ class WebhookResult:
     provider_payment_id: str | None
     is_paid: bool
     is_failed: bool
+    amount: Decimal | None = None
     response_body: dict = field(default_factory=dict)
 
 
@@ -28,13 +29,8 @@ class PaymentGateway(Protocol):
         amount: Decimal,
         currency: str,
         merchant_trans_id: str,
-    ) -> str | None:
-        ...
+    ) -> str | None: ...
 
-    def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]
-    ) -> bool:
-        ...
+    def verify_webhook(self, *, payload: dict, headers: Mapping[str, str]) -> bool: ...
 
-    def parse_webhook(self, *, payload: dict) -> WebhookResult:
-        ...
+    def parse_webhook(self, *, payload: dict) -> WebhookResult: ...

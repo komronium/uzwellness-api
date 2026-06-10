@@ -20,9 +20,7 @@ class CashGateway:
     ) -> str | None:
         return None
 
-    def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]
-    ) -> bool:
+    def verify_webhook(self, *, payload: dict, headers: Mapping[str, str]) -> bool:
         return False
 
     def parse_webhook(self, *, payload: dict) -> WebhookResult:

@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from app.models.user import User, UserRole
 from app.services.email_service import BookingEmailContext, send_booking_confirmed
 
 logger = logging.getLogger(__name__)
+
+_CENTS = Decimal("0.01")
 
 
 class PaymentService:
@@ -42,6 +45,17 @@ class PaymentService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot pay for a cancelled booking",
+            )
+        already_paid = await self.db.scalar(
+            select(Payment).where(
+                Payment.booking_id == booking.id,
+                Payment.status == PaymentStatus.PAID,
+            )
+        )
+        if already_paid is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Booking is already paid",
             )
 
         merchant_trans_id = uuid.uuid4().hex
@@ -119,21 +133,42 @@ class PaymentService:
         self, payment: Payment, result: WebhookResult, payload: dict
     ) -> None:
         if result.is_paid:
+            self._assert_amount_matches(payment, result)
             await self._mark_paid(
                 payment,
                 provider_payment_id=result.provider_payment_id,
                 raw_payload=payload,
             )
         elif result.is_failed:
-            payment.status = PaymentStatus.FAILED
+            # A cancel arriving after payment means the gateway returned the
+            # money; never downgrade PAID to FAILED.
+            payment.status = (
+                PaymentStatus.REFUNDED
+                if payment.status == PaymentStatus.PAID
+                else PaymentStatus.FAILED
+            )
             payment.raw_payload = {**(payment.raw_payload or {}), **payload}
             await self.db.commit()
 
+    @staticmethod
+    def _assert_amount_matches(payment: Payment, result: WebhookResult) -> None:
+        if result.amount is None:
+            return
+        if result.amount.quantize(_CENTS) != payment.amount.quantize(_CENTS):
+            logger.warning(
+                "Webhook amount %s does not match payment %s amount %s",
+                result.amount,
+                payment.id,
+                payment.amount,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook amount does not match payment amount",
+            )
+
     async def _find_by_trans_id(self, merchant_trans_id: str) -> Payment | None:
         return await self.db.scalar(
-            select(Payment).where(
-                Payment.merchant_trans_id == str(merchant_trans_id)
-            )
+            select(Payment).where(Payment.merchant_trans_id == str(merchant_trans_id))
         )
 
     async def _mark_paid(
