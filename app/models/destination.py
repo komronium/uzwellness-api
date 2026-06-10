@@ -1,29 +1,27 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
-    DateTime,
     Numeric,
     String,
     Uuid,
-    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
     from app.models.sanatorium import Sanatorium
 
 
-class Destination(Base):
+class Destination(TimestampMixin, Base):
     """Marketing tile on the homepage.
 
     A destination is curated by super_admin and spans the set of
@@ -54,16 +52,6 @@ class Destination(Base):
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true", index=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     sanatoriums: Mapped[list["Sanatorium"]] = relationship(back_populates="destination")

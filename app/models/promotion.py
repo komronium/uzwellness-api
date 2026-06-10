@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time
+from datetime import date, time
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -11,19 +11,18 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Date,
-    DateTime,
     ForeignKey,
     Numeric,
     Table,
     Time,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
@@ -85,7 +84,7 @@ def _enum(enum_cls: type[StrEnum], length: int) -> SQLEnum:
     )
 
 
-class Promotion(Base):
+class Promotion(TimestampMixin, Base):
     __tablename__ = "promotions"
     __table_args__ = (
         CheckConstraint(
@@ -155,16 +154,6 @@ class Promotion(Base):
     )
     pay_with_cost_per_sale_account: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     sanatorium: Mapped["Sanatorium"] = relationship()

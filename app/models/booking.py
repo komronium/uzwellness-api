@@ -19,13 +19,13 @@ from sqlalchemy import (
     Numeric,
     String,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 
@@ -96,7 +96,7 @@ def _booking_type_digit(booking_type: BookingType | str | None) -> str:
     }.get(value or "", "0")
 
 
-class Booking(Base):
+class Booking(TimestampMixin, Base):
     __tablename__ = "bookings"
     __table_args__ = (
         CheckConstraint(
@@ -288,16 +288,6 @@ class Booking(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL"), index=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     notifications: Mapped[list["Notification"]] = relationship(

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Uuid, func
+from sqlalchemy import Boolean, String, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 
-class Region(Base):
+class Region(TimestampMixin, Base):
     """Administrative viloyat. Fixed catalog of 14, seeded by migration.
 
     Admin picks one when creating a sanatorium. Filtering by `region_id` on
@@ -29,14 +29,4 @@ class Region(Base):
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true", index=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )

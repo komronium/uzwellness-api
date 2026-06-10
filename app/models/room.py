@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 from app.models.amenity import RoomAmenity
 
@@ -73,7 +74,7 @@ class WindowPolicy(StrEnum):
     NO_ROOMS_HAVE_WINDOWS = "no_rooms_have_windows"
 
 
-class Room(Base):
+class Room(TimestampMixin, Base):
     __tablename__ = "rooms"
     __table_args__ = (
         CheckConstraint("capacity > 0", name="ck_rooms_capacity_positive"),
@@ -214,16 +215,6 @@ class Room(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
 
     availability: Mapped[list["RoomAvailability"]] = relationship(
         back_populates="room",

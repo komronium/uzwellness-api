@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 
@@ -32,7 +33,7 @@ class PackageItemType(StrEnum):
     EXCURSION = "excursion"
 
 
-class Package(Base):
+class Package(TimestampMixin, Base):
     """A curated wellness journey: one sanatorium, one room category, one
     single price.
 
@@ -85,15 +86,6 @@ class Package(Base):
     )
     display_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0", index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     items: Mapped[list["PackageItem"]] = relationship(

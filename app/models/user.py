@@ -1,12 +1,12 @@
 import uuid
-from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, String, Uuid, func
+from sqlalchemy import Boolean, String, Uuid
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 
@@ -17,7 +17,7 @@ class UserRole(StrEnum):
     CUSTOMER = "customer"
 
 
-class User(Base):
+class User(TimestampMixin, Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
@@ -38,14 +38,3 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(32))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )

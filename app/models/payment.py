@@ -10,13 +10,13 @@ from sqlalchemy import (
     Numeric,
     String,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 
@@ -35,7 +35,7 @@ class PaymentStatus(StrEnum):
     REFUNDED = "refunded"
 
 
-class Payment(Base):
+class Payment(TimestampMixin, Base):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_payments_amount_non_negative"),
@@ -74,14 +74,5 @@ class Payment(Base):
     provider_payment_id: Mapped[str | None] = mapped_column(String(120), index=True)
     raw_payload: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

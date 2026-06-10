@@ -13,12 +13,12 @@ from sqlalchemy import (
     String,
     Text,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 
@@ -41,7 +41,7 @@ class TransferStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class TransferRequest(Base):
+class TransferRequest(TimestampMixin, Base):
     """Customer-requested airport transfer, coordinated by super_admin."""
 
     __tablename__ = "transfer_requests"
@@ -109,13 +109,3 @@ class TransferRequest(Base):
     admin_notes: Mapped[str | None] = mapped_column(Text)
 
     contact_phone: Mapped[str | None] = mapped_column(String(32))
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )

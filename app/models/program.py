@@ -1,32 +1,30 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    DateTime,
     ForeignKey,
     Integer,
     Numeric,
     SmallInteger,
     String,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 from app.models.amenity import Amenity, program_amenities
 
 
-class TreatmentFocus(Base):
+class TreatmentFocus(TimestampMixin, Base):
     __tablename__ = "treatment_focuses"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
@@ -44,15 +42,6 @@ class TreatmentFocus(Base):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true", index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     programs: Mapped[list["TreatmentProgram"]] = relationship(back_populates="focus")
@@ -74,7 +63,7 @@ class TreatmentGuestApplicability(StrEnum):
     CHILD = "child"
 
 
-class TreatmentProgram(Base):
+class TreatmentProgram(TimestampMixin, Base):
     __tablename__ = "treatment_programs"
     __table_args__ = (
         CheckConstraint(
@@ -217,15 +206,6 @@ class TreatmentProgram(Base):
     )
     display_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     amenities: Mapped[list[Amenity]] = relationship(

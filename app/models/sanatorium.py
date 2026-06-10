@@ -23,6 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ class HostType(StrEnum):
     PROFESSIONAL_HOST = "professional_host"
 
 
-class Sanatorium(Base):
+class Sanatorium(TimestampMixin, Base):
     __tablename__ = "sanatoriums"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
@@ -225,16 +226,6 @@ class Sanatorium(Base):
         Uuid,
         ForeignKey("users.id", ondelete="SET NULL"),
         index=True,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
     region: Mapped["Region | None"] = relationship(lazy="selectin")

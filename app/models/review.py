@@ -15,13 +15,13 @@ from sqlalchemy import (
     String,
     Text,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ class ReviewAppealStatus(StrEnum):
     REJECTED = "rejected"
 
 
-class SanatoriumReview(Base):
+class SanatoriumReview(TimestampMixin, Base):
     __tablename__ = "sanatorium_reviews"
     __table_args__ = (
         CheckConstraint("rating BETWEEN 1 AND 10", name="ck_reviews_rating_range"),
@@ -176,9 +176,6 @@ class SanatoriumReview(Base):
     appeal_reason: Mapped[str | None] = mapped_column(Text)
     appealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
 
     sanatorium: Mapped["Sanatorium"] = relationship(back_populates="reviews")
     booking: Mapped["Booking | None"] = relationship()

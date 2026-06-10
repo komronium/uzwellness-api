@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
-    DateTime,
     ForeignKey,
     Numeric,
     String,
     UniqueConstraint,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 from app.models.rate_plan import BoardType
 
@@ -37,7 +35,7 @@ def _enum(enum_cls: type[StrEnum], length: int) -> SQLEnum:
     )
 
 
-class SanatoriumStayOptionPrice(Base):
+class SanatoriumStayOptionPrice(TimestampMixin, Base):
     __tablename__ = "sanatorium_stay_option_prices"
     __table_args__ = (
         UniqueConstraint(
@@ -67,13 +65,4 @@ class SanatoriumStayOptionPrice(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="UZS")
     is_available: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )

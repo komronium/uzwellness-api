@@ -17,13 +17,13 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     Uuid,
-    func,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import TimestampMixin
 from app.core.ids import uuid7
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def _enum(enum_cls: type[StrEnum], length: int) -> SQLEnum:
     )
 
 
-class RatePlan(Base):
+class RatePlan(TimestampMixin, Base):
     __tablename__ = "rate_plans"
     __table_args__ = (
         CheckConstraint(
@@ -164,16 +164,6 @@ class RatePlan(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
     room: Mapped["Room"] = relationship(back_populates="rate_plans")
     amenities: Mapped[list["Amenity"]] = relationship(
         secondary=rate_plan_amenities,
@@ -187,7 +177,7 @@ class RatePlan(Base):
     )
 
 
-class RatePlanDateRule(Base):
+class RatePlanDateRule(TimestampMixin, Base):
     __tablename__ = "rate_plan_date_rules"
     __table_args__ = (
         UniqueConstraint("rate_plan_id", "date", name="uq_rate_plan_date_rule"),
@@ -233,15 +223,5 @@ class RatePlanDateRule(Base):
     max_advance_hours: Mapped[int | None] = mapped_column(Integer)
     min_stay_nights: Mapped[int | None] = mapped_column(Integer)
     min_stay_arrival_nights: Mapped[int | None] = mapped_column(Integer)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
 
     rate_plan: Mapped["RatePlan"] = relationship(back_populates="date_rules")
