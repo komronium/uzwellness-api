@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.api.deps import (
     IncludeTranslationsDep,
+    is_super_admin,
     LocaleDep,
-    OptionalUser,
     not_found,
+    OptionalUser,
     require_roles,
 )
 from app.core.pagination import LargePagination
@@ -46,7 +47,7 @@ async def list_destinations(
     active_only: bool = Query(default=True),
     destinations: DestinationService = Depends(get_destination_service),
 ) -> DestinationList | DestinationAdminList:
-    if current_user is None or current_user.role != UserRole.SUPER_ADMIN:
+    if not is_super_admin(current_user):
         active_only = True
     items, total = await destinations.list_all(
         limit=page.limit, offset=page.offset, active_only=active_only
@@ -79,9 +80,7 @@ async def list_destination_tiles(
     A destination with no approved sanatoriums returns count=0, price=null.
     """
     rate = await rates.get_usd_uzs()
-    rows = await destinations.list_tiles(
-        usd_uzs_rate=rate.rate if rate else None
-    )
+    rows = await destinations.list_tiles(usd_uzs_rate=rate.rate if rate else None)
     tiles = [
         DestinationTileRead.from_aggregate(
             destination,
@@ -109,9 +108,7 @@ async def get_destination(
         destination = await destinations.get_by_slug(slug_or_id)
     else:
         destination = await destinations.get_by_id(dest_uuid)
-    can_view_inactive = (
-        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
-    )
+    can_view_inactive = is_super_admin(current_user)
     if destination is None or (not destination.is_active and not can_view_inactive):
         raise not_found("Destination not found")
     if include_translations:
@@ -129,9 +126,7 @@ async def create_destination(
     payload: DestinationCreate,
     destinations: DestinationService = Depends(get_destination_service),
 ) -> DestinationAdminRead:
-    return DestinationAdminRead.model_validate(
-        await destinations.create(payload)
-    )
+    return DestinationAdminRead.model_validate(await destinations.create(payload))
 
 
 @router.post(

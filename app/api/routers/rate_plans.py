@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import (
     CurrentUser,
     IncludeTranslationsDep,
+    is_admin_or_above,
     LocaleDep,
-    OptionalUser,
     not_found,
+    OptionalUser,
     require_roles,
 )
 from app.core.pagination import Pagination
@@ -44,10 +45,7 @@ async def list_rate_plans(
     rate_plans: RatePlanService = Depends(get_rate_plan_service),
 ) -> RatePlanList | RatePlanAdminList | RatePlanAdminDirectoryList:
     if sanatorium_id is not None:
-        if current_user is None or current_user.role not in {
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        }:
+        if not is_admin_or_above(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

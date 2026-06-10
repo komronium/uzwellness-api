@@ -14,9 +14,10 @@ from fastapi import (
 
 from app.api.deps import (
     IncludeTranslationsDep,
+    is_super_admin,
     LocaleDep,
-    OptionalUser,
     not_found,
+    OptionalUser,
     require_roles,
 )
 from app.core.pagination import LargePagination
@@ -52,13 +53,13 @@ async def list_treatment_focuses(
     focuses: TreatmentFocusService = Depends(get_treatment_focus_service),
     active_only: bool = Query(default=True),
 ) -> TreatmentFocusList | TreatmentFocusAdminList:
-    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
+    super_admin = is_super_admin(current_user)
     items, total = await focuses.list_all(
         limit=page.limit,
         offset=page.offset,
-        active_only=active_only or not is_super_admin,
+        active_only=active_only or not super_admin,
     )
-    if include_translations and is_super_admin:
+    if include_translations and super_admin:
         return TreatmentFocusAdminList(
             items=[TreatmentFocusAdminRead.model_validate(item) for item in items],
             total=total,
@@ -92,7 +93,9 @@ async def list_treatment_focus_tiles(
     )
 
 
-@router.get("/{slug_or_id}", response_model=TreatmentFocusRead | TreatmentFocusAdminRead)
+@router.get(
+    "/{slug_or_id}", response_model=TreatmentFocusRead | TreatmentFocusAdminRead
+)
 async def get_treatment_focus(
     slug_or_id: Annotated[str, Path(min_length=1, max_length=120)],
     current_user: OptionalUser,
@@ -108,10 +111,10 @@ async def get_treatment_focus(
     if focus is None:
         raise not_found("Treatment focus not found")
 
-    is_super_admin = current_user is not None and current_user.role == UserRole.SUPER_ADMIN
-    if not focus.is_active and not is_super_admin:
+    super_admin = is_super_admin(current_user)
+    if not focus.is_active and not super_admin:
         raise not_found("Treatment focus not found")
-    if include_translations and is_super_admin:
+    if include_translations and super_admin:
         return TreatmentFocusAdminRead.model_validate(focus)
     return TreatmentFocusRead.from_obj(focus, locale)
 

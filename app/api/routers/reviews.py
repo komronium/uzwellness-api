@@ -4,7 +4,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, OptionalUser, not_found, require_roles
+from app.api.deps import (
+    CurrentUser,
+    OptionalUser,
+    is_admin_or_above,
+    not_found,
+    require_roles,
+)
 from app.core.pagination import Pagination
 from app.models.review import ReviewReplyStatus, ReviewSource
 from app.models.user import UserRole
@@ -40,10 +46,7 @@ async def list_reviews(
     current_user: OptionalUser = None,
     reviews: ReviewService = Depends(get_review_service),
 ) -> ReviewList:
-    is_admin = current_user is not None and current_user.role in (
-        UserRole.ADMIN,
-        UserRole.SUPER_ADMIN,
-    )
+    is_admin = is_admin_or_above(current_user)
     if sanatorium_id is None and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

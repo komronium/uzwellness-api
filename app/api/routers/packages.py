@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from app.api.deps import (
     CurrentUser,
     IncludeTranslationsDep,
+    is_super_admin,
     LocaleDep,
-    OptionalUser,
     not_found,
+    OptionalUser,
     require_roles,
 )
 from app.core.pagination import Pagination
@@ -48,20 +49,18 @@ async def list_packages(
     price_max: Decimal | None = Query(default=None, ge=0),
     packages: PackageService = Depends(get_package_service),
 ) -> PackageList | PackageAdminList:
-    is_super_admin = (
-        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
-    )
+    super_admin = is_super_admin(current_user)
     items, total = await packages.list_packages(
         limit=page.limit,
         offset=page.offset,
-        active_only=active_only or not is_super_admin,
+        active_only=active_only or not super_admin,
         sanatorium_id=sanatorium_id,
         duration_min=duration_min,
         duration_max=duration_max,
         price_min=price_min,
         price_max=price_max,
     )
-    if include_translations and is_super_admin:
+    if include_translations and super_admin:
         return PackageAdminList(
             items=[PackageAdminRead.model_validate(p) for p in items],
             total=total,
@@ -115,12 +114,10 @@ async def get_package(
         package = await packages.get_by_slug(package_id_or_slug)
     if package is None:
         raise not_found("Package not found")
-    is_super_admin = (
-        current_user is not None and current_user.role == UserRole.SUPER_ADMIN
-    )
-    if not package.is_active and not is_super_admin:
+    super_admin = is_super_admin(current_user)
+    if not package.is_active and not super_admin:
         raise not_found("Package not found")
-    if include_translations and is_super_admin:
+    if include_translations and super_admin:
         return PackageAdminRead.model_validate(package)
     return PackageRead.from_obj(package, locale)
 

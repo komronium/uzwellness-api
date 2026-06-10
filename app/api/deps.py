@@ -151,6 +151,7 @@ def not_found(detail: str = "Not found") -> HTTPException:
 
 def require_roles(
     *roles: UserRole,
+    detail: str = "Insufficient permissions",
 ) -> Callable[[User], Coroutine[Any, Any, User]]:
     allowed = set(roles)
 
@@ -158,8 +159,16 @@ def require_roles(
         if user.role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
+                detail=detail,
             )
         return user
 
     return _checker
+
+
+def is_admin_or_above(user: User | None) -> bool:
+    return user is not None and user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+
+
+def is_super_admin(user: User | None) -> bool:
+    return user is not None and user.role == UserRole.SUPER_ADMIN
