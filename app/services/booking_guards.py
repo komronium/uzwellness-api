@@ -7,11 +7,11 @@ paths cannot drift apart in locking or error semantics.
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import conflict, room_unavailable, sanatorium_not_bookable
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -22,10 +22,7 @@ ROOM_UNAVAILABLE_DETAIL = "Selected room is no longer available"
 async def approved_sanatorium(db: AsyncSession, sanatorium_id) -> Sanatorium:
     sanatorium = await db.get(Sanatorium, sanatorium_id)
     if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sanatorium is not available for booking",
-        )
+        raise sanatorium_not_bookable()
     return sanatorium
 
 
@@ -41,7 +38,7 @@ async def lock_room(
         stmt = stmt.options(selectinload(Room.price_periods))
     room = await db.scalar(stmt)
     if room is None or not room.is_active or room.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        raise room_unavailable(detail)
     return room
 
 
@@ -49,10 +46,7 @@ async def reserve_units(
     db: AsyncSession, room: Room, *, dates: list, rooms_count: int
 ) -> None:
     if room.inventory_count < 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Room has no inventory",
-        )
+        raise conflict("Room has no inventory")
     existing = {
         row.date: row
         for row in await db.scalars(
@@ -78,10 +72,7 @@ async def reserve_units(
             continue
         if row.units_blocked + row.units_booked + rooms_count > room.inventory_count:
             free = room.inventory_count - row.units_blocked - row.units_booked
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Only {max(free, 0)} unit(s) free on {target}, need {rooms_count}"
-                ),
+            raise conflict(
+                f"Only {max(free, 0)} unit(s) free on {target}, need {rooms_count}"
             )
         row.units_booked += rooms_count

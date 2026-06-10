@@ -3,11 +3,12 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 from fastapi import Depends
-from sqlalchemy import Numeric, case, cast, func, literal, literal_column, select
+from sqlalchemy import Numeric, case, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.pagination import count_query
 from app.core.policies import SanatoriumPolicy
 from app.models.amenity import SanatoriumAmenity
 from app.models.room import Room
@@ -149,13 +150,7 @@ class SanatoriumQueryService:
         ], total
 
     async def _count(self, stmt) -> int:
-        count_subquery = (
-            stmt.order_by(None)
-            .with_only_columns(literal_column("1"), maintain_column_froms=True)
-            .subquery()
-        )
-        total = await self.db.scalar(select(func.count()).select_from(count_subquery))
-        return total or 0
+        return await count_query(self.db, stmt)
 
     async def _reload(self, sanatorium_id: uuid.UUID) -> Sanatorium | None:
         return await self.db.scalar(
