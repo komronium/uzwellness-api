@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -299,6 +299,24 @@ def get_booking_service(
         RoomBookingFlow(db, pricing),
     ]
     return BookingService(db, flows)
+
+
+async def complete_past_bookings(db: AsyncSession) -> int:
+    """Move confirmed stays whose check_out has passed to COMPLETED.
+
+    Run daily (scripts/complete_bookings.py); pending bookings are left
+    untouched — an unpaid past booking is not a completed stay.
+    """
+    result = await db.execute(
+        update(Booking)
+        .where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.check_out < today_tashkent(),
+        )
+        .values(status=BookingStatus.COMPLETED)
+    )
+    await db.commit()
+    return result.rowcount or 0
 
 
 def _day_bounds(day: date) -> tuple[datetime, datetime]:
