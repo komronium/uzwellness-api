@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -10,6 +11,10 @@ from email.message import EmailMessage
 from app.core.config import settings
 
 logger = logging.getLogger("uzwellness.email")
+
+# SMTP is blocking; send off the event loop. Failures are logged, not raised
+# (same at-most-once guarantee as before).
+_smtp_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="smtp")
 
 
 @dataclass(slots=True)
@@ -25,7 +30,7 @@ class BookingEmailContext:
 
 def send_email(*, to: str, subject: str, body: str) -> None:
     if settings.EMAIL_BACKEND == "smtp" and settings.SMTP_HOST:
-        _send_smtp(to=to, subject=subject, body=body)
+        _smtp_executor.submit(_send_smtp, to=to, subject=subject, body=body)
         return
     logger.info("email[%s] → %s: %s\n%s", settings.EMAIL_BACKEND, to, subject, body)
 
