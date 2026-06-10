@@ -107,7 +107,7 @@ class RoomBookingFlow(BookingFlowBase):
     async def _quote(
         self, payload: BookingCreate, user: User, context: RoomBookingContext
     ) -> RoomBookingQuote:
-        room_and_board, promo_percent = self._room_and_board_total(payload, context)
+        room_and_board, promo_percent = self._room_and_board_total(context)
         extra_bed_records = await self._build_extra_beds(
             payload,
             context.room.sanatorium_id,
@@ -137,17 +137,19 @@ class RoomBookingFlow(BookingFlowBase):
         )
 
     def _room_and_board_total(
-        self, payload: BookingCreate, context: RoomBookingContext
+        self, context: RoomBookingContext
     ) -> tuple[Decimal, Decimal]:
+        # Board is already part of calculate_rate_plan_night_price (the same
+        # selling rate search and the admin calendar quote); adding it again
+        # here double-charged optional board.
         rate_plan = context.rate_plan
         rooms_total = self._rooms_total(context)
-        board_total = Decimal("0")
-        promo_percent = Decimal("0")
-        if rate_plan is not None:
-            if rate_plan.board_optional and rate_plan.board_price is not None:
-                board_total = rate_plan.board_price * payload.guests * context.nights
-            promo_percent = self._active_promo_percent(rate_plan)
-        return rooms_total + board_total, promo_percent
+        promo_percent = (
+            self._active_promo_percent(rate_plan)
+            if rate_plan is not None
+            else Decimal("0")
+        )
+        return rooms_total, promo_percent
 
     def _rooms_total(self, context: RoomBookingContext) -> Decimal:
         room = context.room
