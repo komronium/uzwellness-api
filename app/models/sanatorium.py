@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Time,
     Uuid,
     func,
+    literal_column,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -60,6 +62,30 @@ class HostType(StrEnum):
 
 class Sanatorium(TimestampMixin, Base):
     __tablename__ = "sanatoriums"
+    __table_args__ = (
+        Index("ix_sanatoriums_public_list", "status", "property_type", "created_at"),
+        Index("ix_sanatoriums_status_rating", "status", "avg_rating"),
+        Index(
+            "ix_sanatoriums_treatment_focuses_gin",
+            "treatment_focuses",
+            postgresql_using="gin",
+        ),
+        Index(
+            "ix_sanatoriums_name_gin",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "jsonb_path_ops"},
+        ),
+        *(
+            Index(
+                f"ix_sanatoriums_name_{lang}_text_trgm",
+                literal_column(f"(name ->> '{lang}'::text)"),
+                postgresql_using="gin",
+                postgresql_ops={f"(name ->> '{lang}'::text)": "gin_trgm_ops"},
+            )
+            for lang in ("uz", "ru", "en")
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
 

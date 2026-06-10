@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Index,
     Date,
     DateTime,
     ForeignKey,
@@ -77,6 +78,7 @@ class WindowPolicy(StrEnum):
 class Room(TimestampMixin, Base):
     __tablename__ = "rooms"
     __table_args__ = (
+        Index("ix_rooms_search_available", "sanatorium_id", "is_active", "base_price"),
         CheckConstraint("capacity > 0", name="ck_rooms_capacity_positive"),
         CheckConstraint(
             "inventory_count >= 0", name="ck_rooms_inventory_count_non_negative"

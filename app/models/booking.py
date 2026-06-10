@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Index,
     Date,
     DateTime,
     ForeignKey,
@@ -99,6 +100,7 @@ def _booking_type_digit(booking_type: BookingType | str | None) -> str:
 class Booking(TimestampMixin, Base):
     __tablename__ = "bookings"
     __table_args__ = (
+        Index("ix_bookings_user_created", "user_id", "created_at"),
         CheckConstraint(
             "(booking_type = 'session' AND check_out >= check_in) "
             "OR (booking_type <> 'session' AND check_out > check_in)",
