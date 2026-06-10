@@ -23,7 +23,9 @@ class ClickGateway:
         merchant_trans_id: str,
     ) -> str:
         if not settings.CLICK_SERVICE_ID:
-            return f"{settings.CLICK_CHECKOUT_URL}?merchant_trans_id={merchant_trans_id}"
+            return (
+                f"{settings.CLICK_CHECKOUT_URL}?merchant_trans_id={merchant_trans_id}"
+            )
         query = urlencode(
             {
                 "service_id": settings.CLICK_SERVICE_ID,
@@ -34,13 +36,11 @@ class ClickGateway:
         )
         return f"{settings.CLICK_CHECKOUT_URL}?{query}"
 
-    def verify_webhook(
-        self, *, payload: dict, headers: Mapping[str, str]
-    ) -> bool:
+    def verify_webhook(self, *, payload: dict, headers: Mapping[str, str]) -> bool:
         secret = settings.CLICK_SECRET_KEY
         sign_string = payload.get("sign_string")
         if not secret or not sign_string:
-            return True
+            return False
         expected = self._sign(payload, secret)
         return hmac.compare_digest(sign_string, expected)
 

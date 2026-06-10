@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -62,6 +63,55 @@ def _enum(enum_cls: type[StrEnum], length: int) -> SQLEnum:
 
 class RatePlan(Base):
     __tablename__ = "rate_plans"
+    __table_args__ = (
+        CheckConstraint(
+            "board_price IS NULL OR board_price >= 0",
+            name="ck_rate_plans_board_price_non_negative",
+        ),
+        CheckConstraint(
+            "board_guests IS NULL OR board_guests > 0",
+            name="ck_rate_plans_board_guests_positive",
+        ),
+        CheckConstraint(
+            "free_cancellation_days IS NULL OR free_cancellation_days >= 0",
+            name="ck_rate_plans_free_cancellation_days_non_negative",
+        ),
+        CheckConstraint(
+            "cancellation_penalty_percent IS NULL "
+            "OR cancellation_penalty_percent BETWEEN 0 AND 100",
+            name="ck_rate_plans_cancellation_penalty_percent_range",
+        ),
+        CheckConstraint(
+            "cancellation_penalty_amount IS NULL OR cancellation_penalty_amount >= 0",
+            name="ck_rate_plans_cancellation_penalty_amount_non_negative",
+        ),
+        CheckConstraint(
+            "price_adjustment_percent IS NULL "
+            "OR price_adjustment_percent BETWEEN -100 AND 100",
+            name="ck_rate_plans_price_adjustment_percent_range",
+        ),
+        CheckConstraint(
+            "promo_percent IS NULL OR promo_percent BETWEEN 0 AND 100",
+            name="ck_rate_plans_promo_percent_range",
+        ),
+        CheckConstraint(
+            "promo_ends_at IS NULL OR promo_starts_at IS NULL "
+            "OR promo_ends_at >= promo_starts_at",
+            name="ck_rate_plans_promo_date_order",
+        ),
+        CheckConstraint(
+            "min_nights IS NULL OR min_nights > 0",
+            name="ck_rate_plans_min_nights_positive",
+        ),
+        CheckConstraint(
+            "max_nights IS NULL OR max_nights > 0",
+            name="ck_rate_plans_max_nights_positive",
+        ),
+        CheckConstraint(
+            "max_nights IS NULL OR min_nights IS NULL OR max_nights >= min_nights",
+            name="ck_rate_plans_nights_order",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(
@@ -141,6 +191,31 @@ class RatePlanDateRule(Base):
     __tablename__ = "rate_plan_date_rules"
     __table_args__ = (
         UniqueConstraint("rate_plan_id", "date", name="uq_rate_plan_date_rule"),
+        CheckConstraint(
+            "selling_rate IS NULL OR selling_rate >= 0",
+            name="ck_rate_plan_date_rules_selling_rate_non_negative",
+        ),
+        CheckConstraint(
+            "min_advance_hours IS NULL OR min_advance_hours >= 0",
+            name="ck_rate_plan_date_rules_min_advance_non_negative",
+        ),
+        CheckConstraint(
+            "max_advance_hours IS NULL OR max_advance_hours >= 0",
+            name="ck_rate_plan_date_rules_max_advance_non_negative",
+        ),
+        CheckConstraint(
+            "max_advance_hours IS NULL OR min_advance_hours IS NULL "
+            "OR max_advance_hours >= min_advance_hours",
+            name="ck_rate_plan_date_rules_advance_order",
+        ),
+        CheckConstraint(
+            "min_stay_nights IS NULL OR min_stay_nights > 0",
+            name="ck_rate_plan_date_rules_min_stay_positive",
+        ),
+        CheckConstraint(
+            "min_stay_arrival_nights IS NULL OR min_stay_arrival_nights > 0",
+            name="ck_rate_plan_date_rules_min_stay_arrival_positive",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)

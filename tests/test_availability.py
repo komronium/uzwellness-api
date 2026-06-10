@@ -33,6 +33,27 @@ class TestRoomCRUD:
         with pytest.raises(ValueError, match="2-4"):
             RoomUpdate(floor="2/4")
 
+    async def test_room_size_zero_is_rejected_before_database(
+        self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
+    ):
+        san = await make_sanatorium(
+            db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+        )
+        resp = await client.post(
+            "/api/rooms",
+            json={
+                "sanatorium_id": str(san.id),
+                "name": {"uz": "Standart", "ru": "Стандарт", "en": "Standard"},
+                "capacity": 2,
+                "base_price": "150.00",
+                "base_currency": "USD",
+                "size_sqm": 0,
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 422
+
     async def test_admin_creates_room_for_own_sanatorium(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
     ):

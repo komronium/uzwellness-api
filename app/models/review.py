@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -54,6 +55,37 @@ class ReviewAppealStatus(StrEnum):
 
 class SanatoriumReview(Base):
     __tablename__ = "sanatorium_reviews"
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 10", name="ck_reviews_rating_range"),
+        CheckConstraint(
+            "cleanliness IS NULL OR cleanliness BETWEEN 1 AND 10",
+            name="ck_reviews_cleanliness_range",
+        ),
+        CheckConstraint(
+            "amenities IS NULL OR amenities BETWEEN 1 AND 10",
+            name="ck_reviews_amenities_range",
+        ),
+        CheckConstraint(
+            "location IS NULL OR location BETWEEN 1 AND 10",
+            name="ck_reviews_location_range",
+        ),
+        CheckConstraint(
+            "service IS NULL OR service BETWEEN 1 AND 10",
+            name="ck_reviews_service_range",
+        ),
+        CheckConstraint(
+            "treatment IS NULL OR treatment BETWEEN 1 AND 10",
+            name="ck_reviews_treatment_range",
+        ),
+        CheckConstraint(
+            "value IS NULL OR value BETWEEN 1 AND 10",
+            name="ck_reviews_value_range",
+        ),
+        CheckConstraint(
+            "food IS NULL OR food BETWEEN 1 AND 10",
+            name="ck_reviews_food_range",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(

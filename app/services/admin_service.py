@@ -2,13 +2,15 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import Depends
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.utils import pick_locale
 from app.models.booking import Booking, BookingStatus
 from app.models.exchange_rate import ExchangeRate
+from app.models.package import Package
+from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
@@ -45,9 +47,7 @@ class AdminService:
             select(func.count(User.id)).where(User.created_at >= month_start)
         )
 
-        total_sanatoriums = await self.db.scalar(
-            select(func.count(Sanatorium.id))
-        )
+        total_sanatoriums = await self.db.scalar(select(func.count(Sanatorium.id)))
         pending_sanatoriums = await self.db.scalar(
             select(func.count(Sanatorium.id)).where(
                 Sanatorium.status == SanatoriumStatus.PENDING
@@ -93,29 +93,27 @@ class AdminService:
         return Decimal(value).quantize(Decimal("0.01"))
 
     async def _top_sanatoriums(self, rate: Decimal, *, limit: int) -> list[dict]:
-        usd_expr = self._usd_expr(rate)
-        room_subq = (
+        booking_revenue = self._booking_revenue_by_sanatorium(rate).subquery()
+        stats = (
             select(
-                Room.sanatorium_id.label("sid"),
-                func.count(Booking.id).label("cnt"),
-                func.coalesce(func.sum(usd_expr), 0).label("rev"),
+                booking_revenue.c.sid,
+                func.count(booking_revenue.c.booking_id).label("cnt"),
+                func.coalesce(func.sum(booking_revenue.c.rev), 0).label("rev"),
             )
-            .join(Booking, Booking.room_id == Room.id)
-            .where(Booking.status != BookingStatus.CANCELLED)
-            .group_by(Room.sanatorium_id)
+            .group_by(booking_revenue.c.sid)
             .subquery()
         )
         stmt = (
             select(
                 Sanatorium.id,
                 Sanatorium.name,
-                func.coalesce(room_subq.c.cnt, 0).label("booking_count"),
-                func.coalesce(room_subq.c.rev, 0).label("revenue"),
+                func.coalesce(stats.c.cnt, 0).label("booking_count"),
+                func.coalesce(stats.c.rev, 0).label("revenue"),
             )
-            .outerjoin(room_subq, Sanatorium.id == room_subq.c.sid)
+            .outerjoin(stats, Sanatorium.id == stats.c.sid)
             .order_by(
-                func.coalesce(room_subq.c.rev, 0).desc(),
-                func.coalesce(room_subq.c.cnt, 0).desc(),
+                func.coalesce(stats.c.rev, 0).desc(),
+                func.coalesce(stats.c.cnt, 0).desc(),
             )
             .limit(limit)
         )
@@ -129,6 +127,47 @@ class AdminService:
             }
             for row in rows
         ]
+
+    def _booking_revenue_by_sanatorium(self, rate: Decimal):
+        active = Booking.status != BookingStatus.CANCELLED
+        usd_expr = self._usd_expr(rate)
+        room_bookings = (
+            select(
+                Room.sanatorium_id.label("sid"),
+                Booking.id.label("booking_id"),
+                usd_expr.label("rev"),
+            )
+            .join(Room, Booking.room_id == Room.id)
+            .where(active, Booking.room_id.is_not(None))
+        )
+        program_bookings = (
+            select(
+                TreatmentProgram.sanatorium_id.label("sid"),
+                Booking.id.label("booking_id"),
+                usd_expr.label("rev"),
+            )
+            .join(TreatmentProgram, Booking.program_id == TreatmentProgram.id)
+            .where(
+                active,
+                Booking.room_id.is_(None),
+                Booking.program_id.is_not(None),
+            )
+        )
+        package_bookings = (
+            select(
+                Package.sanatorium_id.label("sid"),
+                Booking.id.label("booking_id"),
+                usd_expr.label("rev"),
+            )
+            .join(Package, Booking.package_id == Package.id)
+            .where(
+                active,
+                Booking.room_id.is_(None),
+                Booking.program_id.is_(None),
+                Booking.package_id.is_not(None),
+            )
+        )
+        return union_all(room_bookings, program_bookings, package_bookings)
 
     async def _monthly_revenue(self, rate: Decimal) -> list[dict]:
         usd_expr = self._usd_expr(rate)

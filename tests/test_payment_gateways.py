@@ -1,4 +1,5 @@
 """Unit tests for payment-gateway strategies (no DB)."""
+
 from __future__ import annotations
 
 import base64
@@ -67,10 +68,10 @@ class TestPaymeGateway:
         # Payme expects tiyins (×100): 100 UZS = 10000 tiyin
         assert "a=10000" in decoded
 
-    def test_verify_webhook_skipped_when_no_secret(self):
+    def test_verify_webhook_rejects_when_no_secret(self):
         settings.PAYME_MERCHANT_KEY = ""
         gw = PaymeGateway()
-        assert gw.verify_webhook(payload={}, headers={}) is True
+        assert gw.verify_webhook(payload={}, headers={}) is False
 
     def test_verify_webhook_accepts_correct_basic_auth(self):
         settings.PAYME_MERCHANT_KEY = "topsecret"
@@ -109,6 +110,7 @@ class TestPaymeGateway:
     def test_parse_webhook_missing_id_raises(self):
         gw = PaymeGateway()
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc:
             gw.parse_webhook(payload={"params": {}})
         assert exc.value.status_code == 400
@@ -137,10 +139,17 @@ class TestClickGateway:
         assert "amount=250.50" in url
         assert "transaction_param=abc" in url
 
-    def test_verify_webhook_skipped_when_no_secret(self):
+    def test_verify_webhook_rejects_when_no_secret(self):
         settings.CLICK_SECRET_KEY = ""
         gw = ClickGateway()
-        assert gw.verify_webhook(payload={"sign_string": "anything"}, headers={}) is True
+        assert (
+            gw.verify_webhook(payload={"sign_string": "anything"}, headers={}) is False
+        )
+
+    def test_verify_webhook_rejects_missing_signature(self):
+        settings.CLICK_SECRET_KEY = "secret"
+        gw = ClickGateway()
+        assert gw.verify_webhook(payload={}, headers={}) is False
 
     def test_verify_webhook_accepts_correct_signature(self):
         settings.CLICK_SECRET_KEY = "secret"
@@ -154,10 +163,10 @@ class TestClickGateway:
             "sign_time": "2026-01-01 00:00:00",
         }
         # Construct expected MD5 the same way the gateway does
-        parts = [
-            "1", "svc", "secret", "mt1", "100", "1", "2026-01-01 00:00:00"
-        ]
-        expected = hashlib.md5("".join(parts).encode(), usedforsecurity=False).hexdigest()
+        parts = ["1", "svc", "secret", "mt1", "100", "1", "2026-01-01 00:00:00"]
+        expected = hashlib.md5(
+            "".join(parts).encode(), usedforsecurity=False
+        ).hexdigest()
         payload["sign_string"] = expected
         assert gw.verify_webhook(payload=payload, headers={}) is True
 
@@ -205,6 +214,7 @@ class TestClickGateway:
     def test_parse_webhook_missing_id_raises(self):
         gw = ClickGateway()
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc:
             gw.parse_webhook(payload={})
         assert exc.value.status_code == 400

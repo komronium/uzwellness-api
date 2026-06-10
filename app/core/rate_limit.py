@@ -24,7 +24,7 @@ def _client_ip(request: Request) -> str:
 
 def _is_trusted_proxy(request: Request) -> bool:
     if not settings.TRUSTED_PROXY_IPS:
-        return True
+        return False
     peer = request.client.host if request.client else None
     return peer in settings.TRUSTED_PROXY_IPS
 

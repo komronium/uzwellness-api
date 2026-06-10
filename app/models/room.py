@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -74,6 +75,40 @@ class WindowPolicy(StrEnum):
 
 class Room(Base):
     __tablename__ = "rooms"
+    __table_args__ = (
+        CheckConstraint("capacity > 0", name="ck_rooms_capacity_positive"),
+        CheckConstraint(
+            "inventory_count >= 0", name="ck_rooms_inventory_count_non_negative"
+        ),
+        CheckConstraint("base_price >= 0", name="ck_rooms_base_price_non_negative"),
+        CheckConstraint(
+            "base_price_weekend IS NULL OR base_price_weekend >= 0",
+            name="ck_rooms_base_price_weekend_non_negative",
+        ),
+        CheckConstraint(
+            "markup_percent >= 0", name="ck_rooms_markup_percent_non_negative"
+        ),
+        CheckConstraint(
+            "discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100",
+            name="ck_rooms_discount_percent_range",
+        ),
+        CheckConstraint("min_nights > 0", name="ck_rooms_min_nights_positive"),
+        CheckConstraint(
+            "size_sqm IS NULL OR size_sqm > 0", name="ck_rooms_size_sqm_positive"
+        ),
+        CheckConstraint(
+            "max_adults IS NULL OR max_adults >= 0",
+            name="ck_rooms_max_adults_non_negative",
+        ),
+        CheckConstraint(
+            "max_children IS NULL OR max_children >= 0",
+            name="ck_rooms_max_children_non_negative",
+        ),
+        CheckConstraint(
+            "max_child_rate_children IS NULL OR max_child_rate_children >= 0",
+            name="ck_rooms_max_child_rate_children_non_negative",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
@@ -224,6 +259,22 @@ class Room(Base):
 
 class RoomPricePeriod(Base):
     __tablename__ = "room_price_periods"
+    __table_args__ = (
+        CheckConstraint(
+            "date_to >= date_from", name="ck_room_price_periods_date_order"
+        ),
+        CheckConstraint(
+            "base_price >= 0", name="ck_room_price_periods_base_price_non_negative"
+        ),
+        CheckConstraint(
+            "base_price_weekend IS NULL OR base_price_weekend >= 0",
+            name="ck_room_price_periods_base_price_weekend_non_negative",
+        ),
+        CheckConstraint(
+            "discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100",
+            name="ck_room_price_periods_discount_percent_range",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     room_id: Mapped[uuid.UUID] = mapped_column(

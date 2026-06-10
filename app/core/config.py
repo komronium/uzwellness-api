@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn
+from pydantic import PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +65,30 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 3600
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        if self.ENVIRONMENT != "production":
+            return self
+
+        errors: list[str] = []
+        if self.DEBUG:
+            errors.append("DEBUG must be false in production")
+        if len(self.JWT_SECRET_KEY) < 32:
+            errors.append("JWT_SECRET_KEY must be at least 32 characters in production")
+        if self.PAYME_MERCHANT_ID and not self.PAYME_MERCHANT_KEY:
+            errors.append("PAYME_MERCHANT_KEY is required when Payme is enabled")
+        if self.CLICK_SERVICE_ID and not self.CLICK_SECRET_KEY:
+            errors.append("CLICK_SECRET_KEY is required when Click is enabled")
+        if self.EMAIL_BACKEND == "smtp" and (
+            not self.SMTP_HOST or not self.SMTP_USERNAME or not self.SMTP_PASSWORD
+        ):
+            errors.append(
+                "SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD are required for SMTP"
+            )
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
 
 @lru_cache

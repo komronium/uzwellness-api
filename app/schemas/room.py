@@ -256,7 +256,7 @@ class RoomCreate(BaseModel):
     description: Translations = Field(default_factory=Translations)
     amenity_ids: list[uuid.UUID] = Field(default_factory=list)
     amenity_items: list[RoomAmenityItem] = Field(default_factory=list)
-    size_sqm: int | None = Field(default=None, ge=0)
+    size_sqm: int | None = Field(default=None, ge=1)
     room_size_policy: RoomSizePolicy = RoomSizePolicy.SAME_SIZE
     floor: str | None = Field(default=None, max_length=20)
     beds: list[BeddingOption] = Field(default_factory=list)
@@ -291,7 +291,7 @@ class RoomUpdate(BaseModel):
     description: Translations | None = None
     amenity_ids: list[uuid.UUID] | None = None
     amenity_items: list[RoomAmenityItem] | None = None
-    size_sqm: int | None = Field(default=None, ge=0)
+    size_sqm: int | None = Field(default=None, ge=1)
     room_size_policy: RoomSizePolicy | None = None
     floor: str | None = Field(default=None, max_length=20)
     beds: list[BeddingOption] | None = None

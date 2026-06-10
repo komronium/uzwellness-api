@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -27,6 +28,15 @@ if TYPE_CHECKING:
 
 class ExtraBedConfig(Base):
     __tablename__ = "extra_bed_configs"
+    __table_args__ = (
+        CheckConstraint(
+            "price_per_night >= 0",
+            name="ck_extra_bed_configs_price_per_night_non_negative",
+        ),
+        CheckConstraint(
+            "max_count > 0", name="ck_extra_bed_configs_max_count_positive"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(
@@ -54,6 +64,16 @@ class ExtraBedConfig(Base):
 
 class BookingExtraBed(Base):
     __tablename__ = "booking_extra_beds"
+    __table_args__ = (
+        CheckConstraint(
+            "price_per_night_snapshot >= 0",
+            name="ck_booking_extra_beds_price_per_night_non_negative",
+        ),
+        CheckConstraint("count > 0", name="ck_booking_extra_beds_count_positive"),
+        CheckConstraint(
+            "total_price >= 0", name="ck_booking_extra_beds_total_price_non_negative"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     booking_id: Mapped[uuid.UUID] = mapped_column(

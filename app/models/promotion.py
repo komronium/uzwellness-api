@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -86,6 +87,22 @@ def _enum(enum_cls: type[StrEnum], length: int) -> SQLEnum:
 
 class Promotion(Base):
     __tablename__ = "promotions"
+    __table_args__ = (
+        CheckConstraint(
+            "discount_percent BETWEEN 0 AND 100",
+            name="ck_promotions_discount_percent_range",
+        ),
+        CheckConstraint(
+            "booking_date_to IS NULL OR booking_date_from IS NULL "
+            "OR booking_date_to >= booking_date_from",
+            name="ck_promotions_booking_date_order",
+        ),
+        CheckConstraint(
+            "stay_date_to IS NULL OR stay_date_from IS NULL "
+            "OR stay_date_to >= stay_date_from",
+            name="ck_promotions_stay_date_order",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(

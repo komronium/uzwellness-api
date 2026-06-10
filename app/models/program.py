@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -75,6 +76,53 @@ class TreatmentGuestApplicability(StrEnum):
 
 class TreatmentProgram(Base):
     __tablename__ = "treatment_programs"
+    __table_args__ = (
+        CheckConstraint(
+            "min_nights IS NULL OR min_nights > 0",
+            name="ck_treatment_programs_min_nights_positive",
+        ),
+        CheckConstraint(
+            "max_nights IS NULL OR max_nights > 0",
+            name="ck_treatment_programs_max_nights_positive",
+        ),
+        CheckConstraint(
+            "max_nights IS NULL OR min_nights IS NULL OR max_nights >= min_nights",
+            name="ck_treatment_programs_nights_order",
+        ),
+        CheckConstraint(
+            "duration_minutes IS NULL OR duration_minutes > 0",
+            name="ck_treatment_programs_duration_positive",
+        ),
+        CheckConstraint(
+            "price IS NULL OR price >= 0",
+            name="ck_treatment_programs_price_non_negative",
+        ),
+        CheckConstraint(
+            "group_size_min IS NULL OR group_size_min > 0",
+            name="ck_treatment_programs_group_size_min_positive",
+        ),
+        CheckConstraint(
+            "group_size_max IS NULL OR group_size_max > 0",
+            name="ck_treatment_programs_group_size_max_positive",
+        ),
+        CheckConstraint(
+            "group_size_max IS NULL OR group_size_min IS NULL "
+            "OR group_size_max >= group_size_min",
+            name="ck_treatment_programs_group_size_order",
+        ),
+        CheckConstraint(
+            "medical_exam_count >= 0",
+            name="ck_treatment_programs_medical_exam_count_non_negative",
+        ),
+        CheckConstraint(
+            "medical_procedure_count >= 0",
+            name="ck_treatment_programs_medical_procedure_count_non_negative",
+        ),
+        CheckConstraint(
+            "sauna_entries IS NULL OR sauna_entries >= 0",
+            name="ck_treatment_programs_sauna_entries_non_negative",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     sanatorium_id: Mapped[uuid.UUID] = mapped_column(

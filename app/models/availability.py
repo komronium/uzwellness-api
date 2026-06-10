@@ -5,6 +5,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     ForeignKey,
     Integer,
@@ -24,6 +25,12 @@ class RoomAvailability(Base):
     __tablename__ = "room_availability"
     __table_args__ = (
         UniqueConstraint("room_id", "date", name="uq_room_availability_date"),
+        CheckConstraint(
+            "units_blocked >= 0", name="ck_room_availability_units_blocked_non_negative"
+        ),
+        CheckConstraint(
+            "units_booked >= 0", name="ck_room_availability_units_booked_non_negative"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)

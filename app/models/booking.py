@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -97,6 +98,64 @@ def _booking_type_digit(booking_type: BookingType | str | None) -> str:
 
 class Booking(Base):
     __tablename__ = "bookings"
+    __table_args__ = (
+        CheckConstraint(
+            "(booking_type = 'session' AND check_out >= check_in) "
+            "OR (booking_type <> 'session' AND check_out > check_in)",
+            name="ck_bookings_date_order",
+        ),
+        CheckConstraint("guests > 0", name="ck_bookings_guests_positive"),
+        CheckConstraint(
+            "adults IS NULL OR adults >= 0", name="ck_bookings_adults_non_negative"
+        ),
+        CheckConstraint(
+            "children IS NULL OR children >= 0",
+            name="ck_bookings_children_non_negative",
+        ),
+        CheckConstraint("rooms_count > 0", name="ck_bookings_rooms_count_positive"),
+        CheckConstraint(
+            "final_price >= 0", name="ck_bookings_final_price_non_negative"
+        ),
+        CheckConstraint(
+            "original_price IS NULL OR original_price >= 0",
+            name="ck_bookings_original_price_non_negative",
+        ),
+        CheckConstraint(
+            "commission_snapshot IS NULL OR commission_snapshot >= 0",
+            name="ck_bookings_commission_non_negative",
+        ),
+        CheckConstraint(
+            "commission_percent_snapshot IS NULL "
+            "OR commission_percent_snapshot BETWEEN 0 AND 100",
+            name="ck_bookings_commission_percent_range",
+        ),
+        CheckConstraint(
+            "agent_discount_percent_snapshot IS NULL "
+            "OR agent_discount_percent_snapshot BETWEEN 0 AND 100",
+            name="ck_bookings_agent_discount_percent_range",
+        ),
+        CheckConstraint(
+            "free_cancellation_days IS NULL OR free_cancellation_days >= 0",
+            name="ck_bookings_free_cancellation_days_non_negative",
+        ),
+        CheckConstraint(
+            "cancellation_penalty_percent IS NULL "
+            "OR cancellation_penalty_percent BETWEEN 0 AND 100",
+            name="ck_bookings_cancellation_penalty_percent_range",
+        ),
+        CheckConstraint(
+            "cancellation_penalty_amount IS NULL OR cancellation_penalty_amount >= 0",
+            name="ck_bookings_cancellation_penalty_amount_non_negative",
+        ),
+        CheckConstraint(
+            "promo_percent_snapshot IS NULL OR promo_percent_snapshot BETWEEN 0 AND 100",
+            name="ck_bookings_promo_percent_range",
+        ),
+        CheckConstraint(
+            "board_guests IS NULL OR board_guests > 0",
+            name="ck_bookings_board_guests_positive",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     code: Mapped[str] = mapped_column(

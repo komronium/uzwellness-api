@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -44,6 +45,10 @@ class Package(Base):
     """
 
     __tablename__ = "packages"
+    __table_args__ = (
+        CheckConstraint("duration_nights > 0", name="ck_packages_duration_positive"),
+        CheckConstraint("base_price >= 0", name="ck_packages_base_price_non_negative"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     slug: Mapped[str] = mapped_column(
@@ -108,6 +113,12 @@ class PackageItem(Base):
     """
 
     __tablename__ = "package_items"
+    __table_args__ = (
+        CheckConstraint(
+            "extra_price IS NULL OR extra_price >= 0",
+            name="ck_package_items_extra_price_non_negative",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     package_id: Mapped[uuid.UUID] = mapped_column(

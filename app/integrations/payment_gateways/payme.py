@@ -37,7 +37,7 @@ class PaymeGateway:
     def verify_webhook(self, *, payload: dict, headers: Mapping[str, str]) -> bool:
         secret = settings.PAYME_MERCHANT_KEY
         if not secret:
-            return True
+            return False
         auth_header = headers.get("authorization") or headers.get("Authorization")
         if not auth_header or not auth_header.lower().startswith("basic "):
             return False
