@@ -1,4 +1,5 @@
 """Unit tests for authorization policies (no DB; just stub objects)."""
+
 from __future__ import annotations
 
 import uuid
@@ -102,10 +103,7 @@ class TestBookingPolicy:
         # Admin without ownership context can't cancel — fail-closed default.
         assert BookingPolicy.can_cancel(b, U_ADM_OWN) is False
         # With ownership confirmed by caller, admin can cancel.
-        assert (
-            BookingPolicy.can_cancel(b, U_ADM_OWN, admin_owns_target=True)
-            is True
-        )
+        assert BookingPolicy.can_cancel(b, U_ADM_OWN, admin_owns_target=True) is True
 
     def test_admin_cannot_cancel_other_sanatorium(self):
         b = _B(user_id=U_CUST.id, status=BookingStatus.CONFIRMED)

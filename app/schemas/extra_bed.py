@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.currency import CurrencyConverter
 from app.core.utils import pick_locale
 from app.schemas.common import Page, Translations, TranslationsCreate
 
@@ -35,12 +36,23 @@ class ExtraBedConfigRead(BaseModel):
     description: str
     price_per_night: Decimal
     currency: str
+    display_price_per_night: Decimal | None = None
+    display_currency: str | None = None
     max_count: int
     is_active: bool
     created_at: datetime
 
     @classmethod
-    def from_obj(cls, obj, locale: str) -> "ExtraBedConfigRead":
+    def from_obj(
+        cls, obj, locale: str, converter: CurrencyConverter | None = None
+    ) -> "ExtraBedConfigRead":
+        display_price_per_night = None
+        display_currency = None
+        if converter is not None:
+            display_price_per_night = converter.convert(
+                obj.price_per_night, obj.currency
+            )
+            display_currency = converter.target
         return cls(
             id=obj.id,
             sanatorium_id=obj.sanatorium_id,
@@ -48,6 +60,8 @@ class ExtraBedConfigRead(BaseModel):
             description=pick_locale(obj.description, locale),
             price_per_night=obj.price_per_night,
             currency=obj.currency,
+            display_price_per_night=display_price_per_night,
+            display_currency=display_currency,
             max_count=obj.max_count,
             is_active=obj.is_active,
             created_at=obj.created_at,

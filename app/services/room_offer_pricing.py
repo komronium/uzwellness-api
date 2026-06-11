@@ -12,13 +12,11 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 
+from app.core.currency import CurrencyConverter
 from app.core.pricing import (
     calculate_rate_plan_night_price,
     calculate_stay_total,
-    convert_to_usd,
-    convert_to_uzs,
 )
-from app.models.exchange_rate import ExchangeRate
 from app.models.program import TreatmentProgram
 from app.models.rate_plan import BoardType, RatePlan
 from app.models.room import Room
@@ -42,21 +40,6 @@ ZERO = Decimal("0")
 StayOptionPrices = dict[
     tuple[StayOptionGuestType, BoardType, bool], SanatoriumStayOptionPrice
 ]
-
-
-def convert_currency(
-    amount: Decimal,
-    source_currency: str,
-    target_currency: str,
-    exchange_rate: ExchangeRate | None,
-) -> Decimal | None:
-    if source_currency == target_currency:
-        return amount.quantize(CENTS, ROUND_HALF_UP)
-    if target_currency == "UZS":
-        return convert_to_uzs(amount, source_currency, exchange_rate)
-    if target_currency == "USD":
-        return convert_to_usd(amount, source_currency, exchange_rate)
-    return None
 
 
 def room_total(
@@ -108,7 +91,7 @@ def stay_option_total(
     requested_rooms: list[RoomOfferRequestedRoom],
     options: dict[GuestKey, GuestStayChoice],
     nights: int,
-    exchange_rate: ExchangeRate | None,
+    converter: CurrencyConverter,
     currency: str,
 ) -> Decimal:
     if not prices:
@@ -118,9 +101,7 @@ def stay_option_total(
         for guest in guests(requested_room):
             option = guest_option(options, room_index, guest.guest_index)
             price = stay_option_price(prices, guest, option)
-            converted = convert_currency(
-                price.price_delta, price.currency, currency, exchange_rate
-            )
+            converted = converter.convert(price.price_delta, price.currency, currency)
             if converted is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -136,7 +117,7 @@ def treatment_total(
     options: dict[GuestKey, GuestStayChoice],
     treatments: list[TreatmentProgram],
     treatment_by_guest: dict[GuestKey, TreatmentProgram],
-    exchange_rate: ExchangeRate | None,
+    converter: CurrencyConverter,
     currency: str,
 ) -> Decimal:
     total = ZERO
@@ -148,9 +129,7 @@ def treatment_total(
             )
             if program is None or program.price is None or program.currency is None:
                 continue
-            converted = convert_currency(
-                program.price, program.currency, currency, exchange_rate
-            )
+            converted = converter.convert(program.price, program.currency, currency)
             if converted is not None:
                 total += converted
     return total.quantize(CENTS, ROUND_HALF_UP)

@@ -4,7 +4,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, LocaleDep, not_found, require_roles
+from app.api.deps import (
+    ConverterDep,
+    CurrentUser,
+    LocaleDep,
+    not_found,
+    require_roles,
+)
+from app.core.currency import CurrencyConverter
 from app.api.rate_limits import booking_rate_limit
 from app.core.database import get_db
 from app.core.pagination import Pagination
@@ -37,10 +44,15 @@ _ADMIN_ROLES = {UserRole.ADMIN, UserRole.SUPER_ADMIN}
 require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
-def _to_read(booking: Booking, viewer: User) -> BookingRead:
+def _to_read(
+    booking: Booking, viewer: User, converter: CurrencyConverter | None = None
+) -> BookingRead:
     data = BookingRead.model_validate(booking)
     if viewer.role in _ADMIN_ROLES and booking.user is not None:
         data.customer = BookingCustomerRead.model_validate(booking.user)
+    if converter is not None:
+        data.display_price = converter.convert(booking.final_price, booking.currency)
+        data.display_currency = converter.target
     return data
 
 
@@ -53,10 +65,11 @@ def _to_read(booking: Booking, viewer: User) -> BookingRead:
 async def create_booking(
     payload: BookingCreate,
     current_user: CurrentUser,
+    converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.create(payload, current_user)
-    return _to_read(booking, current_user)
+    return _to_read(booking, current_user, converter)
 
 
 @router.post(
@@ -69,15 +82,17 @@ async def create_room_offer_booking(
     payload: RoomOfferBookingCreate,
     current_user: CurrentUser,
     locale: LocaleDep,
+    converter: ConverterDep,
     bookings: RoomOfferBookingService = Depends(get_room_offer_booking_service),
 ) -> BookingRead:
     booking = await bookings.create(payload, current_user, locale=locale)
-    return _to_read(booking, current_user)
+    return _to_read(booking, current_user, converter)
 
 
 @router.get("", response_model=BookingList)
 async def list_bookings(
     current_user: CurrentUser,
+    converter: ConverterDep,
     page: Pagination,
     is_b2b: bool | None = Query(default=None),
     agent_id: uuid.UUID | None = Query(default=None),
@@ -103,7 +118,7 @@ async def list_bookings(
         date_to=date_to,
     )
     return BookingList(
-        items=[_to_read(b, current_user) for b in items],
+        items=[_to_read(b, current_user, converter) for b in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -134,6 +149,7 @@ async def reservation_dashboard(
 async def get_booking_by_reservation_number(
     reservation_number: str,
     current_user: CurrentUser,
+    converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.get_visible_by_reservation_number(
@@ -141,19 +157,20 @@ async def get_booking_by_reservation_number(
     )
     if booking is None:
         raise not_found("Booking not found")
-    return _to_read(booking, current_user)
+    return _to_read(booking, current_user, converter)
 
 
 @router.get("/{booking_id}", response_model=BookingRead)
 async def get_booking(
     booking_id: str,
     current_user: CurrentUser,
+    converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.get_visible_by_reference(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
-    return _to_read(booking, current_user)
+    return _to_read(booking, current_user, converter)
 
 
 @router.patch(
@@ -164,13 +181,14 @@ async def get_booking(
 async def process_booking(
     booking_id: uuid.UUID,
     current_user: CurrentUser,
+    converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
     processed = await bookings.mark_processed(booking, current_user)
-    return _to_read(processed, current_user)
+    return _to_read(processed, current_user, converter)
 
 
 @router.get("/{booking_id}/invoice", response_model=InvoiceRead)
@@ -192,10 +210,11 @@ async def get_booking_invoice(
 async def cancel_booking(
     booking_id: uuid.UUID,
     current_user: CurrentUser,
+    converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
     cancelled = await bookings.cancel(booking, current_user)
-    return _to_read(cancelled, current_user)
+    return _to_read(cancelled, current_user, converter)

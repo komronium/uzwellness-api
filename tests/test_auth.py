@@ -117,17 +117,13 @@ async def test_refresh_with_garbage_returns_401(client: AsyncClient) -> None:
 # ---------- logout ----------
 
 
-async def test_logout_revokes_refresh_token(
-    client: AsyncClient, customer_user
-) -> None:
+async def test_logout_revokes_refresh_token(client: AsyncClient, customer_user) -> None:
     login = await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
     refresh_token = login.json()["refresh_token"]
-    resp = await client.post(
-        "/api/auth/logout", json={"refresh_token": refresh_token}
-    )
+    resp = await client.post("/api/auth/logout", json={"refresh_token": refresh_token})
     assert resp.status_code == 204
     # Using the now-revoked token must fail
     second = await client.post(
@@ -267,9 +263,7 @@ async def test_change_password_revokes_other_sessions(
     assert change.status_code == 204
 
     # The other session's refresh token should now be invalid
-    refr = await client.post(
-        "/api/auth/refresh", json={"refresh_token": other_refresh}
-    )
+    refr = await client.post("/api/auth/refresh", json={"refresh_token": other_refresh})
     assert refr.status_code == 401
 
 

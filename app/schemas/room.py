@@ -366,6 +366,9 @@ class _RoomReadCommon(BaseModel):
     final_price_weekend: Decimal | None = None
     final_price_weekend_uzs: Decimal | None = None
     final_price_weekend_usd: Decimal | None = None
+    display_price: Decimal | None = None
+    display_price_weekend: Decimal | None = None
+    display_currency: str | None = None
     created_at: datetime
     updated_at: datetime
 

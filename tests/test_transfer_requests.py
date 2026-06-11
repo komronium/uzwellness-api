@@ -63,9 +63,7 @@ async def test_departure_does_not_require_flight_time(
         "dropoff_location": "Tashkent Airport",
         "passengers_count": 1,
     }
-    resp = await client.post(
-        "/api/transfers", json=payload, headers=customer_headers
-    )
+    resp = await client.post("/api/transfers", json=payload, headers=customer_headers)
     assert resp.status_code == 201, resp.text
 
 
@@ -82,13 +80,9 @@ async def test_round_trip_return_must_be_after_outbound(
 ) -> None:
     payload = _arrival_payload(
         direction="round_trip",
-        return_flight_time=(
-            datetime.now(timezone.utc) - timedelta(days=1)
-        ).isoformat(),
+        return_flight_time=(datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
     )
-    resp = await client.post(
-        "/api/transfers", json=payload, headers=customer_headers
-    )
+    resp = await client.post("/api/transfers", json=payload, headers=customer_headers)
     assert resp.status_code == 422
 
 
@@ -106,17 +100,15 @@ async def test_customer_sees_only_own_transfers(
     customer_user,
     customer_headers,
 ) -> None:
-    other = await make_user(
-        db, email="other-tr@test.com", role=UserRole.CUSTOMER
-    )
+    other = await make_user(db, email="other-tr@test.com", role=UserRole.CUSTOMER)
     other_login = await client.post(
         "/api/auth/login",
         json={"email": other.email, "password": "passw0rd"},
     )
-    other_headers = {
-        "Authorization": f"Bearer {other_login.json()['access_token']}"
-    }
-    await client.post("/api/transfers", json=_arrival_payload(), headers=customer_headers)
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    await client.post(
+        "/api/transfers", json=_arrival_payload(), headers=customer_headers
+    )
     await client.post("/api/transfers", json=_arrival_payload(), headers=other_headers)
 
     me = await client.get("/api/transfers", headers=customer_headers)
@@ -127,8 +119,12 @@ async def test_customer_sees_only_own_transfers(
 async def test_super_admin_sees_all_transfers(
     client: AsyncClient, customer_headers, super_admin_headers
 ) -> None:
-    await client.post("/api/transfers", json=_arrival_payload(), headers=customer_headers)
-    await client.post("/api/transfers", json=_arrival_payload(), headers=customer_headers)
+    await client.post(
+        "/api/transfers", json=_arrival_payload(), headers=customer_headers
+    )
+    await client.post(
+        "/api/transfers", json=_arrival_payload(), headers=customer_headers
+    )
     resp = await client.get("/api/transfers", headers=super_admin_headers)
     assert resp.json()["total"] == 2
 
@@ -142,16 +138,12 @@ async def test_customer_cannot_view_others_transfer(
         "/api/transfers", json=_arrival_payload(), headers=customer_headers
     )
     tid = created.json()["id"]
-    other = await make_user(
-        db, email="snoop-tr@test.com", role=UserRole.CUSTOMER
-    )
+    other = await make_user(db, email="snoop-tr@test.com", role=UserRole.CUSTOMER)
     other_login = await client.post(
         "/api/auth/login",
         json={"email": other.email, "password": "passw0rd"},
     )
-    other_headers = {
-        "Authorization": f"Bearer {other_login.json()['access_token']}"
-    }
+    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
     resp = await client.get(f"/api/transfers/{tid}", headers=other_headers)
     assert resp.status_code == 404
 
@@ -247,9 +239,7 @@ async def test_customer_cancels_own_transfer(
         "/api/transfers", json=_arrival_payload(), headers=customer_headers
     )
     tid = created.json()["id"]
-    resp = await client.patch(
-        f"/api/transfers/{tid}/cancel", headers=customer_headers
-    )
+    resp = await client.patch(f"/api/transfers/{tid}/cancel", headers=customer_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "cancelled"
 
@@ -266,9 +256,7 @@ async def test_cannot_cancel_completed_transfer(
         json={"status": "completed"},
         headers=super_admin_headers,
     )
-    resp = await client.patch(
-        f"/api/transfers/{tid}/cancel", headers=customer_headers
-    )
+    resp = await client.patch(f"/api/transfers/{tid}/cancel", headers=customer_headers)
     assert resp.status_code == 409
 
 

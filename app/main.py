@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,12 +11,20 @@ from app.api.openapi_tags import OPENAPI_TAGS
 from app.api.openapi_responses import COMMON_ERROR_RESPONSES
 from app.core.config import settings
 from app.core.redis_client import close_redis, get_redis
+from app.services.exchange_rate_sync import run_exchange_rate_sync_loop
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await get_redis()
+    rate_sync_task: asyncio.Task | None = None
+    if settings.EXCHANGE_RATE_SYNC_ENABLED:
+        rate_sync_task = asyncio.create_task(run_exchange_rate_sync_loop())
     yield
+    if rate_sync_task is not None:
+        rate_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await rate_sync_task
     await close_redis()
 
 

@@ -1,4 +1,5 @@
 """Integration tests for commission snapshot and B2B tier discount."""
+
 from __future__ import annotations
 
 import uuid
@@ -18,7 +19,9 @@ from tests.factories import make_sanatorium, make_user
 _FUTURE = (date.today() + timedelta(days=15)).isoformat()
 
 
-async def _agent_headers(client: AsyncClient, db: AsyncSession) -> tuple[dict, uuid.UUID]:
+async def _agent_headers(
+    client: AsyncClient, db: AsyncSession
+) -> tuple[dict, uuid.UUID]:
     agent = await make_user(
         db,
         email="agent-price@test.com",
@@ -86,9 +89,7 @@ class TestCommissionSnapshot:
         assert b.commission_percent_snapshot == Decimal("10.00")
         assert b.commission_snapshot == Decimal("10.00")
 
-    async def test_b2b_uses_b2b_commission(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_b2b_uses_b2b_commission(self, client: AsyncClient, db: AsyncSession):
         san = await make_sanatorium(db, slug="comm-2", status=SanatoriumStatus.APPROVED)
         san.platform_commission_percent = Decimal("10")
         san.b2b_commission_percent = Decimal("5")
@@ -116,9 +117,7 @@ class TestAgentTierDiscount:
     ):
         san = await make_sanatorium(db, slug="tier-1", status=SanatoriumStatus.APPROVED)
         # Configure tier: at >=1 booking, agent gets 10% off
-        san.agent_discount_tiers = [
-            {"min_bookings": 1, "discount_percent": "10"}
-        ]
+        san.agent_discount_tiers = [{"min_bookings": 1, "discount_percent": "10"}]
         await db.commit()
         program = await _seed_program(db, san.id, price="100.00")
         headers, _ = await _agent_headers(client, db)
@@ -146,9 +145,7 @@ class TestAgentTierDiscount:
         self, client: AsyncClient, db: AsyncSession
     ):
         san = await make_sanatorium(db, slug="tier-2", status=SanatoriumStatus.APPROVED)
-        san.agent_discount_tiers = [
-            {"min_bookings": 0, "discount_percent": "15"}
-        ]
+        san.agent_discount_tiers = [{"min_bookings": 0, "discount_percent": "15"}]
         await db.commit()
         program = await _seed_program(db, san.id, price="100.00")
         headers, _ = await _agent_headers(client, db)

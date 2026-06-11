@@ -1,4 +1,5 @@
 """Unit tests for the discount-tier helpers (no DB)."""
+
 from decimal import Decimal
 
 from app.core.discount_tiers import best_tier_discount_percent, next_tier

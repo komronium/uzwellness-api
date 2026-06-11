@@ -37,9 +37,7 @@ class RegionService:
         return await self.db.get(Region, region_id)
 
     async def get_by_slug(self, slug: str) -> Region | None:
-        return await self.db.scalar(
-            select(Region).where(Region.slug == slug)
-        )
+        return await self.db.scalar(select(Region).where(Region.slug == slug))
 
     async def create(self, payload: RegionCreate) -> Region:
         name_dict = payload.name.model_dump()

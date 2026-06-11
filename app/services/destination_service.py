@@ -1,16 +1,16 @@
-import uuid
 from collections.abc import Sequence
+import uuid
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import Numeric, case, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.ids import uuid7
 from app.core.pagination import paginated
 from app.core.slug import resolve_unique_slug, slugify
-from app.core.ids import uuid7
 from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.destination import Destination
@@ -40,7 +40,7 @@ class DestinationService:
         return await paginated(self.db, stmt, limit=limit, offset=offset)
 
     async def list_tiles(
-        self, *, usd_uzs_rate: Decimal | None
+        self, *, rates_to_uzs: dict[str, Decimal]
     ) -> list[tuple[Destination, int, Decimal | None]]:
         markup_factor = literal(1) + Room.markup_percent / literal(100)
         discount_factor = literal(1) - func.coalesce(
@@ -48,18 +48,7 @@ class DestinationService:
         ) / literal(100)
         customer_price = Room.base_price * markup_factor * discount_factor
 
-        if usd_uzs_rate and usd_uzs_rate > 0:
-            rate_expr = cast(literal(usd_uzs_rate), Numeric(18, 6))
-            usd_expr = case(
-                (Room.base_currency == "USD", customer_price),
-                (Room.base_currency == "UZS", customer_price / rate_expr),
-                else_=None,
-            )
-        else:
-            usd_expr = case(
-                (Room.base_currency == "USD", customer_price),
-                else_=None,
-            )
+        usd_expr = _usd_price_expr(customer_price, rates_to_uzs)
 
         stmt = (
             select(
@@ -191,6 +180,27 @@ class DestinationService:
         prefix = settings.UPLOAD_URL_PREFIX.rstrip("/") + "/"
         if url and url.startswith(prefix):
             await storage.delete(key=url_to_key(url))
+
+
+def _usd_price_expr(price_expr, rates_to_uzs: dict[str, Decimal]):
+    usd_rate = rates_to_uzs.get("USD_UZS")
+    if usd_rate is None or usd_rate <= 0:
+        return case((Room.base_currency == "USD", price_expr), else_=None)
+
+    usd_rate_expr = cast(literal(usd_rate), Numeric(18, 6))
+    whens = [
+        (Room.base_currency == "USD", price_expr),
+        (Room.base_currency == "UZS", price_expr / usd_rate_expr),
+    ]
+    for pair, rate in sorted(rates_to_uzs.items()):
+        currency, _, quote = pair.partition("_")
+        if quote != "UZS" or currency in {"USD", "UZS"} or rate <= 0:
+            continue
+        rate_expr = cast(literal(rate), Numeric(18, 6))
+        whens.append(
+            (Room.base_currency == currency, price_expr * rate_expr / usd_rate_expr)
+        )
+    return case(*whens, else_=None)
 
 
 def get_destination_service(

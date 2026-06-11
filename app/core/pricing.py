@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.models.exchange_rate import ExchangeRate
+from app.core.currency import CurrencyConverter
 from app.models.rate_plan import RatePlan
 from app.models.room import Room, RoomPricePeriod
 
@@ -87,29 +87,9 @@ def calculate_rate_plan_night_price(
     return price.quantize(_TWO, ROUND_HALF_UP)
 
 
-def convert_to_uzs(
-    amount: Decimal, currency: str, rate: ExchangeRate | None
-) -> Decimal | None:
-    if currency == "UZS":
-        return amount.quantize(_TWO, ROUND_HALF_UP)
-    if rate is None:
-        return None
-    return (amount * rate.rate).quantize(_TWO, ROUND_HALF_UP)
-
-
-def convert_to_usd(
-    amount: Decimal, currency: str, rate: ExchangeRate | None
-) -> Decimal | None:
-    if currency == "USD":
-        return amount.quantize(_TWO, ROUND_HALF_UP)
-    if rate is None:
-        return None
-    return (amount / rate.rate).quantize(_TWO, ROUND_HALF_UP)
-
-
 def _price_block(
     room: Room,
-    rate: ExchangeRate | None,
+    converter: CurrencyConverter,
     *,
     discount: Decimal | None,
     weekend: bool,
@@ -119,26 +99,29 @@ def _price_block(
     )
     return (
         price,
-        convert_to_uzs(price, room.base_currency, rate),
-        convert_to_usd(price, room.base_currency, rate),
+        converter.convert(price, room.base_currency, "UZS"),
+        converter.convert(price, room.base_currency, "USD"),
     )
 
 
-def enrich_room(room: Room, usd_uzs_rate: ExchangeRate | None) -> dict:
+def enrich_room(room: Room, converter: CurrencyConverter) -> dict:
     discount = room.discount_percent
     weekday, weekday_uzs, weekday_usd = _price_block(
-        room, usd_uzs_rate, discount=discount, weekend=False
+        room, converter, discount=discount, weekend=False
     )
     result: dict = {
         "final_price": weekday,
         "final_price_uzs": weekday_uzs,
         "final_price_usd": weekday_usd,
+        "display_price": converter.convert(weekday, room.base_currency),
+        "display_currency": converter.target,
     }
     if room.base_price_weekend is not None:
         weekend, weekend_uzs, weekend_usd = _price_block(
-            room, usd_uzs_rate, discount=discount, weekend=True
+            room, converter, discount=discount, weekend=True
         )
         result["final_price_weekend"] = weekend
         result["final_price_weekend_uzs"] = weekend_uzs
         result["final_price_weekend_usd"] = weekend_usd
+        result["display_price_weekend"] = converter.convert(weekend, room.base_currency)
     return result

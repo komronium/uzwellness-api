@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import LocaleDep
+from app.api.deps import CurrencyDep, LocaleDep
 from app.schemas.room_offer import RoomOfferSearchRequest, RoomOfferSearchResponse
 from app.services.room_offer_service import (
     RoomOfferService,
@@ -19,10 +19,12 @@ async def search_sanatorium_room_offers(
     sanatorium_id: uuid.UUID,
     payload: RoomOfferSearchRequest,
     locale: LocaleDep,
+    currency: CurrencyDep,
     offers: RoomOfferService = Depends(get_room_offer_service),
 ) -> RoomOfferSearchResponse:
     return await offers.search(
         sanatorium_id=sanatorium_id,
         payload=payload,
         locale=locale,
+        display_currency=currency,
     )

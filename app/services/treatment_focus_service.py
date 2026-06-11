@@ -66,7 +66,9 @@ class TreatmentFocusService:
             )
             .where(TreatmentFocus.is_active.is_(True))
             .group_by(TreatmentFocus.id)
-            .order_by(TreatmentFocus.display_order.asc(), TreatmentFocus.created_at.asc())
+            .order_by(
+                TreatmentFocus.display_order.asc(), TreatmentFocus.created_at.asc()
+            )
         )
         rows = (await self.db.execute(stmt)).all()
         return [

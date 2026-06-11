@@ -17,5 +17,19 @@ class ExchangeRateRead(BaseModel):
     id: uuid.UUID
     pair: str
     rate: Decimal
+    source: str
     valid_from: datetime
     created_at: datetime
+
+
+class ExchangeRateCurrency(BaseModel):
+    currency: str
+    rate_to_uzs: Decimal | None
+    source: str | None
+    valid_from: datetime | None
+    is_available: bool
+
+
+class ExchangeRateCurrencyList(BaseModel):
+    default_currency: str
+    currencies: list[ExchangeRateCurrency]

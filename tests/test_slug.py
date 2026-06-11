@@ -1,4 +1,5 @@
 """Unit tests for slugify (no DB)."""
+
 from app.core.slug import slugify
 
 

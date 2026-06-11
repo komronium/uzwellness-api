@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.currency import CurrencyConverter
 from app.core.database import get_db
 from app.core.db_utils import fetch_by_ids
 from app.core.pagination import paginated
@@ -282,13 +283,13 @@ class RoomService:
         ).all()
         return {row.id: row.inventory_count >= 1 for row in rows}
 
-    async def enrich(self, room: Room) -> dict:
-        rate = await self.rates.get_usd_uzs()
-        return enrich_room(room, rate)
+    async def enrich(self, room: Room, converter: CurrencyConverter) -> dict:
+        return enrich_room(room, converter)
 
     async def search(
         self,
         *,
+        converter: CurrencyConverter,
         check_in: date,
         check_out: date,
         guests: int,
@@ -296,7 +297,7 @@ class RoomService:
     ) -> list["RoomSearchHit"]:
         return await search_rooms(
             self.db,
-            self.rates,
+            converter,
             check_in=check_in,
             check_out=check_out,
             guests=guests,

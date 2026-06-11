@@ -28,6 +28,8 @@ class FeaturedSanatoriumCard(BaseModel):
     min_price: Decimal | None
     min_price_currency: str | None
     min_price_usd: Decimal | None
+    min_price_display: Decimal | None = None
+    display_currency: str | None = None
     is_featured: bool
     display_order: int
 
@@ -40,6 +42,8 @@ class FeaturedSanatoriumCard(BaseModel):
         min_price: Decimal | None,
         min_price_currency: str | None,
         min_price_usd: Decimal | None,
+        min_price_display: Decimal | None = None,
+        display_currency: str | None = None,
     ) -> "FeaturedSanatoriumCard":
         return cls(
             sanatorium_id=obj.id,
@@ -67,6 +71,8 @@ class FeaturedSanatoriumCard(BaseModel):
             min_price=min_price,
             min_price_currency=min_price_currency,
             min_price_usd=min_price_usd,
+            min_price_display=min_price_display,
+            display_currency=display_currency,
             is_featured=obj.is_featured,
             display_order=obj.display_order,
         )

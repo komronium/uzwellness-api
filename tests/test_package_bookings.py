@@ -1,5 +1,6 @@
 """Integration tests for PACKAGE bookings — admin-fixed room, customer picks
 just the package + dates."""
+
 from __future__ import annotations
 
 import uuid
@@ -127,9 +128,7 @@ class TestPackageBookingHappyPath:
     async def test_check_out_defaults_to_duration_nights(
         self, client: AsyncClient, db: AsyncSession, package_sanatorium
     ):
-        package = await _make_package(
-            db, package_sanatorium, duration_nights=7
-        )
+        package = await _make_package(db, package_sanatorium, duration_nights=7)
         headers = await _customer_headers(client, db)
         resp = await client.post(
             "/api/bookings",
@@ -149,9 +148,7 @@ class TestPackageBookingErrors:
     async def test_inactive_package_returns_404(
         self, client: AsyncClient, db: AsyncSession, package_sanatorium
     ):
-        package = await _make_package(
-            db, package_sanatorium, is_active=False
-        )
+        package = await _make_package(db, package_sanatorium, is_active=False)
         headers = await _customer_headers(client, db)
         resp = await client.post(
             "/api/bookings",
@@ -203,9 +200,7 @@ class TestPackageBookingErrors:
     async def test_check_out_mismatch_rejected(
         self, client: AsyncClient, db: AsyncSession, package_sanatorium
     ):
-        package = await _make_package(
-            db, package_sanatorium, duration_nights=5
-        )
+        package = await _make_package(db, package_sanatorium, duration_nights=5)
         headers = await _customer_headers(client, db)
         wrong_out = (_FUTURE_DATE + timedelta(days=3)).isoformat()
         resp = await client.post(
@@ -246,10 +241,14 @@ class TestPackageBookingInventory:
         assert resp.status_code == 201, resp.text
 
         rows = (
-            await db.execute(
-                select(RoomAvailability).where(RoomAvailability.room_id == room.id)
+            (
+                await db.execute(
+                    select(RoomAvailability).where(RoomAvailability.room_id == room.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2
         assert all(r.units_booked == 1 for r in rows)
 
@@ -278,15 +277,17 @@ class TestPackageBookingCancel:
         )
         assert created.status_code == 201, created.text
         booking_id = created.json()["id"]
-        resp = await client.patch(
-            f"/api/bookings/{booking_id}/cancel", headers=headers
-        )
+        resp = await client.patch(f"/api/bookings/{booking_id}/cancel", headers=headers)
         assert resp.status_code == 200
         assert resp.json()["status"] == "cancelled"
 
         rows = (
-            await db.execute(
-                select(RoomAvailability).where(RoomAvailability.room_id == room.id)
+            (
+                await db.execute(
+                    select(RoomAvailability).where(RoomAvailability.room_id == room.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert all(r.units_booked == 0 for r in rows)

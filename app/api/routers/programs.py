@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import (
+    ConverterDep,
     CurrentUser,
     IncludeTranslationsDep,
     LocaleDep,
@@ -29,6 +30,7 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 @router.get("", response_model=TreatmentProgramList | TreatmentProgramAdminList)
 async def list_programs(
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
@@ -45,7 +47,7 @@ async def list_programs(
             offset=page.offset,
         )
     return TreatmentProgramList(
-        items=[TreatmentProgramRead.from_obj(p, locale) for p in items],
+        items=[TreatmentProgramRead.from_obj(p, locale, converter) for p in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -58,6 +60,7 @@ async def list_programs(
 async def get_program(
     program_id: uuid.UUID,
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     programs: ProgramService = Depends(get_program_service),
 ) -> TreatmentProgramRead | TreatmentProgramAdminRead:
@@ -66,7 +69,7 @@ async def get_program(
         raise not_found("Program not found")
     if include_translations:
         return TreatmentProgramAdminRead.model_validate(program)
-    return TreatmentProgramRead.from_obj(program, locale)
+    return TreatmentProgramRead.from_obj(program, locale, converter)
 
 
 @router.post(

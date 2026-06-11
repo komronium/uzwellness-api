@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_USE_TLS: bool = True
 
+    EXCHANGE_RATE_SYNC_ENABLED: bool = True
+    EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6
+    EXCHANGE_RATE_SYNC_CURRENCIES: list[str] = ["USD", "EUR", "RUB", "KZT"]
+
     RATE_LIMIT_ENABLED: bool = True
     TRUSTED_PROXY_IPS: list[str] = []
 

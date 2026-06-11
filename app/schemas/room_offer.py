@@ -163,6 +163,8 @@ class RoomOfferPrice(BaseModel):
     total: Decimal
     original_total: Decimal | None = None
     currency: str
+    display_total: Decimal | None = None
+    display_currency: str | None = None
     rooms_count: int
     adults: int
     children: int
@@ -199,6 +201,8 @@ class RoomOfferAlternativeDate(BaseModel):
     nights: int
     min_total_price: Decimal
     currency: str
+    display_min_total_price: Decimal | None = None
+    display_currency: str | None = None
 
 
 class RoomOfferSearchResponse(BaseModel):

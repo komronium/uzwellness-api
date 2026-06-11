@@ -1,4 +1,5 @@
 """Integration tests for SESSION bookings (treatment_programs as bookable units)."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -58,7 +59,9 @@ class TestSessionBookingHappyPath:
     async def test_book_session_for_one_guest(
         self, client: AsyncClient, db: AsyncSession
     ):
-        san = await make_sanatorium(db, slug="yoga-san", status=SanatoriumStatus.APPROVED)
+        san = await make_sanatorium(
+            db, slug="yoga-san", status=SanatoriumStatus.APPROVED
+        )
         program = await _make_session_program(db, sanatorium_id=san.id, price="80.00")
         headers = await _customer_headers(client, db)
         resp = await client.post(
@@ -159,9 +162,7 @@ class TestSessionBookingValidation:
         )
         assert resp.status_code == 404
 
-    async def test_group_size_max_enforced(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_group_size_max_enforced(self, client: AsyncClient, db: AsyncSession):
         san = await make_sanatorium(db, slug="yoga-small")
         program = await _make_session_program(
             db, sanatorium_id=san.id, group_size_max=2

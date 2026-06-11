@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import (
+    ConverterDep,
     CurrentUser,
     IncludeTranslationsDep,
     LocaleDep,
@@ -29,6 +30,7 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 @router.get("", response_model=ExtraBedConfigList | ExtraBedConfigAdminList)
 async def list_extra_beds(
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
@@ -45,7 +47,7 @@ async def list_extra_beds(
             offset=page.offset,
         )
     return ExtraBedConfigList(
-        items=[ExtraBedConfigRead.from_obj(c, locale) for c in items],
+        items=[ExtraBedConfigRead.from_obj(c, locale, converter) for c in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -56,6 +58,7 @@ async def list_extra_beds(
 async def get_extra_bed(
     config_id: uuid.UUID,
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     extra_beds: ExtraBedService = Depends(get_extra_bed_service),
 ) -> ExtraBedConfigRead | ExtraBedConfigAdminRead:
@@ -64,7 +67,7 @@ async def get_extra_bed(
         raise not_found("Extra bed config not found")
     if include_translations:
         return ExtraBedConfigAdminRead.model_validate(config)
-    return ExtraBedConfigRead.from_obj(config, locale)
+    return ExtraBedConfigRead.from_obj(config, locale, converter)
 
 
 @router.post(

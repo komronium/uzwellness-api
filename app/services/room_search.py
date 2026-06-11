@@ -7,13 +7,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.currency import CurrencyConverter
 from app.core.pricing import enrich_room
 from app.core.utils import date_range
 from app.models.amenity import RoomAmenity
 from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
-from app.services.exchange_rate_service import ExchangeRateService
 
 
 @dataclass(slots=True)
@@ -27,7 +27,7 @@ class RoomSearchHit:
 
 async def search_rooms(
     db: AsyncSession,
-    rates: ExchangeRateService,
+    converter: CurrencyConverter,
     *,
     check_in: date,
     check_out: date,
@@ -49,10 +49,13 @@ async def search_rooms(
     max_used_by_room = await _max_used_by_room(
         db, room_ids=[room.id for room in rooms], dates=all_dates
     )
-    rate = await rates.get_usd_uzs()
     hits = [
         _room_hit(
-            room, guests=guests, nights=nights, max_used=max_used_by_room, rate=rate
+            room,
+            guests=guests,
+            nights=nights,
+            max_used=max_used_by_room,
+            converter=converter,
         )
         for room in rooms
     ]
@@ -110,7 +113,12 @@ async def _max_used_by_room(
 
 
 def _room_hit(
-    room: Room, *, guests: int, nights: int, max_used: dict[uuid.UUID, int], rate
+    room: Room,
+    *,
+    guests: int,
+    nights: int,
+    max_used: dict[uuid.UUID, int],
+    converter: CurrencyConverter,
 ) -> RoomSearchHit:
     rooms_needed = math.ceil(guests / room.capacity) if room.capacity > 0 else 0
     reason = _unavailable_reason(
@@ -121,7 +129,7 @@ def _room_hit(
     )
     return RoomSearchHit(
         room=room,
-        pricing=enrich_room(room, rate),
+        pricing=enrich_room(room, converter),
         rooms_count_needed=rooms_needed,
         available=reason is None,
         unavailable_reason=reason,

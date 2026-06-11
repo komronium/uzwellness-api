@@ -1,4 +1,5 @@
 """Tests for property_type / wellness_category filters on /sanatoriums."""
+
 from __future__ import annotations
 
 from httpx import AsyncClient
@@ -20,9 +21,7 @@ async def _mk(
 
 
 class TestPropertyTypeFilter:
-    async def test_filter_sanatorium_only(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_filter_sanatorium_only(self, client: AsyncClient, db: AsyncSession):
         await _mk(db, slug="sanat-1", property_type=PropertyType.SANATORIUM)
         await _mk(
             db,
@@ -34,9 +33,7 @@ class TestPropertyTypeFilter:
         slugs = {item["slug"] for item in resp.json()["items"]}
         assert slugs == {"sanat-1"}
 
-    async def test_filter_wellness_only(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_filter_wellness_only(self, client: AsyncClient, db: AsyncSession):
         await _mk(db, slug="sanat-2", property_type=PropertyType.SANATORIUM)
         await _mk(
             db,
@@ -50,9 +47,7 @@ class TestPropertyTypeFilter:
 
 
 class TestWellnessCategoryFilter:
-    async def test_filter_yoga_retreat(
-        self, client: AsyncClient, db: AsyncSession
-    ):
+    async def test_filter_yoga_retreat(self, client: AsyncClient, db: AsyncSession):
         await _mk(
             db,
             slug="yoga",

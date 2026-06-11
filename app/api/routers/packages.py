@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.api.deps import (
+    ConverterDep,
     CurrentUser,
     IncludeTranslationsDep,
     is_super_admin,
@@ -39,6 +40,7 @@ require_sanatorium_admin = require_roles(UserRole.ADMIN)
 async def list_packages(
     current_user: OptionalUser,
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     page: Pagination,
     active_only: bool = Query(default=True),
@@ -68,7 +70,7 @@ async def list_packages(
             offset=page.offset,
         )
     return PackageList(
-        items=[PackageRead.from_obj(p, locale) for p in items],
+        items=[PackageRead.from_obj(p, locale, converter) for p in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -78,6 +80,7 @@ async def list_packages(
 @router.get("/featured", response_model=PackageList)
 async def list_featured_packages(
     locale: LocaleDep,
+    converter: ConverterDep,
     page: Pagination,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageList:
@@ -88,7 +91,7 @@ async def list_featured_packages(
         featured_only=True,
     )
     return PackageList(
-        items=[PackageRead.from_obj(p, locale) for p in items],
+        items=[PackageRead.from_obj(p, locale, converter) for p in items],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -100,6 +103,7 @@ async def get_package(
     package_id_or_slug: str,
     current_user: OptionalUser,
     locale: LocaleDep,
+    converter: ConverterDep,
     include_translations: IncludeTranslationsDep,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageRead | PackageAdminRead:
@@ -119,7 +123,7 @@ async def get_package(
         raise not_found("Package not found")
     if include_translations and super_admin:
         return PackageAdminRead.model_validate(package)
-    return PackageRead.from_obj(package, locale)
+    return PackageRead.from_obj(package, locale, converter)
 
 
 @router.post(

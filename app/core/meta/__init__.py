@@ -67,6 +67,7 @@ META: dict[str, list[Option]] = {
     "meal_types": _SANATORIUM["meal_types"],
     "traveler_types": _TRAVEL["traveler_types"],
     "currencies": _TRAVEL["currencies"],
+    "display_currencies": _TRAVEL["display_currencies"],
     "natural_resources": _SANATORIUM["natural_resources"],
     "medical_procedure_categories": _SANATORIUM["medical_procedure_categories"],
     "medical_procedures": _SANATORIUM["medical_procedures"],

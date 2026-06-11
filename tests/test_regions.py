@@ -54,9 +54,7 @@ async def test_customer_cannot_create_region(
     assert resp.status_code == 403
 
 
-async def test_anonymous_can_list(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_anonymous_can_list(client: AsyncClient, db: AsyncSession) -> None:
     await _make_region(db, slug="r", name_en="R")
     resp = await client.get("/api/regions")
     assert resp.status_code == 200
@@ -78,9 +76,7 @@ async def test_slug_uniqueness_appends_suffix(
 # ── list / detail ──────────────────────────────────────────────────────────
 
 
-async def test_list_resolves_locale(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_list_resolves_locale(client: AsyncClient, db: AsyncSession) -> None:
     await _make_region(db, slug="r", name_en="Tashkent Region")
     resp = await client.get("/api/regions?lang=en")
     assert resp.json()["items"][0]["name"] == "Tashkent Region"
@@ -94,9 +90,7 @@ async def test_include_translations_returns_dicts(
     assert isinstance(resp.json()["items"][0]["name"], dict)
 
 
-async def test_list_ordered_by_insertion(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_list_ordered_by_insertion(client: AsyncClient, db: AsyncSession) -> None:
     # No display_order — list is sorted by created_at ASC.
     await _make_region(db, slug="first", name_en="First")
     await _make_region(db, slug="second", name_en="Second")

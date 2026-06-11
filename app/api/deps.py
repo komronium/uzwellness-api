@@ -5,8 +5,17 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.currency import (
+    DEFAULT_DISPLAY_CURRENCY,
+    CurrencyConverter,
+    supported_display_currencies,
+)
 from app.core.security import decode_token
 from app.models.user import User, UserRole
+from app.services.exchange_rate_service import (
+    ExchangeRateService,
+    get_exchange_rate_service,
+)
 from app.services.user_service import UserService, get_user_service
 
 SUPPORTED_LOCALES: tuple[str, ...] = ("uz", "ru", "en")
@@ -141,8 +150,40 @@ def get_include_translations(
     return include_translations
 
 
+def get_currency(
+    currency: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Display currency (UZS, USD, EUR, RUB, KZT). All prices gain "
+                "display_price/display_currency fields converted to it. "
+                "Unknown values fall back to UZS."
+            )
+        ),
+    ] = None,
+    x_currency: Annotated[str | None, Header()] = None,
+) -> str:
+    supported = supported_display_currencies()
+    for raw in (currency, x_currency):
+        if raw is None:
+            continue
+        candidate = raw.strip().upper()
+        if candidate in supported:
+            return candidate
+    return DEFAULT_DISPLAY_CURRENCY
+
+
+async def get_currency_converter(
+    currency: Annotated[str, Depends(get_currency)],
+    rates: Annotated[ExchangeRateService, Depends(get_exchange_rate_service)],
+) -> CurrencyConverter:
+    return await rates.get_converter(currency)
+
+
 LocaleDep = Annotated[Locale, Depends(get_locale)]
 IncludeTranslationsDep = Annotated[bool, Depends(get_include_translations)]
+CurrencyDep = Annotated[str, Depends(get_currency)]
+ConverterDep = Annotated[CurrencyConverter, Depends(get_currency_converter)]
 
 
 def not_found(detail: str = "Not found") -> HTTPException:

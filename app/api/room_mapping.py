@@ -1,5 +1,5 @@
+from app.core.currency import CurrencyConverter
 from app.core.pricing import enrich_room
-from app.models.exchange_rate import ExchangeRate
 from app.models.room import Room
 from app.schemas.room import RoomAdminRead, RoomRead, RoomSearchResult
 from app.services.room_search import RoomSearchHit
@@ -36,13 +36,13 @@ def room_public_list(
     rooms: list[Room],
     *,
     locale: str,
-    rate: ExchangeRate | None,
+    converter: CurrencyConverter,
     availability: dict,
 ) -> list[RoomRead]:
     return [
         room_public_read(
             room,
-            enrich_room(room, rate),
+            enrich_room(room, converter),
             locale=locale,
             has_availability=availability.get(room.id, False),
         )
@@ -53,13 +53,13 @@ def room_public_list(
 def room_admin_list(
     rooms: list[Room],
     *,
-    rate: ExchangeRate | None,
+    converter: CurrencyConverter,
     availability: dict,
 ) -> list[RoomAdminRead]:
     return [
         room_admin_read(
             room,
-            enrich_room(room, rate),
+            enrich_room(room, converter),
             has_availability=availability.get(room.id, False),
         )
         for room in rooms

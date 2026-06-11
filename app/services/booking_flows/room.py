@@ -7,11 +7,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
+from app.core.currency import CurrencyConverter
 from app.core.pricing import (
     calculate_rate_plan_night_price,
     calculate_stay_total,
-    convert_to_usd,
-    convert_to_uzs,
 )
 from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
@@ -24,10 +23,8 @@ from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
 from app.services.booking_flows.base import BookingFlowBase, rooms_count_for_guests
 from app.services.booking_pricing_policy import BookingPricing
-from app.services.exchange_rate_service import USD_UZS
 
 _CENTS = Decimal("0.01")
-_UNFETCHED: object = object()
 
 
 @dataclass(slots=True)
@@ -352,13 +349,13 @@ class RoomBookingFlow(BookingFlowBase):
         room_currency: str,
     ) -> list[BookingExtraBed]:
         records: list[BookingExtraBed] = []
-        rate: ExchangeRate | None | object = _UNFETCHED
+        converter: CurrencyConverter | None = None
         configs = await self._load_extra_bed_configs(payload)
         for item in payload.extra_beds:
             config = configs.get(item.config_id)
             self._assert_extra_bed_config(config, item, sanatorium_id)
-            price_per_night, rate = await self._extra_bed_price(
-                config, room_currency, rate
+            price_per_night, converter = await self._extra_bed_price(
+                config, room_currency, converter
             )
 
             total = (price_per_night * item.count * nights).quantize(
@@ -407,18 +404,18 @@ class RoomBookingFlow(BookingFlowBase):
         self,
         config: ExtraBedConfig,
         room_currency: str,
-        rate: ExchangeRate | None | object,
-    ) -> tuple[Decimal, ExchangeRate | None | object]:
+        converter: CurrencyConverter | None,
+    ) -> tuple[Decimal, CurrencyConverter | None]:
         if config.currency == room_currency:
-            return config.price_per_night, rate
-        if rate is _UNFETCHED:
-            rate = await self.db.scalar(
-                select(ExchangeRate).where(ExchangeRate.pair == USD_UZS)
+            return config.price_per_night, converter
+        if converter is None:
+            rows = await self.db.scalars(select(ExchangeRate))
+            converter = CurrencyConverter(
+                room_currency, {row.pair: row.rate for row in rows}
             )
-        if rate is not None and not isinstance(rate, ExchangeRate):
-            raise RuntimeError("Unexpected exchange rate sentinel")
-        converter = convert_to_usd if room_currency == "USD" else convert_to_uzs
-        converted = converter(config.price_per_night, config.currency, rate)
+        converted = converter.convert(
+            config.price_per_night, config.currency, room_currency
+        )
         if converted is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -427,4 +424,4 @@ class RoomBookingFlow(BookingFlowBase):
                     f"bed from {config.currency} to {room_currency}"
                 ),
             )
-        return converted, rate
+        return converted, converter

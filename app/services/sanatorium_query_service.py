@@ -95,11 +95,11 @@ class SanatoriumQueryService:
         *,
         limit: int,
         offset: int,
-        usd_uzs_rate: Decimal | None,
+        rates_to_uzs: dict[str, Decimal],
     ) -> tuple[
         list[tuple[Sanatorium, Decimal | None, str | None, Decimal | None]], int
     ]:
-        price_subquery = _featured_price_subquery(usd_uzs_rate)
+        price_subquery = _featured_price_subquery(rates_to_uzs)
         base = (
             select(Sanatorium)
             .where(
@@ -279,9 +279,9 @@ def _list_statement(stmt, *, sort: str, locale: str, limit: int, offset: int):
     )
 
 
-def _featured_price_subquery(usd_uzs_rate: Decimal | None):
+def _featured_price_subquery(rates_to_uzs: dict[str, Decimal]):
     price_expr = _customer_price_expr()
-    usd_expr = _usd_price_expr(price_expr, usd_uzs_rate)
+    usd_expr = _usd_price_expr(price_expr, rates_to_uzs)
     ranked_room_prices = (
         select(
             Room.sanatorium_id.label("sanatorium_id"),
@@ -327,15 +327,25 @@ def _customer_price_expr():
     return Room.base_price * markup_factor * discount_factor
 
 
-def _usd_price_expr(price_expr, usd_uzs_rate: Decimal | None):
-    if usd_uzs_rate and usd_uzs_rate > 0:
-        rate_expr = cast(literal(usd_uzs_rate), Numeric(18, 6))
-        return case(
-            (Room.base_currency == "USD", price_expr),
-            (Room.base_currency == "UZS", price_expr / rate_expr),
-            else_=None,
+def _usd_price_expr(price_expr, rates_to_uzs: dict[str, Decimal]):
+    usd_rate = rates_to_uzs.get("USD_UZS")
+    if usd_rate is None or usd_rate <= 0:
+        return case((Room.base_currency == "USD", price_expr), else_=None)
+
+    usd_rate_expr = cast(literal(usd_rate), Numeric(18, 6))
+    whens = [
+        (Room.base_currency == "USD", price_expr),
+        (Room.base_currency == "UZS", price_expr / usd_rate_expr),
+    ]
+    for pair, rate in sorted(rates_to_uzs.items()):
+        currency, _, quote = pair.partition("_")
+        if quote != "UZS" or currency in {"USD", "UZS"} or rate <= 0:
+            continue
+        rate_expr = cast(literal(rate), Numeric(18, 6))
+        whens.append(
+            (Room.base_currency == currency, price_expr * rate_expr / usd_rate_expr)
         )
-    return case((Room.base_currency == "USD", price_expr), else_=None)
+    return case(*whens, else_=None)
 
 
 def get_sanatorium_query_service(

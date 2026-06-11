@@ -1,4 +1,5 @@
 """Tests for the room_id XOR program_id DB constraint on Booking."""
+
 from __future__ import annotations
 
 import uuid

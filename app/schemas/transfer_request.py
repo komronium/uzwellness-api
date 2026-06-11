@@ -86,6 +86,8 @@ class TransferRequestRead(BaseModel):
     vehicle_type: VehicleType
     price: Decimal | None
     currency: str | None
+    display_price: Decimal | None = None
+    display_currency: str | None = None
     status: TransferStatus
     driver_name: str | None
     driver_phone: str | None

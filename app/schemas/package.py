@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.currency import CurrencyConverter
 from app.core.utils import pick_locale
 from app.models.package import PackageItemType
 from app.schemas.common import Page, Translations, TranslationsCreate
@@ -36,10 +37,20 @@ class PackageItemRead(BaseModel):
     description: str
     is_included: bool
     extra_price: Decimal | None
+    display_extra_price: Decimal | None = None
     display_order: int
 
     @classmethod
-    def from_obj(cls, obj, locale: str) -> "PackageItemRead":
+    def from_obj(
+        cls,
+        obj,
+        locale: str,
+        currency: str | None = None,
+        converter: CurrencyConverter | None = None,
+    ) -> "PackageItemRead":
+        display_extra_price = None
+        if converter is not None and obj.extra_price is not None and currency:
+            display_extra_price = converter.convert(obj.extra_price, currency)
         return cls(
             id=obj.id,
             item_type=obj.item_type,
@@ -47,6 +58,7 @@ class PackageItemRead(BaseModel):
             description=pick_locale(obj.description, locale),
             is_included=obj.is_included,
             extra_price=obj.extra_price,
+            display_extra_price=display_extra_price,
             display_order=obj.display_order,
         )
 
@@ -109,10 +121,19 @@ class PackageRead(_PackageReadCommon):
 
     title: str
     description: str
+    display_price: Decimal | None = None
+    display_currency: str | None = None
     items: list[PackageItemRead] = Field(default_factory=list)
 
     @classmethod
-    def from_obj(cls, obj, locale: str) -> "PackageRead":
+    def from_obj(
+        cls, obj, locale: str, converter: CurrencyConverter | None = None
+    ) -> "PackageRead":
+        display_price = None
+        display_currency = None
+        if converter is not None:
+            display_price = converter.convert(obj.base_price, obj.currency)
+            display_currency = converter.target
         return cls(
             id=obj.id,
             slug=obj.slug,
@@ -122,6 +143,8 @@ class PackageRead(_PackageReadCommon):
             duration_nights=obj.duration_nights,
             base_price=obj.base_price,
             currency=obj.currency,
+            display_price=display_price,
+            display_currency=display_currency,
             sanatorium_id=obj.sanatorium_id,
             room_id=obj.room_id,
             is_active=obj.is_active,
@@ -129,7 +152,10 @@ class PackageRead(_PackageReadCommon):
             display_order=obj.display_order,
             created_at=obj.created_at,
             updated_at=obj.updated_at,
-            items=[PackageItemRead.from_obj(i, locale) for i in obj.items],
+            items=[
+                PackageItemRead.from_obj(i, locale, obj.currency, converter)
+                for i in obj.items
+            ],
         )
 
 

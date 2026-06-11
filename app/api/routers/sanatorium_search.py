@@ -3,7 +3,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import LocaleDep
+from app.api.deps import CurrencyDep, LocaleDep
 from app.core.pagination import Pagination
 from app.models.sanatorium import PropertyType
 from app.schemas.search import StaySearchList
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/sanatoriums", tags=["Sanatoriums"])
 @router.get("/search", response_model=StaySearchList)
 async def search_sanatorium_stays(
     locale: LocaleDep,
+    display_currency: CurrencyDep,
     page: Pagination,
     search: SearchService = Depends(get_search_service),
     check_in: date = Query(...),
@@ -34,6 +35,7 @@ async def search_sanatorium_stays(
         )
     items, total = await search.search_stays(
         locale=locale,
+        display_currency=display_currency,
         check_in=check_in,
         check_out=check_out,
         adults=adults,

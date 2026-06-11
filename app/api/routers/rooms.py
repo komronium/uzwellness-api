@@ -10,6 +10,7 @@ from fastapi import (
 )
 
 from app.api.deps import (
+    ConverterDep,
     CurrentUser,
     IncludeTranslationsDep,
     LocaleDep,
@@ -48,6 +49,7 @@ async def list_rooms(
     current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    converter: ConverterDep,
     page: Pagination,
     sanatorium_id: uuid.UUID = Query(...),
     q: str | None = Query(default=None, max_length=120),
@@ -75,18 +77,19 @@ async def list_rooms(
         include_deleted=include_deleted,
         deleted_only=deleted_only,
     )
-    rate = await rooms.rates.get_usd_uzs()
     has_avail = await rooms.has_availability_map([r.id for r in items])
     if include_translations:
         return RoomAdminList(
-            items=room_admin_list(list(items), rate=rate, availability=has_avail),
+            items=room_admin_list(
+                list(items), converter=converter, availability=has_avail
+            ),
             total=total,
             limit=page.limit,
             offset=page.offset,
         )
     return RoomList(
         items=room_public_list(
-            list(items), locale=locale, rate=rate, availability=has_avail
+            list(items), locale=locale, converter=converter, availability=has_avail
         ),
         total=total,
         limit=page.limit,
@@ -97,6 +100,7 @@ async def list_rooms(
 @router.get("/search", response_model=list[RoomSearchResult])
 async def search_rooms(
     locale: LocaleDep,
+    converter: ConverterDep,
     check_in: date = Query(...),
     check_out: date = Query(...),
     guests: int = Query(default=1, ge=1),
@@ -109,6 +113,7 @@ async def search_rooms(
             detail="check_out must be after check_in",
         )
     hits = await rooms.search(
+        converter=converter,
         check_in=check_in,
         check_out=check_out,
         guests=guests,
@@ -136,6 +141,7 @@ async def get_room(
     current_user: OptionalUser,
     locale: LocaleDep,
     include_translations: IncludeTranslationsDep,
+    converter: ConverterDep,
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomRead | RoomAdminRead:
     room = await rooms.get_by_id(room_id)
@@ -143,7 +149,7 @@ async def get_room(
         raise not_found("Room not found")
     if room.deleted_at is not None and not await rooms.can_manage(room, current_user):
         raise not_found("Room not found")
-    pricing = await rooms.enrich(room)
+    pricing = await rooms.enrich(room, converter)
     if include_translations:
         return room_admin_read(room, pricing)
     return room_public_read(room, pricing, locale=locale)
@@ -158,10 +164,11 @@ async def get_room(
 async def create_room(
     payload: RoomCreate,
     current_user: CurrentUser,
+    converter: ConverterDep,
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomAdminRead:
     room = await rooms.create(payload, current_user)
-    return room_admin_read(room, await rooms.enrich(room))
+    return room_admin_read(room, await rooms.enrich(room, converter))
 
 
 @router.patch(
@@ -173,13 +180,14 @@ async def update_room(
     room_id: uuid.UUID,
     payload: RoomUpdate,
     current_user: CurrentUser,
+    converter: ConverterDep,
     rooms: RoomService = Depends(get_room_service),
 ) -> RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise not_found("Room not found")
     updated = await rooms.update(room, payload, current_user)
-    return room_admin_read(updated, await rooms.enrich(updated))
+    return room_admin_read(updated, await rooms.enrich(updated, converter))
 
 
 @router.delete(

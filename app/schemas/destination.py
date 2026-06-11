@@ -73,6 +73,8 @@ class DestinationTileRead(DestinationRead):
 
     sanatoriums_count: int
     min_price_usd: Decimal | None
+    min_price_display: Decimal | None = None
+    display_currency: str | None = None
 
     @classmethod
     def from_aggregate(
@@ -82,12 +84,16 @@ class DestinationTileRead(DestinationRead):
         *,
         sanatoriums_count: int,
         min_price_usd: Decimal | None,
+        min_price_display: Decimal | None = None,
+        display_currency: str | None = None,
     ) -> "DestinationTileRead":
         base = DestinationRead.from_obj(obj, locale)
         return cls(
             **base.model_dump(),
             sanatoriums_count=sanatoriums_count,
             min_price_usd=min_price_usd,
+            min_price_display=min_price_display,
+            display_currency=display_currency,
         )
 
 

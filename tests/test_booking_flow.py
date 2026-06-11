@@ -1,4 +1,5 @@
 """Integration + concurrency tests for the booking flow (v0.4)."""
+
 import asyncio
 from datetime import date, timedelta
 
@@ -34,6 +35,7 @@ async def _setup_room_with_availability(
 
 
 # ── e2e: register → search → book → cancel → re-book ──────────────────────
+
 
 class TestEndToEnd:
     async def test_full_lifecycle(
@@ -115,6 +117,7 @@ class TestEndToEnd:
 
 # ── booking validation ─────────────────────────────────────────────────────
 
+
 class TestBookingValidation:
     async def test_check_in_in_past_returns_400(
         self, client, db, admin_user, admin_headers, customer_headers
@@ -140,9 +143,7 @@ class TestBookingValidation:
         san = await make_sanatorium(
             db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
         )
-        room = await make_room(
-            db, sanatorium=san, min_nights=3, inventory_count=5
-        )
+        room = await make_room(db, sanatorium=san, min_nights=3, inventory_count=5)
         # Only 1 night — below min_nights=3
         resp = await client.post(
             "/api/bookings",
@@ -219,7 +220,9 @@ class TestBookingValidation:
         )
         assert resp.status_code == 409
 
-    async def test_unauthenticated_returns_401(self, client, db, admin_user, admin_headers):
+    async def test_unauthenticated_returns_401(
+        self, client, db, admin_user, admin_headers
+    ):
         san, room = await _setup_room_with_availability(
             db, client, admin_user, admin_headers
         )
@@ -236,6 +239,7 @@ class TestBookingValidation:
 
 
 # ── RBAC for listing ───────────────────────────────────────────────────────
+
 
 class TestBookingRBAC:
     async def test_customer_sees_only_own(
@@ -270,7 +274,9 @@ class TestBookingRBAC:
             db, client, admin_user, admin_headers, units=10
         )
         other_admin = await make_user(db, email="admin2@test.com", role=UserRole.ADMIN)
-        other_san = await make_sanatorium(db, name="Other Sanatorium", admin_user_id=other_admin.id)
+        other_san = await make_sanatorium(
+            db, name="Other Sanatorium", admin_user_id=other_admin.id
+        )
         await make_room(db, sanatorium=other_san)
 
         await client.post(
@@ -288,7 +294,13 @@ class TestBookingRBAC:
         assert resp.json()["items"][0]["room_id"] == str(room.id)
 
     async def test_super_admin_sees_all(
-        self, client, db, admin_user, admin_headers, customer_headers, super_admin_headers
+        self,
+        client,
+        db,
+        admin_user,
+        admin_headers,
+        customer_headers,
+        super_admin_headers,
     ):
         san, room = await _setup_room_with_availability(
             db, client, admin_user, admin_headers, units=10
@@ -307,6 +319,7 @@ class TestBookingRBAC:
 
 
 # ── cancellation ───────────────────────────────────────────────────────────
+
 
 class TestCancellation:
     async def test_customer_cancels_own(
@@ -387,7 +400,13 @@ class TestCancellation:
         assert resp.status_code == 404  # not visible to other customer
 
     async def test_super_admin_cancels_any(
-        self, client, db, admin_user, admin_headers, customer_headers, super_admin_headers
+        self,
+        client,
+        db,
+        admin_user,
+        admin_headers,
+        customer_headers,
+        super_admin_headers,
     ):
         san, room = await _setup_room_with_availability(
             db, client, admin_user, admin_headers
@@ -541,6 +560,7 @@ class TestCancellation:
 
 
 # ── concurrency: two requests racing for the last unit ────────────────────
+
 
 class TestConcurrency:
     async def test_last_unit_only_one_booking_succeeds(

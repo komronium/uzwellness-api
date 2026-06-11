@@ -120,6 +120,8 @@ class BookingRead(BaseModel):
     original_price: Decimal | None = None
     promo_percent_snapshot: Decimal | None = None
     currency: str
+    display_price: Decimal | None = None
+    display_currency: str | None = None
     board: BoardType | None = None
     refundable: bool | None = None
     free_cancellation_days: int | None = None

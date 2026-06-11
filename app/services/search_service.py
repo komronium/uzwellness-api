@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.pricing import calculate_stay_total, convert_to_usd
+from app.core.currency import CurrencyConverter
+from app.core.pricing import calculate_stay_total
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity, SanatoriumAmenity
 from app.models.destination import Destination
@@ -61,6 +62,7 @@ class SearchService:
         self,
         *,
         locale: str,
+        display_currency: str = "UZS",
         check_in: date,
         check_out: date,
         adults: int,
@@ -99,7 +101,9 @@ class SearchService:
         if not candidates:
             return [], 0
 
-        available_items = await self._available_items(context, candidates)
+        available_items = await self._available_items(
+            context, candidates, display_currency
+        )
         items = self._cheapest_by_sanatorium(available_items)
         items.sort(
             key=lambda item: (
@@ -191,17 +195,20 @@ class SearchService:
         return stmt
 
     async def _available_items(
-        self, context: _SearchContext, candidates: list[_Candidate]
+        self,
+        context: _SearchContext,
+        candidates: list[_Candidate],
+        display_currency: str,
     ) -> list[StaySearchItem]:
         usage_by_room = await max_used_by_room(
             self.db,
             room_ids=[candidate.room.id for candidate in candidates],
             dates=context.dates,
         )
-        rate = await self.rates.get_usd_uzs()
+        converter = await self.rates.get_converter(display_currency)
         items: list[StaySearchItem] = []
         for candidate in candidates:
-            item = self._candidate_item(candidate, context, usage_by_room, rate)
+            item = self._candidate_item(candidate, context, usage_by_room, converter)
             if item is not None:
                 items.append(item)
         return items
@@ -211,7 +218,7 @@ class SearchService:
         candidate: _Candidate,
         context: _SearchContext,
         max_used_by_room: dict[uuid.UUID, int],
-        rate,
+        converter: CurrencyConverter,
     ) -> StaySearchItem | None:
         room = candidate.room
         rooms_needed = math.ceil(context.guests / room.capacity)
@@ -224,14 +231,15 @@ class SearchService:
 
         total = calculate_stay_total(room, context.dates, room.price_periods)
         total = (total * rooms_needed).quantize(Decimal("0.01"))
-        total_usd = convert_to_usd(total, room.base_currency, rate)
         return self._to_item(
             candidate,
             context=context,
             room=room,
             rooms_needed=rooms_needed,
             total=total,
-            total_usd=total_usd,
+            total_usd=converter.convert(total, room.base_currency, "USD"),
+            total_display=converter.convert(total, room.base_currency),
+            display_currency=converter.target,
         )
 
     def _to_item(
@@ -243,6 +251,8 @@ class SearchService:
         rooms_needed: int,
         total: Decimal,
         total_usd: Decimal | None,
+        total_display: Decimal | None,
+        display_currency: str,
     ) -> StaySearchItem:
         sanatorium = candidate.sanatorium
         return StaySearchItem(
@@ -277,6 +287,8 @@ class SearchService:
             min_total_price=total,
             min_total_price_currency=room.base_currency,
             min_total_price_usd=total_usd,
+            min_total_price_display=total_display,
+            display_currency=display_currency,
         )
 
     def _cheapest_by_sanatorium(

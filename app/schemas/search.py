@@ -36,6 +36,8 @@ class StaySearchItem(BaseModel):
     min_total_price: Decimal
     min_total_price_currency: str
     min_total_price_usd: Decimal | None
+    min_total_price_display: Decimal | None = None
+    display_currency: str | None = None
 
 
 class StaySearchList(Page[StaySearchItem]):

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.currency import CurrencyConverter
 from app.core.utils import pick_locale
 from app.models.program import (
     TreatmentGuestApplicability,
@@ -86,6 +87,8 @@ class TreatmentProgramRead(BaseModel):
     duration_minutes: int | None
     price: Decimal | None
     currency: str | None
+    display_price: Decimal | None = None
+    display_currency: str | None = None
     instructor_name: str | None
     instructor_bio: str
     group_size_min: int | None
@@ -105,7 +108,14 @@ class TreatmentProgramRead(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_obj(cls, obj, locale: str) -> "TreatmentProgramRead":
+    def from_obj(
+        cls, obj, locale: str, converter: "CurrencyConverter | None" = None
+    ) -> "TreatmentProgramRead":
+        display_price = None
+        display_currency = None
+        if converter is not None and obj.price is not None and obj.currency:
+            display_price = converter.convert(obj.price, obj.currency)
+            display_currency = converter.target
         return cls(
             id=obj.id,
             sanatorium_id=obj.sanatorium_id,
@@ -120,6 +130,8 @@ class TreatmentProgramRead(BaseModel):
             duration_minutes=obj.duration_minutes,
             price=obj.price,
             currency=obj.currency,
+            display_price=display_price,
+            display_currency=display_currency,
             instructor_name=obj.instructor_name,
             instructor_bio=pick_locale(obj.instructor_bio, locale),
             group_size_min=obj.group_size_min,

@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.api.deps import (
+    ConverterDep,
     IncludeTranslationsDep,
     is_super_admin,
     LocaleDep,
@@ -27,10 +28,6 @@ from app.schemas.destination import (
 from app.services.destination_service import (
     DestinationService,
     get_destination_service,
-)
-from app.services.exchange_rate_service import (
-    ExchangeRateService,
-    get_exchange_rate_service,
 )
 
 router = APIRouter(prefix="/destinations", tags=["Destinations"])
@@ -70,23 +67,23 @@ async def list_destinations(
 @router.get("/tiles", response_model=DestinationTileList)
 async def list_destination_tiles(
     locale: LocaleDep,
+    converter: ConverterDep,
     destinations: DestinationService = Depends(get_destination_service),
-    rates: ExchangeRateService = Depends(get_exchange_rate_service),
 ) -> DestinationTileList:
     """Homepage feed: active destinations with sanatorium count + min price.
 
-    `min_price_usd` is normalized using the USD/UZS exchange rate. Rooms in
-    other currencies (none today, but future-proofed) drop out of the min.
-    A destination with no approved sanatoriums returns count=0, price=null.
+    `min_price_usd` is normalized through configured UZS cross-rates. A
+    destination with no approved sanatoriums returns count=0, price=null.
     """
-    rate = await rates.get_usd_uzs()
-    rows = await destinations.list_tiles(usd_uzs_rate=rate.rate if rate else None)
+    rows = await destinations.list_tiles(rates_to_uzs=converter.rates_to_uzs)
     tiles = [
         DestinationTileRead.from_aggregate(
             destination,
             locale,
             sanatoriums_count=count,
             min_price_usd=price,
+            min_price_display=converter.convert(price, "USD"),
+            display_currency=converter.target,
         )
         for destination, count, price in rows
     ]

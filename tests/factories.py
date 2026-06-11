@@ -136,5 +136,3 @@ class InMemoryStorage:
 
     async def delete(self, *, key: str) -> None:
         self.objects.pop(key, None)
-
-

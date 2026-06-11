@@ -10,10 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.currency import CurrencyConverter
 from app.core.database import get_db
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity
-from app.models.exchange_rate import ExchangeRate
 from app.models.program import (
     TreatmentProgram,
     TreatmentProgramType,
@@ -80,7 +80,7 @@ class _OfferContext:
     stay_option_prices: dict[
         tuple[StayOptionGuestType, BoardType, bool], SanatoriumStayOptionPrice
     ]
-    exchange_rate: ExchangeRate | None
+    converter: CurrencyConverter
 
 
 class RoomOfferService:
@@ -94,6 +94,7 @@ class RoomOfferService:
         sanatorium_id: uuid.UUID,
         payload: RoomOfferSearchRequest,
         locale: str,
+        display_currency: str = "UZS",
     ) -> RoomOfferSearchResponse:
         sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
@@ -106,6 +107,7 @@ class RoomOfferService:
             sanatorium_id=sanatorium_id,
             payload=payload,
             locale=locale,
+            display_currency=display_currency,
         )
         rooms = await self._rooms(sanatorium_id=sanatorium_id, payload=payload)
         usage = await max_used_by_room(
@@ -117,7 +119,7 @@ class RoomOfferService:
         offers = self._offers(context, rooms, usage)
         offers = self._filter_by_price(offers, payload)
         offers.sort(
-            key=lambda offer: offer.price.total,
+            key=_offer_display_total,
             reverse=payload.sort == RoomOfferSort.HIGHEST_PRICE,
         )
         alternatives = []
@@ -145,6 +147,7 @@ class RoomOfferService:
         sanatorium_id: uuid.UUID,
         payload: RoomOfferSearchRequest,
         locale: str,
+        display_currency: str,
     ) -> _OfferContext:
         nights = (payload.check_out - payload.check_in).days
         treatments = await self._treatments(
@@ -166,7 +169,7 @@ class RoomOfferService:
             treatment_by_guest=selected,
             treatments=treatments,
             stay_option_prices=stay_option_prices,
-            exchange_rate=await self.rates.get_usd_uzs(),
+            converter=await self.rates.get_converter(display_currency),
         )
 
     async def _rooms(
@@ -337,7 +340,7 @@ class RoomOfferService:
                 requested_rooms=context.requested_rooms,
                 options=context.guest_options,
                 nights=context.nights,
-                exchange_rate=context.exchange_rate,
+                converter=context.converter,
                 currency=room.base_currency,
             )
             + treatment_total(
@@ -345,10 +348,11 @@ class RoomOfferService:
                 options=context.guest_options,
                 treatments=context.treatments,
                 treatment_by_guest=context.treatment_by_guest,
-                exchange_rate=context.exchange_rate,
+                converter=context.converter,
                 currency=room.base_currency,
             )
         ).quantize(CENTS, ROUND_HALF_UP)
+        total = apply_promo(subtotal, rate_plan)
         return RoomOfferCard(
             offer_id=f"{room.id}:{rate_plan.id if rate_plan else 'base'}",
             room_id=room.id,
@@ -364,9 +368,11 @@ class RoomOfferService:
             photo_count=len(room.images),
             photos=[self._photo(image, context.locale) for image in room.images[:8]],
             price=RoomOfferPrice(
-                total=apply_promo(subtotal, rate_plan),
+                total=total,
                 original_total=original_total(subtotal, rate_plan),
                 currency=room.base_currency,
+                display_total=context.converter.convert(total, room.base_currency),
+                display_currency=context.converter.target,
                 rooms_count=len(context.requested_rooms),
                 adults=sum(room.adults for room in context.requested_rooms),
                 children=sum(len(room.children) for room in context.requested_rooms),
@@ -525,13 +531,13 @@ class RoomOfferService:
             result = [
                 offer
                 for offer in result
-                if offer.price.total >= payload.filters.price_min
+                if _offer_display_total(offer) >= payload.filters.price_min
             ]
         if payload.filters.price_max is not None:
             result = [
                 offer
                 for offer in result
-                if offer.price.total <= payload.filters.price_max
+                if _offer_display_total(offer) <= payload.filters.price_max
             ]
         return result
 
@@ -556,6 +562,10 @@ class RoomOfferService:
                     nights=context.nights,
                     min_total_price=cheapest[0],
                     currency=cheapest[1],
+                    display_min_total_price=context.converter.convert(
+                        cheapest[0], cheapest[1]
+                    ),
+                    display_currency=context.converter.target,
                 )
             )
             if len(alternatives) >= 4:
@@ -569,7 +579,7 @@ class RoomOfferService:
         usage: dict[uuid.UUID, int],
         dates: list[date],
     ) -> tuple[Decimal, str] | None:
-        cheapest: tuple[Decimal, str] | None = None
+        cheapest: tuple[Decimal, str, Decimal] | None = None
         alt_context = _OfferContext(
             locale=context.locale,
             sanatorium_id=context.sanatorium_id,
@@ -582,7 +592,7 @@ class RoomOfferService:
             treatment_by_guest=context.treatment_by_guest,
             treatments=context.treatments,
             stay_option_prices=context.stay_option_prices,
-            exchange_rate=context.exchange_rate,
+            converter=context.converter,
         )
         for room in rooms:
             available_rooms = self._available_rooms(room, usage)
@@ -601,9 +611,16 @@ class RoomOfferService:
                     available_rooms=available_rooms,
                 )
                 total = offer.price.total
-                if cheapest is None or total < cheapest[0]:
-                    cheapest = (total, room.base_currency)
-        return cheapest
+                display_total = _offer_display_total(offer)
+                if cheapest is None or display_total < cheapest[2]:
+                    cheapest = (total, room.base_currency, display_total)
+        if cheapest is None:
+            return None
+        return cheapest[0], cheapest[1]
+
+
+def _offer_display_total(offer: RoomOfferCard) -> Decimal:
+    return offer.price.display_total or offer.price.total
 
 
 def get_room_offer_service(

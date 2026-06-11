@@ -1,4 +1,5 @@
 """Integration tests for SUPER_ADMIN_ONLY_FIELDS on Sanatorium update."""
+
 from __future__ import annotations
 
 from decimal import Decimal

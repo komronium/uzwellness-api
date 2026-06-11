@@ -16,6 +16,7 @@ from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming, Rat
 from app.models.sanatorium import SanatoriumStatus
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
 from app.schemas.room_offer import RoomOfferSearchRequest
+from app.core.currency import CurrencyConverter
 from app.services.room_offer_guests import guest_options
 from app.services.room_offer_service import RoomOfferService, _OfferContext
 from tests.factories import make_room, make_sanatorium
@@ -104,7 +105,7 @@ def test_room_offer_inclusions_are_compact_package_summary() -> None:
         treatment_by_guest={},
         treatments=[program],
         stay_option_prices={},
-        exchange_rate=None,
+        converter=CurrencyConverter("UZS", {}),
     )
 
     rows = object.__new__(RoomOfferService)._inclusions(context)
