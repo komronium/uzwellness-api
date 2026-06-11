@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     CLICK_MERCHANT_ID: str = ""
     CLICK_SECRET_KEY: str = ""
 
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    # Callback registered in Google Cloud Console, e.g.
+    # https://api.uzwellness.com/api/auth/google/callback
+    GOOGLE_REDIRECT_URI: str = ""
+    # Frontend page that receives tokens in the URL fragment after login
+    OAUTH_FRONTEND_REDIRECT_URL: str = "https://uzwellness.com/auth/callback"
+
     EMAIL_FROM: str = "noreply@uzwellness.com"
     EMAIL_BACKEND: str = "log"
     SMTP_HOST: str | None = None
@@ -84,6 +92,13 @@ class Settings(BaseSettings):
             errors.append("PAYME_MERCHANT_KEY is required when Payme is enabled")
         if self.CLICK_SERVICE_ID and not self.CLICK_SECRET_KEY:
             errors.append("CLICK_SECRET_KEY is required when Click is enabled")
+        if self.GOOGLE_CLIENT_ID and not (
+            self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI
+        ):
+            errors.append(
+                "GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are required "
+                "when Google OAuth is enabled"
+            )
         if self.EMAIL_BACKEND == "smtp" and (
             not self.SMTP_HOST or not self.SMTP_USERNAME or not self.SMTP_PASSWORD
         ):

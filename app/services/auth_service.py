@@ -1,5 +1,7 @@
+import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import update
@@ -33,6 +35,33 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
+            )
+        return await self._issue_token_pair(user.id)
+
+    async def login_with_google(self, userinfo: dict[str, Any]) -> Token:
+        """Log in (or sign up) a user from a verified Google profile."""
+        email = (userinfo.get("email") or "").strip().lower()
+        if not email or not userinfo.get("email_verified"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Google account email is not verified",
+            )
+        user = await self.users.get_by_email(email)
+        if user is None:
+            # Google-born account: random password placeholder; the user can
+            # set a real one later via password reset.
+            user = User(
+                email=email,
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                full_name=userinfo.get("name"),
+            )
+            self.db.add(user)
+            await self.db.commit()
+            await self.db.refresh(user)
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is disabled",
             )
         return await self._issue_token_pair(user.id)
 

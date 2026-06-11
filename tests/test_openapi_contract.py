@@ -30,7 +30,8 @@ def test_openapi_contract_has_success_response_schemas() -> None:
     for method, path, operation in _operations(schema):
         responses = operation.get("responses", {})
         success_codes = [code for code in responses if code.startswith("2")]
-        if success_codes == ["204"]:
+        # No 2xx at all means a redirect-only endpoint (e.g. OAuth) — no body.
+        if not success_codes or success_codes == ["204"]:
             continue
         assert any(
             any(
