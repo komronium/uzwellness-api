@@ -20,9 +20,9 @@ def test_parse_cbu_rates_filters_and_normalizes_nominal():
     parsed = {p.pair: p for p in parse_cbu_rates(CBU_SAMPLE)}
 
     assert set(parsed) == {"USD_UZS", "EUR_UZS", "RUB_UZS", "KZT_UZS"}
-    assert parsed["USD_UZS"].rate == Decimal("12054.030000")
-    # Nominal=10 means the rate covers 10 units
-    assert parsed["KZT_UZS"].rate == Decimal("22.317000")
+    assert parsed["USD_UZS"].rate == Decimal("12054.03")
+    # Nominal=10 means the rate covers 10 units (22.317 → 22.32)
+    assert parsed["KZT_UZS"].rate == Decimal("22.32")
     assert parsed["USD_UZS"].valid_from == datetime(2026, 6, 11, tzinfo=UTC)
 
 
@@ -48,7 +48,7 @@ async def test_sync_endpoint_upserts_rates(
     assert resp.status_code == 200, resp.text
     pairs = {item["pair"]: item for item in resp.json()}
     assert set(pairs) == {"USD_UZS", "EUR_UZS", "RUB_UZS", "KZT_UZS"}
-    assert Decimal(pairs["USD_UZS"]["rate"]) == Decimal("12054.030000")
+    assert Decimal(pairs["USD_UZS"]["rate"]) == Decimal("12054.03")
 
     # Re-sync updates in place — no duplicate pairs
     resp = await client.post("/api/exchange-rates/sync", headers=super_admin_headers)
@@ -117,7 +117,7 @@ async def test_delete_rate_returns_pair_to_auto_sync(
     assert resp.status_code == 200
 
     rates = {r["pair"]: r for r in (await client.get("/api/exchange-rates")).json()}
-    assert Decimal(rates["USD_UZS"]["rate"]) == Decimal("12054.030000")
+    assert Decimal(rates["USD_UZS"]["rate"]) == Decimal("12054.03")
     assert rates["USD_UZS"]["source"] == "cbu"
 
 
@@ -143,4 +143,4 @@ async def test_currencies_endpoint_lists_selector_options(
     assert set(by_code) == {"UZS", "USD", "EUR", "RUB", "KZT"}
     assert Decimal(by_code["UZS"]["rate_to_uzs"]) == Decimal("1")
     assert by_code["USD"]["is_available"] is True
-    assert Decimal(by_code["USD"]["rate_to_uzs"]) == Decimal("12054.030000")
+    assert Decimal(by_code["USD"]["rate_to_uzs"]) == Decimal("12054.03")

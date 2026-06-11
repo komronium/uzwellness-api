@@ -687,7 +687,7 @@ class TestExchangeRates:
         rates = await client.get("/api/exchange-rates")
         uzs_entries = [r for r in rates.json() if r["pair"] == "USD_UZS"]
         assert len(uzs_entries) == 1
-        assert uzs_entries[0]["rate"] == "12700.000000"
+        assert uzs_entries[0]["rate"] == "12700.00"
 
     async def test_public_can_list(self, client):
         resp = await client.get("/api/exchange-rates")

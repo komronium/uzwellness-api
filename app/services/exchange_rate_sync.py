@@ -20,7 +20,7 @@ from app.services.exchange_rate_service import ExchangeRateService
 logger = logging.getLogger(__name__)
 
 CBU_RATES_URL = "https://cbu.uz/uz/arkhiv-kursov-valyut/json/"
-_SIX = Decimal("0.000001")
+_TWO = Decimal("0.01")
 
 
 def parse_cbu_rates(items: list[dict]) -> list[ExchangeRateUpsert]:
@@ -35,7 +35,7 @@ def parse_cbu_rates(items: list[dict]) -> list[ExchangeRateUpsert]:
         parsed.append(
             ExchangeRateUpsert(
                 pair=f"{ccy}_UZS",
-                rate=rate.quantize(_SIX, ROUND_HALF_UP),
+                rate=rate.quantize(_TWO, ROUND_HALF_UP),
                 valid_from=valid_from,
             )
         )

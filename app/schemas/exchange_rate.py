@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ExchangeRateUpsert(BaseModel):
     pair: str = Field(pattern=r"^[A-Z]{3}_[A-Z]{3}$")
-    rate: Decimal = Field(gt=0, decimal_places=6)
+    rate: Decimal = Field(gt=0, decimal_places=2)
     valid_from: datetime
 
 

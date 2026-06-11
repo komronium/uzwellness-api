@@ -19,7 +19,7 @@ class ExchangeRate(Base):
     pair: Mapped[str] = mapped_column(
         String(10), unique=True, nullable=False, index=True
     )
-    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     source: Mapped[str] = mapped_column(
         String(10), nullable=False, default=RATE_SOURCE_MANUAL, server_default="manual"
     )
