@@ -128,6 +128,9 @@ class RoomOfferTreatmentOption(BaseModel):
     price: Decimal | None
     currency: str | None
     price_delta: Decimal
+    display_price: Decimal | None = None
+    display_price_delta: Decimal | None = None
+    display_currency: str | None = None
 
 
 class RoomOfferTreatmentGroup(BaseModel):

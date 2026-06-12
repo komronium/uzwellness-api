@@ -19,7 +19,7 @@ from app.schemas.room_offer import RoomOfferSearchRequest
 from app.core.currency import CurrencyConverter
 from app.services.room_offer_guests import guest_options
 from app.services.room_offer_service import RoomOfferService, _OfferContext
-from tests.factories import make_room, make_sanatorium
+from tests.factories import make_exchange_rate, make_room, make_sanatorium
 
 
 def test_room_offer_guest_options_use_room_board() -> None:
@@ -255,6 +255,51 @@ async def test_room_offer_search_returns_guest_level_treatment_and_inclusions(
             "description": "1 medical examination, 10 medical procedures",
         },
     ]
+
+
+async def test_room_offer_treatment_options_expose_display_prices(
+    client, db: AsyncSession, admin_user
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        status=SanatoriumStatus.APPROVED,
+        admin_user_id=admin_user.id,
+    )
+    room = await make_room(db, sanatorium=sanatorium, capacity=2, inventory_count=1)
+    await _rate_plan(db, room.id)
+    basic = await _program(db, sanatorium.id, price="10.00")
+    intensive = await _program(db, sanatorium.id, price="18.00")
+    await make_exchange_rate(db, pair="USD_UZS", rate="12500")
+    await make_exchange_rate(db, pair="RUB_UZS", rate="125")
+
+    resp = await client.post(
+        f"/api/sanatoriums/{sanatorium.id}/room-offers/search?currency=RUB",
+        json={
+            "check_in": "2026-10-02",
+            "check_out": "2026-10-04",
+            "rooms": [{"adults": 1}],
+            "treatment_selections": [
+                {"room_index": 0, "guest_index": 0, "program_id": str(basic.id)}
+            ],
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    options = {
+        option["id"]: option for option in body["treatment_selection"][0]["options"]
+    }
+    chosen = options[str(basic.id)]
+    upgrade = options[str(intensive.id)]
+    assert chosen["display_currency"] == "RUB"
+    # 10 USD × 12500 / 125 = 1000 RUB
+    assert Decimal(chosen["display_price"]) == Decimal("1000.00")
+    assert Decimal(chosen["display_price_delta"]) == Decimal("0.00")
+    # delta: 18 − 10 = 8 USD → 800 RUB
+    assert upgrade["display_currency"] == "RUB"
+    assert Decimal(upgrade["display_price"]) == Decimal("1800.00")
+    assert Decimal(upgrade["display_price_delta"]) == Decimal("800.00")
+    assert body["offers"][0]["price"]["display_currency"] == "RUB"
 
 
 async def test_room_offer_search_supports_room_board_and_guest_treatment_options(

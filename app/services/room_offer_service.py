@@ -414,6 +414,10 @@ class RoomOfferService:
                     (room_index, guest.guest_index), default
                 )
                 selected_price = selected.price if selected and selected.price else ZERO
+                # Deltas already assume one currency per group; reuse it for display.
+                group_currency = next(
+                    (program.currency for program in programs if program.currency), None
+                )
                 groups.append(
                     RoomOfferTreatmentGroup(
                         room_index=room_index,
@@ -422,7 +426,9 @@ class RoomOfferService:
                         package_kind=package_kind,
                         selected_program_id=selected.id if selected else None,
                         options=[
-                            self._treatment_option(program, selected_price, context)
+                            self._treatment_option(
+                                program, selected_price, group_currency, context
+                            )
                             for program in programs
                         ],
                     )
@@ -433,9 +439,16 @@ class RoomOfferService:
         self,
         program: TreatmentProgram,
         selected_price: Decimal,
+        group_currency: str | None,
         context: _OfferContext,
     ) -> RoomOfferTreatmentOption:
         price = program.price or ZERO
+        price_delta = (price - selected_price).quantize(CENTS, ROUND_HALF_UP)
+        display_price_delta = (
+            context.converter.convert(price_delta, group_currency)
+            if group_currency
+            else None
+        )
         return RoomOfferTreatmentOption(
             id=program.id,
             package_kind=RoomOfferPackageKind(program.stay_package_kind.value),
@@ -450,7 +463,16 @@ class RoomOfferService:
             included_services=program.included_services,
             price=program.price,
             currency=program.currency,
-            price_delta=(price - selected_price).quantize(CENTS, ROUND_HALF_UP),
+            price_delta=price_delta,
+            display_price=(
+                context.converter.convert(program.price, group_currency)
+                if group_currency and program.price is not None
+                else None
+            ),
+            display_price_delta=display_price_delta,
+            display_currency=(
+                context.converter.target if display_price_delta is not None else None
+            ),
         )
 
     def _inclusions(self, context: _OfferContext) -> list[RoomOfferGuestInclusions]:
