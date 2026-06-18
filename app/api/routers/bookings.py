@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -33,6 +33,7 @@ from app.services.admin_reservation_service import (
 )
 from app.services.booking_invoice import build_invoice
 from app.services.booking_service import BookingService, get_booking_service
+from app.services.booking_voucher import build_voucher_pdf
 from app.services.room_offer_booking_service import (
     RoomOfferBookingService,
     get_room_offer_booking_service,
@@ -203,6 +204,26 @@ async def get_booking_invoice(
         raise not_found("Booking not found")
     data = await build_invoice(db, booking)
     return InvoiceRead(**data)
+
+
+@router.get("/{booking_id}/voucher.pdf")
+async def get_booking_voucher(
+    booking_id: uuid.UUID,
+    current_user: CurrentUser,
+    locale: LocaleDep,
+    bookings: BookingService = Depends(get_booking_service),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    booking = await bookings.get_visible(booking_id, current_user)
+    if booking is None:
+        raise not_found("Booking not found")
+    pdf = await build_voucher_pdf(db, booking, locale)
+    filename = f"Booking #{booking.reservation_number}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{booking_id}/cancel", response_model=BookingRead)
