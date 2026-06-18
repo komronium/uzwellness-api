@@ -16,7 +16,6 @@ from app.core.currency import CurrencyConverter
 from app.core.pricing import calculate_stay_total
 from app.core.utils import date_range, pick_locale
 from app.models.amenity import RoomAmenity, SanatoriumAmenity
-from app.models.destination import Destination
 from app.models.region import Region
 from app.models.room import Room
 from app.models.sanatorium import (
@@ -37,7 +36,6 @@ from app.services.exchange_rate_service import (
 class _Candidate:
     room: Room
     sanatorium: Sanatorium
-    destination: Destination | None
     region: Region | None
 
 
@@ -71,7 +69,6 @@ class SearchService:
         offset: int,
         location: str | None = None,
         sanatorium_id: uuid.UUID | None = None,
-        destination_id: uuid.UUID | None = None,
         treatment_focus: str | None = None,
         property_type: PropertyType | None = None,
     ) -> tuple[list[StaySearchItem], int]:
@@ -94,7 +91,6 @@ class SearchService:
             guests=context.guests,
             location=location,
             sanatorium_id=sanatorium_id,
-            destination_id=destination_id,
             treatment_focus=treatment_focus,
             property_type=property_type,
         )
@@ -122,7 +118,6 @@ class SearchService:
         guests: int,
         location: str | None,
         sanatorium_id: uuid.UUID | None,
-        destination_id: uuid.UUID | None,
         treatment_focus: str | None,
         property_type: PropertyType | None,
     ) -> list[_Candidate]:
@@ -131,7 +126,6 @@ class SearchService:
             guests=guests,
             location=location,
             sanatorium_id=sanatorium_id,
-            destination_id=destination_id,
             treatment_focus=treatment_focus,
             property_type=property_type,
         )
@@ -140,8 +134,7 @@ class SearchService:
             _Candidate(
                 room=row[0],
                 sanatorium=row[1],
-                destination=row[2],
-                region=row[3],
+                region=row[2],
             )
             for row in rows
         ]
@@ -153,14 +146,12 @@ class SearchService:
         guests: int,
         location: str | None,
         sanatorium_id: uuid.UUID | None,
-        destination_id: uuid.UUID | None,
         treatment_focus: str | None,
         property_type: PropertyType | None,
     ):
         stmt = (
-            select(Room, Sanatorium, Destination, Region)
+            select(Room, Sanatorium, Region)
             .join(Sanatorium, Room.sanatorium_id == Sanatorium.id)
-            .outerjoin(Destination, Sanatorium.destination_id == Destination.id)
             .outerjoin(Region, Sanatorium.region_id == Region.id)
             .where(
                 Sanatorium.status == SanatoriumStatus.APPROVED,
@@ -186,8 +177,6 @@ class SearchService:
             stmt = stmt.where(Sanatorium.id == sanatorium_id)
         if property_type is not None:
             stmt = stmt.where(Sanatorium.property_type == property_type)
-        if destination_id is not None:
-            stmt = stmt.where(Sanatorium.destination_id == destination_id)
         if treatment_focus:
             stmt = stmt.where(Sanatorium.treatment_focuses.contains([treatment_focus]))
         if location and location.strip():
@@ -264,10 +253,6 @@ class SearchService:
             region_name=pick_locale(candidate.region.name, context.locale)
             if candidate.region
             else None,
-            destination_id=sanatorium.destination_id,
-            destination_name=pick_locale(candidate.destination.name, context.locale)
-            if candidate.destination
-            else None,
             primary_image_url=_primary_image_url(sanatorium.images),
             stars=sanatorium.stars,
             avg_rating=sanatorium.avg_rating,
@@ -325,10 +310,6 @@ def _location_clause(term: str):
         | Sanatorium.name["en"].astext.icontains(term, autoescape=True)
         | Sanatorium.city.icontains(term, autoescape=True)
         | Sanatorium.slug.icontains(term, autoescape=True)
-        | Destination.slug.icontains(term, autoescape=True)
-        | Destination.name["uz"].astext.icontains(term, autoescape=True)
-        | Destination.name["ru"].astext.icontains(term, autoescape=True)
-        | Destination.name["en"].astext.icontains(term, autoescape=True)
         | Region.slug.icontains(term, autoescape=True)
         | Region.name["uz"].astext.icontains(term, autoescape=True)
         | Region.name["ru"].astext.icontains(term, autoescape=True)

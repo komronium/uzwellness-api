@@ -34,7 +34,6 @@ from app.models.amenity import (
 )
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking
-from app.models.destination import Destination
 from app.models.extra_bed import ExtraBedConfig
 from app.models.package import Package, PackageItem, PackageItemType
 from app.models.program import (
@@ -226,7 +225,6 @@ SANATORIUMS: list[dict[str, Any]] = [
             "Namangan viloyati",
             "Наманганская область",
         ),
-        "destination": ("namangan-mineral-springs", "Namangan Mineral Springs"),
         "address": tr(
             "Chortoq district, Namangan Region, Uzbekistan",
             "Namangan viloyati, Chortoq tumani, O'zbekiston",
@@ -263,7 +261,6 @@ SANATORIUMS: list[dict[str, Any]] = [
         ),
         "city": "Bukhara",
         "region": ("bukhara", "Bukhara Region", "Buxoro viloyati", "Бухарская область"),
-        "destination": ("bukhara-wellness", "Bukhara Wellness"),
         "address": tr(
             "Sitorai Mohi Hosa area, Bukhara Region, Uzbekistan",
             "Buxoro viloyati, Sitorai Mohi Hosa hududi, O'zbekiston",
@@ -301,7 +298,6 @@ SANATORIUMS: list[dict[str, Any]] = [
             "Jizzax viloyati",
             "Джизакская область",
         ),
-        "destination": ("zomin-mountains", "Zomin Mountains"),
         "address": tr(
             "Zomin mountain area, Jizzakh Region, Uzbekistan",
             "Jizzax viloyati, Zomin tog' hududi, O'zbekiston",
@@ -339,7 +335,6 @@ SANATORIUMS: list[dict[str, Any]] = [
             "Toshkent viloyati",
             "Ташкентская область",
         ),
-        "destination": ("tashkent-mountain-resorts", "Tashkent Mountain Resorts"),
         "address": tr(
             "Oq-Tosh mountain area, Bostanliq district, Tashkent Region, Uzbekistan",
             "Toshkent viloyati, Bo'stonliq tumani, Oq-Tosh tog' hududi",
@@ -377,7 +372,6 @@ SANATORIUMS: list[dict[str, Any]] = [
             "Toshkent shahri",
             "город Ташкент",
         ),
-        "destination": ("tashkent-wellness", "Tashkent Wellness"),
         "address": tr(
             "Chinobod area, Tashkent, Uzbekistan",
             "Toshkent shahri, Chinobod hududi, O'zbekiston",
@@ -415,7 +409,6 @@ SANATORIUMS: list[dict[str, Any]] = [
             "Farg'ona viloyati",
             "Ферганская область",
         ),
-        "destination": ("fergana-mineral-waters", "Fergana Mineral Waters"),
         "address": tr(
             "Chimyon settlement, Fergana Region, Uzbekistan",
             "Farg'ona viloyati, Chimyon shaharchasi, O'zbekiston",
@@ -570,7 +563,6 @@ async def create_sanatorium(
     db: AsyncSession, item: dict[str, Any], display_order: int
 ) -> Sanatorium:
     region = await upsert_region(db, item)
-    destination = await upsert_destination(db, item, region)
 
     sanatorium = Sanatorium(
         slug=item["slug"],
@@ -578,7 +570,6 @@ async def create_sanatorium(
         description=item["description"],
         city=item["city"],
         region_id=region.id,
-        destination_id=destination.id,
         address=item["address"],
         lat=money(item["lat"]),
         lng=money(item["lng"]),
@@ -654,25 +645,6 @@ async def upsert_region(db: AsyncSession, item: dict[str, Any]) -> Region:
     region.is_active = True
     await db.flush()
     return region
-
-
-async def upsert_destination(
-    db: AsyncSession, item: dict[str, Any], region: Region
-) -> Destination:
-    slug, name = item["destination"]
-    destination = await db.scalar(select(Destination).where(Destination.slug == slug))
-    if destination is None:
-        destination = Destination(slug=slug)
-        db.add(destination)
-    destination.name = tr(name)
-    destination.tagline = tr(f"{name} sanatorium stays")
-    destination.description = tr(f"Curated wellness stays in {item['city']}.")
-    destination.hero_image_url = IMAGE_BANK[item["image_key"]][0]
-    destination.lat = money(item["lat"])
-    destination.lng = money(item["lng"])
-    destination.is_active = True
-    await db.flush()
-    return destination
 
 
 async def attach_sanatorium_amenities(

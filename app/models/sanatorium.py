@@ -30,7 +30,6 @@ from app.core.ids import uuid7
 
 if TYPE_CHECKING:
     from app.models.amenity import SanatoriumAmenity
-    from app.models.destination import Destination
     from app.models.region import Region
     from app.models.review import SanatoriumReview
 
@@ -99,11 +98,6 @@ class Sanatorium(TimestampMixin, Base):
     region_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("regions.id", ondelete="SET NULL"),
-        index=True,
-    )
-    destination_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid,
-        ForeignKey("destinations.id", ondelete="SET NULL"),
         index=True,
     )
     address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -255,9 +249,6 @@ class Sanatorium(TimestampMixin, Base):
     )
 
     region: Mapped["Region | None"] = relationship(lazy="selectin")
-    destination: Mapped["Destination | None"] = relationship(
-        back_populates="sanatoriums", lazy="selectin"
-    )
     images: Mapped[list["SanatoriumImage"]] = relationship(
         back_populates="sanatorium",
         cascade="all, delete-orphan",

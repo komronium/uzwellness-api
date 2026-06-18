@@ -15,8 +15,6 @@ class StaySearchItem(BaseModel):
     city: str
     region_id: uuid.UUID | None
     region_name: str | None
-    destination_id: uuid.UUID | None
-    destination_name: str | None
     primary_image_url: str | None
     stars: int
     avg_rating: Decimal | None

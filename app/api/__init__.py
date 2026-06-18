@@ -7,7 +7,6 @@ from app.api.routers import (
     availability,
     b2b,
     bookings,
-    destinations,
     exchange_rates,
     extra_beds,
     finance,
@@ -64,5 +63,4 @@ api_router.include_router(b2b.router)
 api_router.include_router(transfers.router)
 api_router.include_router(treatment_focuses.router)
 api_router.include_router(regions.router)
-api_router.include_router(destinations.router)
 api_router.include_router(newsletter.router)

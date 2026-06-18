@@ -56,7 +56,6 @@ class SanatoriumQueryService:
         offset: int,
         city: str | None = None,
         region_id: uuid.UUID | None = None,
-        destination_id: uuid.UUID | None = None,
         status_filter: SanatoriumStatus | None = None,
         stars: int | None = None,
         min_rating: Decimal | None = None,
@@ -73,7 +72,6 @@ class SanatoriumQueryService:
             base,
             city=city,
             region_id=region_id,
-            destination_id=destination_id,
             status_filter=status_filter,
             stars=stars,
             min_rating=min_rating,
@@ -125,7 +123,6 @@ class SanatoriumQueryService:
             .options(
                 selectinload(Sanatorium.images),
                 selectinload(Sanatorium.region),
-                selectinload(Sanatorium.destination),
                 selectinload(Sanatorium.amenity_links).selectinload(
                     SanatoriumAmenity.amenity
                 ),
@@ -207,7 +204,6 @@ def _apply_list_filters(
     *,
     city: str | None,
     region_id: uuid.UUID | None,
-    destination_id: uuid.UUID | None,
     status_filter: SanatoriumStatus | None,
     stars: int | None,
     min_rating: Decimal | None,
@@ -226,9 +222,6 @@ def _apply_list_filters(
         else None,
         Sanatorium.city == city if city is not None else None,
         Sanatorium.region_id == region_id if region_id is not None else None,
-        Sanatorium.destination_id == destination_id
-        if destination_id is not None
-        else None,
         Sanatorium.status == status_filter if status_filter is not None else None,
         Sanatorium.stars == stars if stars is not None else None,
         Sanatorium.avg_rating >= min_rating if min_rating is not None else None,

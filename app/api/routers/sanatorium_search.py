@@ -24,7 +24,6 @@ async def search_sanatorium_stays(
     children: int = Query(default=0, ge=0),
     location: str | None = Query(default=None, max_length=200),
     sanatorium_id: uuid.UUID | None = Query(default=None),
-    destination_id: uuid.UUID | None = Query(default=None),
     treatment_focus: str | None = Query(default=None, max_length=60),
     property_type: PropertyType | None = Query(default=None),
 ) -> StaySearchList:
@@ -42,7 +41,6 @@ async def search_sanatorium_stays(
         children=children,
         location=location,
         sanatorium_id=sanatorium_id,
-        destination_id=destination_id,
         treatment_focus=treatment_focus or None,
         property_type=property_type,
         limit=page.limit,

@@ -1,7 +1,7 @@
 OPENAPI_TAGS = [
     {"name": "Identity", "description": "Authentication and user accounts"},
     {"name": "Sanatoriums", "description": "Sanatorium profiles, media, reviews"},
-    {"name": "Destinations", "description": "Regions and destination tiles"},
+    {"name": "Regions", "description": "Administrative viloyatlar"},
     {"name": "Treatments", "description": "Treatment focuses and programs"},
     {"name": "Amenities", "description": "Amenity catalog"},
     {"name": "Rooms", "description": "Rooms, rate plans, extra beds, room media"},

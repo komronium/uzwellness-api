@@ -15,8 +15,6 @@ class FeaturedSanatoriumCard(BaseModel):
     city: str
     region_id: uuid.UUID | None
     region_name: str | None
-    destination_id: uuid.UUID | None
-    destination_name: str | None
     primary_image_url: str | None
     photos_count: int
     stars: int
@@ -53,12 +51,6 @@ class FeaturedSanatoriumCard(BaseModel):
             region_id=obj.region_id,
             region_name=(
                 pick_locale(obj.region.name, locale) if obj.region is not None else None
-            ),
-            destination_id=obj.destination_id,
-            destination_name=(
-                pick_locale(obj.destination.name, locale)
-                if obj.destination is not None
-                else None
             ),
             primary_image_url=_primary_image_url(obj.images),
             photos_count=len(obj.images or []),

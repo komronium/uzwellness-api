@@ -15,8 +15,7 @@ class Region(TimestampMixin, Base):
     """Administrative viloyat. Fixed catalog of 14, seeded by migration.
 
     Admin picks one when creating a sanatorium. Filtering by `region_id` on
-    /sanatoriums uses this. Marketing tiles on the homepage are a separate
-    concept — see Destination.
+    /sanatoriums uses this.
     """
 
     __tablename__ = "regions"

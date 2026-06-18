@@ -28,7 +28,6 @@ from app.models.amenity import (
     SanatoriumAmenity,
 )
 from app.models.availability import RoomAvailability
-from app.models.destination import Destination
 from app.models.extra_bed import ExtraBedConfig
 from app.models.program import (
     TreatmentFocus,
@@ -92,8 +91,7 @@ async def main() -> None:
 
 async def seed_chortoq_sanatorium(db: AsyncSession) -> Sanatorium:
     region = await upsert_region(db)
-    destination = await upsert_destination(db)
-    sanatorium = await upsert_sanatorium(db, region, destination)
+    sanatorium = await upsert_sanatorium(db, region)
     await refresh_related_content(db, sanatorium)
 
     amenities = await upsert_amenities(db)
@@ -140,40 +138,7 @@ async def upsert_region(db: AsyncSession) -> Region:
     return region
 
 
-async def upsert_destination(db: AsyncSession) -> Destination:
-    destination = await db.scalar(
-        select(Destination).where(Destination.slug == "namangan-mineral-springs")
-    )
-    if destination is None:
-        destination = Destination(slug="namangan-mineral-springs")
-        db.add(destination)
-
-    destination.name = tr(
-        "Namangan Mineral Springs",
-        "Namangan mineral buloqlari",
-        "Минеральные источники Намангана",
-    )
-    destination.tagline = tr(
-        "Mineral-water therapy in the Fergana Valley",
-        "Farg'ona vodiysida mineral suv bilan davolanish",
-        "Минеральное лечение в Ферганской долине",
-    )
-    destination.description = tr(
-        "Curated sanatoriums around Chortoq and nearby mineral-water areas.",
-        "Chortoq va yaqin mineral hududlardagi sanatoriyalar.",
-        "Санатории Чартака и близлежащих минеральных зон.",
-    )
-    destination.hero_image_url = f"{IMAGE_BASE}/84.jpg"
-    destination.lat = Decimal("41.071000")
-    destination.lng = Decimal("71.824000")
-    destination.is_active = True
-    await db.flush()
-    return destination
-
-
-async def upsert_sanatorium(
-    db: AsyncSession, region: Region, destination: Destination
-) -> Sanatorium:
+async def upsert_sanatorium(db: AsyncSession, region: Region) -> Sanatorium:
     sanatorium = await db.scalar(select(Sanatorium).where(Sanatorium.slug == SLUG))
     if sanatorium is None:
         sanatorium = Sanatorium(slug=SLUG)
@@ -195,7 +160,6 @@ async def upsert_sanatorium(
     )
     sanatorium.city = "Chortoq"
     sanatorium.region_id = region.id
-    sanatorium.destination_id = destination.id
     sanatorium.address = tr(
         "Chortoq district, Namangan Region, Uzbekistan",
         "Namangan viloyati, Chortoq tumani, O'zbekiston",

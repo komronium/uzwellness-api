@@ -13,7 +13,6 @@ from app.models.sanatorium import (
     WellnessCategory,
 )
 from app.schemas.common import Page, Translations, TranslationsCreate
-from app.schemas.destination import DestinationAdminRead, DestinationRead
 from app.schemas.region import RegionAdminRead, RegionRead
 from app.schemas.sanatorium_components import (
     MealService,
@@ -52,7 +51,6 @@ class SanatoriumCreate(BaseModel):
     description: TranslationsCreate
     city: str = Field(min_length=1, max_length=120)
     region_id: uuid.UUID | None = None
-    destination_id: uuid.UUID | None = None
     address: TranslationsCreate
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
@@ -108,7 +106,6 @@ class SanatoriumUpdate(BaseModel):
     description: Translations | None = None
     city: str | None = Field(default=None, min_length=1, max_length=120)
     region_id: uuid.UUID | None = None
-    destination_id: uuid.UUID | None = None
     address: Translations | None = None
     lat: Decimal | None = Field(default=None, ge=-90, le=90)
     lng: Decimal | None = Field(default=None, ge=-180, le=180)
@@ -168,7 +165,6 @@ class _SanatoriumReadCommon(BaseModel):
     slug: str
     city: str
     region_id: uuid.UUID | None
-    destination_id: uuid.UUID | None
     lat: Decimal | None
     lng: Decimal | None
     phones: list[str]
@@ -222,7 +218,6 @@ class SanatoriumRead(_SanatoriumReadCommon):
     house_rules: str
     cancellation_policy: str
     region: RegionRead | None = None
-    destination: DestinationRead | None = None
     amenities: list[SanatoriumAmenityRead] = Field(default_factory=list)
     medical_base: MedicalBaseRead
     policies: SanatoriumPolicies
@@ -245,7 +240,6 @@ class SanatoriumAdminRead(_SanatoriumReadCommon):
     house_rules: dict
     cancellation_policy: dict
     region: RegionAdminRead | None = None
-    destination: DestinationAdminRead | None = None
     amenities: list[SanatoriumAmenityAdminRead] = Field(
         default_factory=list, validation_alias="amenity_links"
     )
@@ -272,7 +266,6 @@ def _public_core(obj, locale: str) -> dict:
         "description": pick_locale(obj.description, locale),
         "city": obj.city,
         "region_id": obj.region_id,
-        "destination_id": obj.destination_id,
         "address": pick_locale(obj.address, locale),
         "lat": obj.lat,
         "lng": obj.lng,
@@ -325,11 +318,6 @@ def _public_detail(obj, locale: str) -> dict:
 def _public_relations(obj, locale: str) -> dict:
     return {
         "region": RegionRead.from_obj(obj.region, locale) if obj.region else None,
-        "destination": (
-            DestinationRead.from_obj(obj.destination, locale)
-            if obj.destination
-            else None
-        ),
         "treatment_profile": TreatmentProfileRead.from_obj(
             obj.treatment_profile, locale
         ),

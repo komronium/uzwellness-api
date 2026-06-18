@@ -5,7 +5,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.availability import RoomAvailability
-from app.models.destination import Destination
 from app.models.region import Region
 from app.models.sanatorium import (
     PropertyType,
@@ -14,21 +13,6 @@ from app.models.sanatorium import (
     SanatoriumStatus,
 )
 from tests.factories import make_room
-
-
-async def _make_destination(
-    db: AsyncSession, *, slug: str, name_en: str
-) -> Destination:
-    destination = Destination(
-        slug=slug,
-        name={"en": name_en, "uz": name_en, "ru": name_en},
-        tagline={"en": "Featured"},
-        is_active=True,
-    )
-    db.add(destination)
-    await db.commit()
-    await db.refresh(destination)
-    return destination
 
 
 async def _make_region(db: AsyncSession, *, slug: str, name_en: str) -> Region:
@@ -45,7 +29,6 @@ async def _make_sanatorium(
     slug: str,
     name_en: str,
     city: str = "Boysun",
-    destination: Destination | None = None,
     region: Region | None = None,
     treatment_focuses: list[str] | None = None,
     avg_rating: Decimal | None = None,
@@ -57,7 +40,6 @@ async def _make_sanatorium(
         description={},
         city=city,
         region_id=region.id if region else None,
-        destination_id=destination.id if destination else None,
         address={},
         stars=4,
         treatment_focuses=treatment_focuses or [],
@@ -86,13 +68,11 @@ async def _add_image(db: AsyncSession, sanatorium: Sanatorium, *, url: str) -> N
 async def test_sanatorium_search_matches_location_and_returns_cheapest_room(
     client: AsyncClient, db: AsyncSession
 ) -> None:
-    destination = await _make_destination(db, slug="boysun", name_en="Boysun")
     region = await _make_region(db, slug="surxondaryo", name_en="Surxondaryo")
     sanatorium = await _make_sanatorium(
         db,
         slug="boysun-spa",
         name_en="Boysun Spa",
-        destination=destination,
         region=region,
         avg_rating=Decimal("4.70"),
     )
@@ -117,7 +97,6 @@ async def test_sanatorium_search_matches_location_and_returns_cheapest_room(
     assert body["total"] == 1
     item = body["items"][0]
     assert item["sanatorium_slug"] == "boysun-spa"
-    assert item["destination_name"] == "Boysun"
     assert item["region_name"] == "Surxondaryo"
     assert item["primary_image_url"] == "https://cdn.test/boysun.jpg"
     assert item["available_room_id"] == str(cheap_room.id)

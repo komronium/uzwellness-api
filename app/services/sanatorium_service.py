@@ -14,7 +14,6 @@ from app.core.permissions import (
 from app.core.slug import resolve_unique_slug, slugify
 from app.core.utils import merge_translation_fields, pick_locale
 from app.models.amenity import Amenity, AmenityScope, SanatoriumAmenity
-from app.models.destination import Destination
 from app.models.region import Region
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User
@@ -49,7 +48,6 @@ class SanatoriumService:
         slug = await resolve_unique_slug(self.db, Sanatorium, _slug(slug_seed))
 
         await assert_fk(self.db, Region, payload.region_id, "region_id")
-        await assert_fk(self.db, Destination, payload.destination_id, "destination_id")
         amenity_links = await self._build_amenity_links(payload.amenities)
 
         sanatorium = Sanatorium(
@@ -97,10 +95,6 @@ class SanatoriumService:
     async def _assert_update_fks(self, data: dict) -> None:
         if "region_id" in data:
             await assert_fk(self.db, Region, data["region_id"], "region_id")
-        if "destination_id" in data:
-            await assert_fk(
-                self.db, Destination, data["destination_id"], "destination_id"
-            )
 
     async def _resolve_update_slug(self, sanatorium: Sanatorium, data: dict) -> None:
         if "slug" in data and data["slug"] is not None:
@@ -210,7 +204,6 @@ def _create_values(
         "description": payload.description.model_dump(),
         "city": payload.city,
         "region_id": payload.region_id,
-        "destination_id": payload.destination_id,
         "address": payload.address.model_dump(),
         "lat": payload.lat,
         "lng": payload.lng,
