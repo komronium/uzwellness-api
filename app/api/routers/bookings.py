@@ -27,13 +27,19 @@ from app.schemas.booking import (
     InvoiceRead,
     RoomOfferBookingCreate,
 )
+from app.schemas.cancellation import CancellationConfirm, CancellationRequestRead
 from app.services.admin_reservation_service import (
     AdminReservationService,
     get_admin_reservation_service,
 )
 from app.services.booking_invoice import build_invoice
+from app.services.booking_notifications import send_booking_confirmation_email
 from app.services.booking_service import BookingService, get_booking_service
 from app.services.booking_voucher import build_voucher_pdf
+from app.services.cancellation_service import (
+    CancellationService,
+    get_cancellation_service,
+)
 from app.services.room_offer_booking_service import (
     RoomOfferBookingService,
     get_room_offer_booking_service,
@@ -66,10 +72,13 @@ def _to_read(
 async def create_booking(
     payload: BookingCreate,
     current_user: CurrentUser,
+    locale: LocaleDep,
     converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
+    db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
     booking = await bookings.create(payload, current_user)
+    await send_booking_confirmation_email(db, booking, locale)
     return _to_read(booking, current_user, converter)
 
 
@@ -85,8 +94,10 @@ async def create_room_offer_booking(
     locale: LocaleDep,
     converter: ConverterDep,
     bookings: RoomOfferBookingService = Depends(get_room_offer_booking_service),
+    db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
     booking = await bookings.create(payload, current_user, locale=locale)
+    await send_booking_confirmation_email(db, booking, locale)
     return _to_read(booking, current_user, converter)
 
 
@@ -239,3 +250,79 @@ async def cancel_booking(
         raise not_found("Booking not found")
     cancelled = await bookings.cancel(booking, current_user)
     return _to_read(cancelled, current_user, converter)
+
+
+# ── Cancellation by emailed code (customer) + admin approval ──────────────────
+
+
+@router.post(
+    "/{booking_id}/cancellation/request",
+    response_model=CancellationRequestRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_cancellation_code(
+    booking_id: uuid.UUID,
+    current_user: CurrentUser,
+    bookings: BookingService = Depends(get_booking_service),
+    cancellations: CancellationService = Depends(get_cancellation_service),
+) -> CancellationRequestRead:
+    booking = await bookings.get_visible(booking_id, current_user)
+    if booking is None:
+        raise not_found("Booking not found")
+    request = await cancellations.request_code(booking, current_user)
+    return CancellationRequestRead.model_validate(request)
+
+
+@router.post(
+    "/{booking_id}/cancellation/confirm",
+    response_model=CancellationRequestRead,
+)
+async def confirm_cancellation_code(
+    booking_id: uuid.UUID,
+    payload: CancellationConfirm,
+    current_user: CurrentUser,
+    bookings: BookingService = Depends(get_booking_service),
+    cancellations: CancellationService = Depends(get_cancellation_service),
+) -> CancellationRequestRead:
+    booking = await bookings.get_visible(booking_id, current_user)
+    if booking is None:
+        raise not_found("Booking not found")
+    request = await cancellations.confirm_code(booking, current_user, payload.code)
+    return CancellationRequestRead.model_validate(request)
+
+
+@router.post(
+    "/{booking_id}/cancellation/approve",
+    response_model=BookingRead,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def approve_cancellation(
+    booking_id: uuid.UUID,
+    current_user: CurrentUser,
+    converter: ConverterDep,
+    bookings: BookingService = Depends(get_booking_service),
+    cancellations: CancellationService = Depends(get_cancellation_service),
+) -> BookingRead:
+    booking = await bookings.get_visible(booking_id, current_user)
+    if booking is None:
+        raise not_found("Booking not found")
+    cancelled = await cancellations.approve(booking, current_user)
+    return _to_read(cancelled, current_user, converter)
+
+
+@router.post(
+    "/{booking_id}/cancellation/reject",
+    response_model=CancellationRequestRead,
+    dependencies=[Depends(require_admin_or_above)],
+)
+async def reject_cancellation(
+    booking_id: uuid.UUID,
+    current_user: CurrentUser,
+    bookings: BookingService = Depends(get_booking_service),
+    cancellations: CancellationService = Depends(get_cancellation_service),
+) -> CancellationRequestRead:
+    booking = await bookings.get_visible(booking_id, current_user)
+    if booking is None:
+        raise not_found("Booking not found")
+    request = await cancellations.reject(booking, current_user)
+    return CancellationRequestRead.model_validate(request)

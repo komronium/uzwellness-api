@@ -68,3 +68,29 @@ async def test_voucher_requires_visibility(
     # An unauthenticated request cannot download someone else's voucher.
     resp = await client.get(f"/api/bookings/{booking['id']}/voucher.pdf")
     assert resp.status_code == 401
+
+
+async def test_booking_creation_emails_voucher_pdf(
+    client: AsyncClient, db: AsyncSession, admin_user, customer_headers, monkeypatch
+) -> None:
+    import app.services.booking_notifications as notif
+
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        notif,
+        "send_email",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    booking = await _book(client, db, admin_user, customer_headers)
+
+    assert len(captured) == 1
+    sent = captured[0]
+    assert booking["reservation_number"] in sent["subject"] or booking["code"] in (
+        sent["subject"]
+    )
+    attachments = sent["attachments"]
+    assert len(attachments) == 1
+    assert attachments[0].subtype == "pdf"
+    assert attachments[0].content[:5] == b"%PDF-"
+    assert booking["reservation_number"] in attachments[0].filename

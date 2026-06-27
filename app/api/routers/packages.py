@@ -34,6 +34,7 @@ router = APIRouter(prefix="/packages", tags=["Packages"])
 
 require_super_admin = require_roles(UserRole.SUPER_ADMIN)
 require_sanatorium_admin = require_roles(UserRole.ADMIN)
+require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 @router.get("", response_model=PackageList | PackageAdminList)
@@ -143,26 +144,30 @@ async def create_package(
 @router.patch(
     "/{package_id}",
     response_model=PackageAdminRead,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def update_package(
     package_id: uuid.UUID,
     payload: PackageUpdate,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
         raise not_found("Package not found")
-    return PackageAdminRead.model_validate(await packages.update(package, payload))
+    return PackageAdminRead.model_validate(
+        await packages.update(package, payload, current_user)
+    )
 
 
 @router.post(
     "/{package_id}/hero-image",
     response_model=PackageAdminRead,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def upload_package_hero_image(
     package_id: uuid.UUID,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
     packages: PackageService = Depends(get_package_service),
     storage: StorageBackend = Depends(get_storage),
@@ -176,6 +181,7 @@ async def upload_package_hero_image(
         content=content,
         content_type=mime,
         storage=storage,
+        user=current_user,
     )
     return PackageAdminRead.model_validate(updated)
 
@@ -183,17 +189,18 @@ async def upload_package_hero_image(
 @router.delete(
     "/{package_id}/hero-image",
     response_model=PackageAdminRead,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def delete_package_hero_image(
     package_id: uuid.UUID,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
     storage: StorageBackend = Depends(get_storage),
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
         raise not_found("Package not found")
-    updated = await packages.delete_hero_image(package, storage)
+    updated = await packages.delete_hero_image(package, storage, current_user)
     return PackageAdminRead.model_validate(updated)
 
 
@@ -216,51 +223,54 @@ async def delete_package(
     "/{package_id}/items",
     response_model=PackageItemAdminRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def add_package_item(
     package_id: uuid.UUID,
     payload: PackageItemCreate,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageItemAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
         raise not_found("Package not found")
     return PackageItemAdminRead.model_validate(
-        await packages.add_item(package, payload)
+        await packages.add_item(package, payload, current_user)
     )
 
 
 @router.patch(
     "/{package_id}/items/{item_id}",
     response_model=PackageItemAdminRead,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def update_package_item(
     package_id: uuid.UUID,
     item_id: uuid.UUID,
     payload: PackageItemUpdate,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
 ) -> PackageItemAdminRead:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
         raise not_found("Package item not found")
     return PackageItemAdminRead.model_validate(
-        await packages.update_item(item, payload)
+        await packages.update_item(item, payload, current_user)
     )
 
 
 @router.delete(
     "/{package_id}/items/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_admin_or_above)],
 )
 async def delete_package_item(
     package_id: uuid.UUID,
     item_id: uuid.UUID,
+    current_user: CurrentUser,
     packages: PackageService = Depends(get_package_service),
 ) -> None:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
         raise not_found("Package item not found")
-    await packages.delete_item(item)
+    await packages.delete_item(item, current_user)

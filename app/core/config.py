@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: str | None = None
     SMTP_USE_TLS: bool = True
+    # Implicit SSL (port 465). TimeWeb domain mailboxes use this; when true the
+    # client connects over SSL directly instead of upgrading via STARTTLS.
+    SMTP_USE_SSL: bool = False
 
     EXCHANGE_RATE_SYNC_ENABLED: bool = True
     EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6

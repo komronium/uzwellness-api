@@ -10,8 +10,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.review import ReviewReplyStatus, SanatoriumReview
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
-from app.models.user import User
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 from app.schemas.booking import (
     AdminGuestActivity,
     AdminReservationDashboard,

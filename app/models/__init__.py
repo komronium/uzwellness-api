@@ -13,6 +13,7 @@ from app.models.availability_log import (
     AvailabilityOperationLog,
 )
 from app.models.booking import Booking, BookingStatus, BookingType
+from app.models.cancellation import CancellationRequest, CancellationStatus
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
 from app.models.newsletter import NewsletterSubscriber
@@ -79,6 +80,8 @@ __all__ = [
     "BookingExtraBed",
     "BookingStatus",
     "BookingType",
+    "CancellationRequest",
+    "CancellationStatus",
     "ConfirmationType",
     "ExchangeRate",
     "ExtraBedConfig",

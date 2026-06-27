@@ -17,6 +17,9 @@ SANATORIUM_SUPER_ADMIN_ONLY_FIELDS = frozenset(
     }
 )
 
+# Homepage placement is curated by the platform, not by property admins.
+PACKAGE_SUPER_ADMIN_ONLY_FIELDS = frozenset({"is_featured", "display_order"})
+
 
 def assert_super_admin_only_fields(
     data: dict, actor: User | None, *, restricted_fields: frozenset[str]

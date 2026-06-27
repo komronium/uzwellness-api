@@ -4,6 +4,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_password
+from app.models.user import User, UserRole
 from tests.factories import make_png, make_room, make_sanatorium
 
 PNG = make_png()
@@ -672,3 +674,122 @@ async def test_delete_package(
     assert resp.status_code == 204
     get_resp = await client.get(f"/api/packages/{pid}")
     assert get_resp.status_code == 404
+
+
+# ── edit permissions (tasks 5 & 6) ───────────────────────────────────────────
+
+
+async def _make_package(client, sanatorium_id, room_id, headers) -> str:
+    created = await client.post(
+        "/api/packages",
+        json=_payload(sanatorium_id, room_id),
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["id"]
+
+
+async def test_owner_admin_can_edit_own_package(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"base_price": "999.00", "title": {"uz": "Yangilangan"}},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["base_price"] == "999.00"
+    assert resp.json()["title"]["uz"] == "Yangilangan"
+
+
+async def test_admin_cannot_feature_own_package(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"is_featured": True},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 403
+    assert "super_admin" in resp.json()["detail"]
+    assert "is_featured" in resp.json()["detail"]
+
+
+async def test_admin_cannot_set_display_order(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"display_order": 3},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 403
+
+
+async def test_super_admin_can_feature_package(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers, super_admin_headers
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"is_featured": True, "display_order": 1},
+        headers=super_admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_featured"] is True
+    assert resp.json()["display_order"] == 1
+
+
+async def test_admin_cannot_edit_other_sanatoriums_package(
+    client: AsyncClient,
+    db: AsyncSession,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    other_admin = User(
+        email="other-admin@test.com",
+        password_hash=hash_password("otherpass123"),
+        role=UserRole.ADMIN,
+        full_name="Other Admin",
+        is_active=True,
+    )
+    db.add(other_admin)
+    await db.commit()
+    login = await client.post(
+        "/api/auth/login",
+        json={"email": "other-admin@test.com", "password": "otherpass123"},
+    )
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    resp = await client.patch(
+        f"/api/packages/{pid}",
+        json={"base_price": "1.00"},
+        headers=other_headers,
+    )
+    assert resp.status_code == 403
+
+
+async def test_owner_admin_can_manage_items(
+    client: AsyncClient, package_sanatorium, usd_room, admin_headers
+) -> None:
+    pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
+    add = await client.post(
+        f"/api/packages/{pid}/items",
+        json={
+            "item_type": "meal",
+            "title": {"uz": "Nonushta", "ru": "Завтрак", "en": "Breakfast"},
+            "is_included": True,
+        },
+        headers=admin_headers,
+    )
+    assert add.status_code == 201, add.text
+    item_id = add.json()["id"]
+    delete = await client.delete(
+        f"/api/packages/{pid}/items/{item_id}", headers=admin_headers
+    )
+    assert delete.status_code == 204

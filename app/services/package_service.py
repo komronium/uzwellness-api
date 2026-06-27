@@ -12,7 +12,11 @@ from app.core.database import get_db
 from app.core.db_utils import assert_fk
 from app.core.ids import uuid7
 from app.core.pagination import paginated
-from app.core.permissions import assert_sanatorium_access
+from app.core.permissions import (
+    PACKAGE_SUPER_ADMIN_ONLY_FIELDS,
+    assert_sanatorium_access,
+    assert_super_admin_only_fields,
+)
 from app.core.slug import resolve_unique_slug, slugify
 from app.core.storage import MIME_EXTENSIONS, StorageBackend, url_to_key
 from app.core.utils import merge_translation_fields, pick_locale
@@ -122,8 +126,14 @@ class PackageService:
         await self.db.commit()
         return await self._reload_required(package.id)
 
-    async def update(self, package: Package, payload: PackageUpdate) -> Package:
+    async def update(
+        self, package: Package, payload: PackageUpdate, user: User
+    ) -> Package:
+        await self._assert_can_manage(package, user)
         data = payload.model_dump(exclude_unset=True)
+        assert_super_admin_only_fields(
+            data, user, restricted_fields=PACKAGE_SUPER_ADMIN_ONLY_FIELDS
+        )
         merge_translation_fields(package, data, ("title", "description"))
 
         if "slug" in data and data["slug"] is not None:
@@ -152,6 +162,15 @@ class PackageService:
         await self.db.delete(package)
         await self.db.commit()
 
+    async def _assert_can_manage(self, package: Package, user: User) -> None:
+        """Super_admin always; sanatorium admin only for their own property."""
+        await assert_sanatorium_access(
+            self.db,
+            package.sanatorium_id,
+            user,
+            action="manage this package",
+        )
+
     async def update_hero_image(
         self,
         package: Package,
@@ -159,7 +178,9 @@ class PackageService:
         content: bytes,
         content_type: str,
         storage: StorageBackend,
+        user: User,
     ) -> Package:
+        await self._assert_can_manage(package, user)
         await self._delete_local_hero_image(package, storage)
         ext = MIME_EXTENSIONS[content_type]
         image_id = uuid7()
@@ -171,8 +192,9 @@ class PackageService:
         return await self._reload_required(package.id)
 
     async def delete_hero_image(
-        self, package: Package, storage: StorageBackend
+        self, package: Package, storage: StorageBackend, user: User
     ) -> Package:
+        await self._assert_can_manage(package, user)
         await self._delete_local_hero_image(package, storage)
         package.hero_image_url = None
         await self.db.commit()
@@ -182,8 +204,9 @@ class PackageService:
         return await self.db.get(PackageItem, item_id)
 
     async def add_item(
-        self, package: Package, payload: PackageItemCreate
+        self, package: Package, payload: PackageItemCreate, user: User
     ) -> PackageItem:
+        await self._assert_can_manage(package, user)
         item = self._build_item(payload)
         item.package_id = package.id
         self.db.add(item)
@@ -192,8 +215,9 @@ class PackageService:
         return item
 
     async def update_item(
-        self, item: PackageItem, payload: PackageItemUpdate
+        self, item: PackageItem, payload: PackageItemUpdate, user: User
     ) -> PackageItem:
+        await self._assert_item_can_manage(item, user)
         data = payload.model_dump(exclude_unset=True)
         merge_translation_fields(item, data, ("title", "description"))
         for field, value in data.items():
@@ -202,9 +226,22 @@ class PackageService:
         await self.db.refresh(item)
         return item
 
-    async def delete_item(self, item: PackageItem) -> None:
+    async def delete_item(self, item: PackageItem, user: User) -> None:
+        await self._assert_item_can_manage(item, user)
         await self.db.delete(item)
         await self.db.commit()
+
+    async def _assert_item_can_manage(self, item: PackageItem, user: User) -> None:
+        sanatorium_id = await self.db.scalar(
+            select(Package.sanatorium_id).where(Package.id == item.package_id)
+        )
+        if sanatorium_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
+            )
+        await assert_sanatorium_access(
+            self.db, sanatorium_id, user, action="manage this package"
+        )
 
     async def _require_room(
         self,

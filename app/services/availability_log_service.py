@@ -1,6 +1,6 @@
 import uuid
-from datetime import date, datetime
 from collections.abc import Sequence
+from datetime import date, datetime
 
 from fastapi import Depends
 from sqlalchemy import select

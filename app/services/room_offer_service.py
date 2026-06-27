@@ -81,6 +81,7 @@ class _OfferContext:
         tuple[StayOptionGuestType, BoardType, bool], SanatoriumStayOptionPrice
     ]
     converter: CurrencyConverter
+    agent_discount_percent: Decimal = ZERO
 
 
 class RoomOfferService:
@@ -95,6 +96,7 @@ class RoomOfferService:
         payload: RoomOfferSearchRequest,
         locale: str,
         display_currency: str = "UZS",
+        agent_discount_percent: Decimal = ZERO,
     ) -> RoomOfferSearchResponse:
         sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
@@ -108,6 +110,7 @@ class RoomOfferService:
             payload=payload,
             locale=locale,
             display_currency=display_currency,
+            agent_discount_percent=agent_discount_percent,
         )
         rooms = await self._rooms(sanatorium_id=sanatorium_id, payload=payload)
         usage = await max_used_by_room(
@@ -148,6 +151,7 @@ class RoomOfferService:
         payload: RoomOfferSearchRequest,
         locale: str,
         display_currency: str,
+        agent_discount_percent: Decimal = ZERO,
     ) -> _OfferContext:
         nights = (payload.check_out - payload.check_in).days
         treatments = await self._treatments(
@@ -170,6 +174,7 @@ class RoomOfferService:
             treatments=treatments,
             stay_option_prices=stay_option_prices,
             converter=await self.rates.get_converter(display_currency),
+            agent_discount_percent=agent_discount_percent,
         )
 
     async def _rooms(
@@ -352,7 +357,19 @@ class RoomOfferService:
                 currency=room.base_currency,
             )
         ).quantize(CENTS, ROUND_HALF_UP)
-        total = apply_promo(subtotal, rate_plan)
+        retail_total = apply_promo(subtotal, rate_plan)
+        if context.agent_discount_percent > ZERO:
+            # B2B: charge the tier price; show retail as the struck-through original.
+            total = (
+                retail_total
+                * (Decimal("1") - context.agent_discount_percent / Decimal("100"))
+            ).quantize(CENTS, ROUND_HALF_UP)
+            price_original_total: Decimal | None = retail_total
+            is_b2b_price = True
+        else:
+            total = retail_total
+            price_original_total = original_total(subtotal, rate_plan)
+            is_b2b_price = False
         return RoomOfferCard(
             offer_id=f"{room.id}:{rate_plan.id if rate_plan else 'base'}",
             room_id=room.id,
@@ -369,7 +386,8 @@ class RoomOfferService:
             photos=[self._photo(image, context.locale) for image in room.images[:8]],
             price=RoomOfferPrice(
                 total=total,
-                original_total=original_total(subtotal, rate_plan),
+                original_total=price_original_total,
+                is_b2b_price=is_b2b_price,
                 currency=room.base_currency,
                 display_total=context.converter.convert(total, room.base_currency),
                 display_currency=context.converter.target,
@@ -615,6 +633,7 @@ class RoomOfferService:
             treatments=context.treatments,
             stay_option_prices=context.stay_option_prices,
             converter=context.converter,
+            agent_discount_percent=context.agent_discount_percent,
         )
         for room in rooms:
             available_rooms = self._available_rooms(room, usage)

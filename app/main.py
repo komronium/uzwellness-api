@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
-from app.api.openapi_tags import OPENAPI_TAGS
 from app.api.openapi_responses import COMMON_ERROR_RESPONSES
+from app.api.openapi_tags import OPENAPI_TAGS
 from app.core.config import settings
 from app.core.redis_client import close_redis, get_redis
 from app.services.exchange_rate_sync import run_exchange_rate_sync_loop

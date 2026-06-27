@@ -8,11 +8,11 @@ from fastapi import Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.discount_tiers import best_tier_discount_percent
 from app.core.database import get_db
+from app.core.discount_tiers import best_tier_discount_percent
 from app.models.booking import Booking, BookingStatus
 from app.models.sanatorium import Sanatorium
-from app.models.user import User
+from app.models.user import User, UserRole
 
 _CENTS = Decimal("0.01")
 _ZERO = Decimal("0")
@@ -55,6 +55,18 @@ class BookingPricingPolicy:
             commission_percent=commission_percent,
             commission_amount=commission_amount,
         )
+
+    async def agent_discount_for(
+        self, user: User | None, sanatorium: Sanatorium | None
+    ) -> Decimal:
+        """Agent tier discount for display (room-offer search); 0 for non-agents.
+
+        Mirrors the discount :meth:`apply` charges on a B2B booking, so the
+        searched and the booked price match.
+        """
+        if user is None or sanatorium is None or user.role != UserRole.AGENT:
+            return _ZERO
+        return await self._agent_tier_discount(user, sanatorium)
 
     @staticmethod
     def _commission_snapshot(

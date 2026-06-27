@@ -1,15 +1,17 @@
 """Render a downloadable booking-confirmation voucher as a PDF.
 
-Locale-aware (uz/ru/en). Reuses :func:`build_invoice` for the priced line
-items / totals and loads the property for the header (address, phones, GPS,
-cancellation policy). Generated on demand; nothing is persisted.
+Locale-aware (uz/ru/en). Modelled on a Booking.com print voucher: a property
+header with GPS, a prominent confirmation box with the check-in / check-out /
+rooms / nights grid, a price breakdown, the cancellation policy and a
+"need help" footer. Reuses :func:`build_invoice` for the priced line items and
+totals. Generated on demand; nothing is persisted.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from io import BytesIO
 
@@ -25,7 +27,7 @@ from app.models.sanatorium import Sanatorium
 from app.services.booking_invoice import build_invoice
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
@@ -44,6 +46,12 @@ _FONT = "VoucherSans"
 _FONT_BOLD = "VoucherSans-Bold"
 _FONT_LOCK = threading.Lock()
 _FONTS_READY = False
+
+# Brand-ish accents kept subtle so the document still reads as a clean voucher.
+_ACCENT = colors.HexColor("#003580")  # Booking-style deep blue
+_BOX_BG = colors.HexColor("#f2f6fc")
+_RULE = colors.HexColor("#dddddd")
+_MUTED = colors.HexColor("#555555")
 
 # Prefer system DejaVu (broad Unicode), fall back to reportlab's bundled Vera
 # which always ships with the package — so Cyrillic renders even in the slim
@@ -81,22 +89,24 @@ def _ensure_fonts() -> None:
 
 _LABELS: dict[str, dict[str, str]] = {
     "en": {
-        "title": "Booking confirmation",
+        "confirmation_heading": "Booking confirmation",
         "confirmation_number": "Confirmation number",
-        "status": "Status",
-        "booking_date": "Booking date",
         "check_in": "Check-in",
         "check_out": "Check-out",
-        "nights": "Nights",
         "rooms": "Rooms",
+        "nights": "Nights",
+        "status": "Status",
+        "booking_date": "Booking date",
         "guests": "Guests",
-        "stay": "Room / program",
-        "guest_name": "Guest",
+        "guest_name": "Guest name",
+        "stay": "Your stay",
         "price": "Price",
         "description": "Description",
         "amount": "Amount",
-        "total": "Total (incl. taxes)",
+        "total": "Total price (incl. taxes)",
         "extra_bed": "Extra bed",
+        "payment": "Payment details",
+        "payment_by": "All payments are handled by the property {name}.",
         "cancellation": "Cancellation policy",
         "non_refundable": "Non-refundable",
         "free_cancellation": "Free cancellation",
@@ -106,30 +116,36 @@ _LABELS: dict[str, dict[str, str]] = {
         "see_policy": "See the property's cancellation policy",
         "address": "Address",
         "phone": "Phone",
-        "gps": "GPS",
+        "gps": "GPS coordinates",
+        "need_help": "Need help?",
+        "contact_property": (
+            "For anything related to your stay, contact {name} directly."
+        ),
         "support": "Support",
         "footer": (
-            "Present this confirmation at check-in. "
-            "Questions? Contact the property directly."
+            "This printout contains the key details of your booking. "
+            "You can present it at check-in."
         ),
     },
     "ru": {
-        "title": "Подтверждение бронирования",
+        "confirmation_heading": "Подтверждение бронирования",
         "confirmation_number": "Номер подтверждения",
-        "status": "Статус",
-        "booking_date": "Дата бронирования",
         "check_in": "Заезд",
         "check_out": "Отъезд",
-        "nights": "Ночей",
         "rooms": "Номера",
-        "guests": "Гостей",
-        "stay": "Номер / программа",
-        "guest_name": "Гость",
+        "nights": "Ночи",
+        "status": "Статус",
+        "booking_date": "Дата бронирования",
+        "guests": "Число гостей",
+        "guest_name": "Имя гостя",
+        "stay": "Ваше проживание",
         "price": "Цена",
         "description": "Описание",
         "amount": "Сумма",
-        "total": "Итого (включая налоги)",
+        "total": "Итоговая цена (включая налоги)",
         "extra_bed": "Доп. кровать",
+        "payment": "Сведения об оплате",
+        "payment_by": "Все платежи обрабатывает объект размещения {name}.",
         "cancellation": "Правила отмены",
         "non_refundable": "Без возврата средств",
         "free_cancellation": "Бесплатная отмена",
@@ -139,42 +155,53 @@ _LABELS: dict[str, dict[str, str]] = {
         "see_policy": "См. правила отмены объекта размещения",
         "address": "Адрес",
         "phone": "Телефон",
-        "gps": "GPS",
+        "gps": "Координаты GPS",
+        "need_help": "Требуется помощь?",
+        "contact_property": (
+            "По вопросам, связанным с проживанием, свяжитесь с {name} напрямую."
+        ),
         "support": "Поддержка",
         "footer": (
-            "Предъявите это подтверждение при заезде. "
-            "Вопросы? Свяжитесь с объектом размещения напрямую."
+            "В этой версии для печати содержится наиболее важная информация о "
+            "вашем бронировании. Вы можете предъявить её при заезде."
         ),
     },
     "uz": {
-        "title": "Bron tasdiqlandi",
+        "confirmation_heading": "Bron tasdiqlangani",
         "confirmation_number": "Tasdiqlash raqami",
-        "status": "Holati",
-        "booking_date": "Bron sanasi",
         "check_in": "Kelish",
         "check_out": "Ketish",
-        "nights": "Kechalar",
         "rooms": "Xonalar",
-        "guests": "Mehmonlar",
-        "stay": "Xona / dastur",
-        "guest_name": "Mehmon",
+        "nights": "Kechalar",
+        "status": "Holati",
+        "booking_date": "Bron sanasi",
+        "guests": "Mehmonlar soni",
+        "guest_name": "Mehmon ismi",
+        "stay": "Sizning bandingiz",
         "price": "Narx",
         "description": "Tavsif",
         "amount": "Summa",
-        "total": "Jami (soliqlar bilan)",
+        "total": "Yakuniy narx (soliqlar bilan)",
         "extra_bed": "Qo'shimcha o'rin",
+        "payment": "To'lov ma'lumotlari",
+        "payment_by": "Barcha to'lovlarni obyekt ({name}) o'zi qabul qiladi.",
         "cancellation": "Bekor qilish shartlari",
         "non_refundable": "Qaytarilmaydi",
         "free_cancellation": "Bepul bekor qilish",
-        "free_cancellation_days": ("Kelishdan {days} kun oldin bepul bekor qilish"),
+        "free_cancellation_days": "Kelishdan {days} kun oldin bepul bekor qilish",
         "see_policy": "Obyektning bekor qilish shartlariga qarang",
         "address": "Manzil",
         "phone": "Telefon",
-        "gps": "GPS",
+        "gps": "GPS koordinatalari",
+        "need_help": "Yordam kerakmi?",
+        "contact_property": (
+            "Bandingiz bilan bog'liq savollar bo'lsa, {name} bilan to'g'ridan-to'g'ri "
+            "bog'laning."
+        ),
         "support": "Yordam",
         "footer": (
-            "Ushbu tasdiqnomani kelganda ko'rsating. "
-            "Savollar? Obyekt bilan bevosita bog'laning."
+            "Ushbu chop etilgan nusxada bandingiz haqidagi eng muhim ma'lumotlar bor. "
+            "Uni kelganda ko'rsatishingiz mumkin."
         ),
     },
 }
@@ -198,6 +225,81 @@ _STATUS_LABELS: dict[str, dict[str, str]] = {
         "cancelled": "Bekor qilingan",
         "completed": "Yakunlangan",
     },
+}
+
+_MONTHS: dict[str, list[str]] = {
+    "en": [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ],
+    "ru": [
+        "январь",
+        "февраль",
+        "март",
+        "апрель",
+        "май",
+        "июнь",
+        "июль",
+        "август",
+        "сентябрь",
+        "октябрь",
+        "ноябрь",
+        "декабрь",
+    ],
+    "uz": [
+        "Yanvar",
+        "Fevral",
+        "Mart",
+        "Aprel",
+        "May",
+        "Iyun",
+        "Iyul",
+        "Avgust",
+        "Sentabr",
+        "Oktabr",
+        "Noyabr",
+        "Dekabr",
+    ],
+}
+
+_WEEKDAYS: dict[str, list[str]] = {
+    "en": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ],
+    "ru": [
+        "понедельник",
+        "вторник",
+        "среда",
+        "четверг",
+        "пятница",
+        "суббота",
+        "воскресенье",
+    ],
+    "uz": [
+        "Dushanba",
+        "Seshanba",
+        "Chorshanba",
+        "Payshanba",
+        "Juma",
+        "Shanba",
+        "Yakshanba",
+    ],
 }
 
 
@@ -225,10 +327,12 @@ async def build_voucher_pdf(
     styles = _styles()
     story: list = []
 
-    _append_header(story, styles, labels, booking, sanatorium, invoice, locale)
-    _append_confirmation(story, styles, labels, booking, invoice, locale)
-    _append_stay(story, styles, labels, invoice, stay_name)
-    _append_price(story, styles, labels, invoice)
+    _append_header(story, styles, labels, sanatorium, invoice, locale)
+    _append_confirmation_box(
+        story, styles, labels, booking, sanatorium, invoice, locale
+    )
+    _append_stay(story, styles, labels, booking, invoice, stay_name, locale)
+    _append_price(story, styles, labels, invoice, sanatorium)
     _append_cancellation(story, styles, labels, booking, sanatorium, locale)
     _append_footer(story, styles, labels, sanatorium, invoice)
 
@@ -251,95 +355,194 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName=_FONT_BOLD,
             fontSize=12,
             leading=16,
-            spaceBefore=10,
+            spaceBefore=12,
             spaceAfter=4,
+            textColor=_ACCENT,
         ),
         "muted": ParagraphStyle(
-            "muted",
-            parent=base,
-            fontSize=9,
-            leading=12,
-            textColor=colors.HexColor("#555555"),
-        ),
-        "big": ParagraphStyle(
-            "big", parent=base, fontName=_FONT_BOLD, fontSize=14, leading=18
+            "muted", parent=base, fontSize=9, leading=12, textColor=_MUTED
         ),
         "right": ParagraphStyle("right", parent=base, alignment=TA_RIGHT),
         "right_bold": ParagraphStyle(
             "right_bold", parent=base, fontName=_FONT_BOLD, alignment=TA_RIGHT
         ),
+        # Confirmation box cells
+        "box_label": ParagraphStyle(
+            "box_label",
+            parent=base,
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+            textColor=_MUTED,
+        ),
+        "box_day": ParagraphStyle(
+            "box_day",
+            parent=base,
+            fontName=_FONT_BOLD,
+            fontSize=22,
+            leading=24,
+            alignment=TA_CENTER,
+            textColor=_ACCENT,
+        ),
+        "box_sub": ParagraphStyle(
+            "box_sub",
+            parent=base,
+            fontSize=8,
+            leading=10,
+            alignment=TA_CENTER,
+            textColor=_MUTED,
+        ),
+        "conf_no": ParagraphStyle(
+            "conf_no",
+            parent=base,
+            fontName=_FONT_BOLD,
+            fontSize=15,
+            leading=18,
+            textColor=_ACCENT,
+        ),
     }
 
 
-def _append_header(story, styles, labels, booking, sanatorium, invoice, locale) -> None:
-    story.append(Paragraph(invoice["sanatorium_name"] or "", styles["title"]))
-    lines: list[str] = []
+def _append_header(story, styles, labels, sanatorium, invoice, locale) -> None:
+    story.append(Paragraph(_esc(invoice["sanatorium_name"] or ""), styles["title"]))
     if sanatorium is not None:
         address = pick_locale(sanatorium.address, locale)
         if address:
-            lines.append(f"{labels['address']}: {address}")
+            story.append(
+                Paragraph(f"{labels['address']}: {_esc(address)}", styles["muted"])
+            )
         phones = [str(p) for p in (sanatorium.phones or []) if p]
         if phones:
-            lines.append(f"{labels['phone']}: {', '.join(phones)}")
+            story.append(
+                Paragraph(
+                    f"{labels['phone']}: {_esc(', '.join(phones))}", styles["muted"]
+                )
+            )
         if sanatorium.lat is not None and sanatorium.lng is not None:
-            lines.append(f"{labels['gps']}: {sanatorium.lat}, {sanatorium.lng}")
-    for line in lines:
-        story.append(Paragraph(_esc(line), styles["muted"]))
+            story.append(
+                Paragraph(
+                    f"{labels['gps']}: {sanatorium.lat}, {sanatorium.lng}",
+                    styles["muted"],
+                )
+            )
     story.append(Spacer(1, 8))
-    story.append(
-        HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#dddddd"))
+
+
+def _append_confirmation_box(
+    story, styles, labels, booking, sanatorium, invoice, locale
+) -> None:
+    heading = Paragraph(labels["confirmation_heading"], styles["box_label"])
+    conf_no = Paragraph(
+        f"{labels['confirmation_number']}: "
+        f"<font name='{_FONT_BOLD}'>{_esc(booking.reservation_number)}</font>",
+        styles["conf_no"],
     )
 
-
-def _append_confirmation(story, styles, labels, booking, invoice, locale) -> None:
-    story.append(Paragraph(labels["title"], styles["h2"]))
-    story.append(
-        Paragraph(
-            f"{labels['confirmation_number']}: <b>{booking.reservation_number}</b>",
-            styles["big"],
+    check_in_time = sanatorium.check_in_time if sanatorium is not None else None
+    check_out_time = sanatorium.check_out_time if sanatorium is not None else None
+    grid = Table(
+        [
+            [
+                Paragraph(labels["check_in"], styles["box_label"]),
+                Paragraph(labels["check_out"], styles["box_label"]),
+                Paragraph(labels["rooms"], styles["box_label"]),
+                Paragraph(labels["nights"], styles["box_label"]),
+            ],
+            [
+                _date_cell(styles, invoice["check_in"], check_in_time, locale),
+                _date_cell(styles, invoice["check_out"], check_out_time, locale),
+                Paragraph(str(booking.rooms_count), styles["box_day"]),
+                Paragraph(str(invoice["nights"]), styles["box_day"]),
+            ],
+        ],
+        colWidths=[44 * mm, 44 * mm, 38 * mm, 38 * mm],
+    )
+    grid.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, 0), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+                ("TOPPADDING", (0, 1), (-1, 1), 4),
+                ("BOTTOMPADDING", (0, 1), (-1, 1), 6),
+                ("LINEAFTER", (0, 0), (-2, -1), 0.5, _RULE),
+            ]
         )
     )
+
+    inner = [[heading], [conf_no], [grid]]
+    box = Table(inner, colWidths=[164 * mm])
+    box.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), _BOX_BG),
+                ("BOX", (0, 0), (-1, -1), 0.8, _ACCENT),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, 0), 8),
+                ("TOPPADDING", (0, 2), (-1, 2), 4),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(box)
+
+
+def _date_cell(styles, value: date, t: time | None, locale: str) -> Table:
+    months = _MONTHS.get(locale, _MONTHS["en"])
+    weekdays = _WEEKDAYS.get(locale, _WEEKDAYS["en"])
+    rows = [
+        [Paragraph(str(value.day), styles["box_day"])],
+        [Paragraph(_esc(months[value.month - 1]), styles["box_sub"])],
+        [Paragraph(_esc(weekdays[value.weekday()]), styles["box_sub"])],
+    ]
+    if t is not None:
+        rows.append([Paragraph(t.strftime("%H:%M"), styles["box_sub"])])
+    cell = Table(rows, colWidths=[40 * mm])
+    cell.setStyle(
+        TableStyle(
+            [
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ]
+        )
+    )
+    return cell
+
+
+def _append_stay(story, styles, labels, booking, invoice, stay_name, locale) -> None:
+    story.append(Paragraph(labels["stay"], styles["h2"]))
+    if stay_name:
+        story.append(Paragraph(_esc(stay_name), styles["base"]))
+    guest_names = _guest_names(booking) or (
+        [invoice["customer_name"]] if invoice["customer_name"] else []
+    )
+    rows: list[list[str]] = []
+    if guest_names:
+        rows.append([labels["guest_name"], ", ".join(guest_names)])
+    rows.append([labels["guests"], str(invoice["guests"])])
     status_label = _STATUS_LABELS.get(locale, _STATUS_LABELS["en"]).get(
         booking.status.value, booking.status.value
     )
-    rows = [
-        [labels["check_in"], _fmt_date(invoice["check_in"])],
-        [labels["check_out"], _fmt_date(invoice["check_out"])],
-        [labels["nights"], str(invoice["nights"])],
-        [labels["rooms"], str(booking.rooms_count)],
-        [labels["guests"], str(invoice["guests"])],
-        [labels["status"], status_label],
-        [labels["booking_date"], _fmt_date(booking.created_at.date())],
-    ]
+    rows.append([labels["status"], status_label])
+    rows.append([labels["booking_date"], _fmt_date(booking.created_at.date())])
     story.append(_kv_table(rows, styles))
 
 
-def _append_stay(story, styles, labels, invoice, stay_name) -> None:
-    if stay_name:
-        story.append(Paragraph(labels["stay"], styles["h2"]))
-        story.append(Paragraph(_esc(stay_name), styles["base"]))
-    if invoice["customer_name"]:
-        story.append(
-            Paragraph(
-                f"{labels['guest_name']}: {_esc(invoice['customer_name'])}",
-                styles["base"],
-            )
-        )
-
-
-def _append_price(story, styles, labels, invoice) -> None:
+def _append_price(story, styles, labels, invoice, sanatorium) -> None:
     story.append(Paragraph(labels["price"], styles["h2"]))
     currency = invoice["currency"]
-    header = [
-        Paragraph(labels["description"], styles["base"]),
-        Paragraph(labels["amount"], styles["right"]),
+    data = [
+        [
+            Paragraph(labels["description"], styles["base"]),
+            Paragraph(labels["amount"], styles["right"]),
+        ]
     ]
-    data = [header]
     for item in invoice["line_items"]:
-        desc = _localize_line(item, labels)
         data.append(
             [
-                Paragraph(_esc(desc), styles["base"]),
+                Paragraph(_esc(_localize_line(item, labels)), styles["base"]),
                 Paragraph(_fmt_money(item["amount"], currency), styles["right"]),
             ]
         )
@@ -355,14 +558,20 @@ def _append_price(story, styles, labels, invoice) -> None:
             [
                 ("FONTNAME", (0, 0), (-1, -1), _FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
-                ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor("#dddddd")),
-                ("LINEABOVE", (0, -1), (-1, -1), 0.6, colors.HexColor("#dddddd")),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.6, _RULE),
+                ("LINEABOVE", (0, -1), (-1, -1), 0.6, _RULE),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
         )
     )
     story.append(table)
+    name = invoice["sanatorium_name"]
+    if name:
+        story.append(Spacer(1, 4))
+        story.append(
+            Paragraph(_esc(labels["payment_by"].format(name=name)), styles["muted"])
+        )
 
 
 def _append_cancellation(story, styles, labels, booking, sanatorium, locale) -> None:
@@ -377,19 +586,24 @@ def _append_cancellation(story, styles, labels, booking, sanatorium, locale) -> 
 
 def _append_footer(story, styles, labels, sanatorium, invoice) -> None:
     story.append(Spacer(1, 12))
-    story.append(
-        HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#dddddd"))
-    )
-    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=0.6, color=_RULE))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(labels["need_help"], styles["h2"]))
+    name = invoice["sanatorium_name"]
+    if name:
+        story.append(
+            Paragraph(
+                _esc(labels["contact_property"].format(name=name)), styles["muted"]
+            )
+        )
     support = None
     if sanatorium is not None and sanatorium.customer_support_email:
         support = sanatorium.customer_support_email
-    elif invoice.get("customer_email"):
-        support = invoice["customer_email"]
     if support:
         story.append(
             Paragraph(f"{labels['support']}: {_esc(support)}", styles["muted"])
         )
+    story.append(Spacer(1, 4))
     story.append(Paragraph(labels["footer"], styles["muted"]))
 
 
@@ -404,13 +618,23 @@ def _kv_table(rows: list[list[str]], styles) -> Table:
             [
                 ("FONTNAME", (0, 0), (-1, -1), _FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 10),
-                ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#555555")),
+                ("TEXTCOLOR", (0, 0), (0, -1), _MUTED),
                 ("TOPPADDING", (0, 0), (-1, -1), 2),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ]
         )
     )
     return table
+
+
+def _guest_names(booking: Booking) -> list[str]:
+    names: list[str] = []
+    for entry in booking.guest_details or []:
+        if isinstance(entry, dict):
+            name = entry.get("full_name") or entry.get("name")
+            if name:
+                names.append(str(name))
+    return names
 
 
 def _localize_line(item: dict, labels: dict[str, str]) -> str:

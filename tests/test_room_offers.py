@@ -13,8 +13,10 @@ from app.models.program import (
     TreatmentStayPackageKind,
 )
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming, RatePlan
+from app.core.security import hash_password
 from app.models.sanatorium import SanatoriumStatus
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
+from app.models.user import User, UserRole
 from app.schemas.room_offer import RoomOfferSearchRequest
 from app.core.currency import CurrencyConverter
 from app.services.room_offer_guests import guest_options
@@ -828,3 +830,60 @@ async def test_room_offer_booking_rejects_guest_incompatible_treatment(
     assert (
         resp.json()["detail"] == "Treatment selection is not available for this guest"
     )
+
+
+# ── B2B agent pricing (handoff #1) ───────────────────────────────────────────
+
+
+async def _agent_headers(client, db: AsyncSession) -> dict:
+    agent = User(
+        email="b2b-agent@test.com",
+        password_hash=hash_password("agentpass123"),
+        role=UserRole.AGENT,
+        full_name="B2B Agent",
+        is_active=True,
+    )
+    db.add(agent)
+    await db.commit()
+    login = await client.post(
+        "/api/auth/login",
+        json={"email": "b2b-agent@test.com", "password": "agentpass123"},
+    )
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+async def test_room_offer_search_applies_agent_tier_price(
+    client, db: AsyncSession, admin_user
+) -> None:
+    sanatorium = await make_sanatorium(
+        db,
+        status=SanatoriumStatus.APPROVED,
+        admin_user_id=admin_user.id,
+    )
+    sanatorium.agent_discount_tiers = [{"min_bookings": 0, "discount_percent": "10"}]
+    await db.commit()
+    await make_room(
+        db, sanatorium=sanatorium, base_price="100.00", capacity=2, inventory_count=2
+    )
+    body = {
+        "check_in": "2026-10-05",
+        "check_out": "2026-10-07",
+        "rooms": [{"adults": 2, "children": []}],
+    }
+    url = f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en"
+
+    # Anonymous / retail.
+    retail = await client.post(url, json=body)
+    assert retail.status_code == 200, retail.text
+    retail_price = retail.json()["offers"][0]["price"]
+    assert retail_price["total"] == "200.00"
+    assert retail_price["is_b2b_price"] is False
+
+    # Agent gets the 10% tier price; retail shown as original_total.
+    agent_headers = await _agent_headers(client, db)
+    agent = await client.post(url, json=body, headers=agent_headers)
+    assert agent.status_code == 200, agent.text
+    agent_price = agent.json()["offers"][0]["price"]
+    assert agent_price["total"] == "180.00"
+    assert agent_price["original_total"] == "200.00"
+    assert agent_price["is_b2b_price"] is True

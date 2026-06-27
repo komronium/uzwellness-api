@@ -165,6 +165,9 @@ class RoomOfferGuestInclusions(BaseModel):
 class RoomOfferPrice(BaseModel):
     total: Decimal
     original_total: Decimal | None = None
+    # True when `total` is an agent (B2B) tier price; `original_total` then holds
+    # the retail price so the UI can show the saving.
+    is_b2b_price: bool = False
     currency: str
     display_total: Decimal | None = None
     display_currency: str | None = None
