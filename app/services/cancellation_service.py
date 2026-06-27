@@ -41,6 +41,31 @@ from app.services.email_service import (
 _ACTIVE = (CancellationStatus.CODE_SENT, CancellationStatus.AWAITING_APPROVAL)
 
 
+async def active_cancellation_status_map(
+    db: AsyncSession, booking_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, CancellationStatus]:
+    """Latest active cancellation status per booking (for BookingRead)."""
+    if not booking_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(CancellationRequest.booking_id, CancellationRequest.status)
+            .where(
+                CancellationRequest.booking_id.in_(booking_ids),
+                CancellationRequest.status.in_(_ACTIVE),
+            )
+            .order_by(
+                CancellationRequest.booking_id,
+                CancellationRequest.created_at.desc(),
+            )
+        )
+    ).all()
+    result: dict[uuid.UUID, CancellationStatus] = {}
+    for booking_id, st in rows:
+        result.setdefault(booking_id, st)  # first row per booking = latest
+    return result
+
+
 def _hash_code(code: str) -> str:
     return hmac.new(
         settings.JWT_SECRET_KEY.encode(), code.encode(), hashlib.sha256

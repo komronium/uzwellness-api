@@ -16,6 +16,7 @@ from app.api.rate_limits import booking_rate_limit
 from app.core.database import get_db
 from app.core.pagination import Pagination
 from app.models.booking import Booking, BookingStatus
+from app.models.cancellation import CancellationStatus
 from app.models.user import User, UserRole
 from app.schemas.booking import (
     AdminReservationDashboard,
@@ -38,6 +39,7 @@ from app.services.booking_service import BookingService, get_booking_service
 from app.services.booking_voucher import build_voucher_pdf
 from app.services.cancellation_service import (
     CancellationService,
+    active_cancellation_status_map,
     get_cancellation_service,
 )
 from app.services.room_offer_booking_service import (
@@ -52,9 +54,13 @@ require_admin_or_above = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 def _to_read(
-    booking: Booking, viewer: User, converter: CurrencyConverter | None = None
+    booking: Booking,
+    viewer: User,
+    converter: CurrencyConverter | None = None,
+    cancellation_status: CancellationStatus | None = None,
 ) -> BookingRead:
     data = BookingRead.model_validate(booking)
+    data.cancellation_status = cancellation_status
     if viewer.role in _ADMIN_ROLES and booking.user is not None:
         data.customer = BookingCustomerRead.model_validate(booking.user)
     if converter is not None:
@@ -111,10 +117,12 @@ async def list_bookings(
     q: str | None = Query(default=None, max_length=200),
     status_filter: BookingStatus | None = Query(default=None, alias="status"),
     is_processed: bool | None = Query(default=None),
+    cancellation_status: CancellationStatus | None = Query(default=None),
     date_filter: BookingDateFilter = Query(default=BookingDateFilter.BOOKING_DATE),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     bookings: BookingService = Depends(get_booking_service),
+    db: AsyncSession = Depends(get_db),
 ) -> BookingList:
     items, total = await bookings.list_for_user(
         current_user,
@@ -125,12 +133,16 @@ async def list_bookings(
         q=q,
         status_filter=status_filter,
         is_processed=is_processed,
+        cancellation_status=cancellation_status,
         date_filter=date_filter,
         date_from=date_from,
         date_to=date_to,
     )
+    cancel_map = await active_cancellation_status_map(db, [b.id for b in items])
     return BookingList(
-        items=[_to_read(b, current_user, converter) for b in items],
+        items=[
+            _to_read(b, current_user, converter, cancel_map.get(b.id)) for b in items
+        ],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -163,13 +175,15 @@ async def get_booking_by_reservation_number(
     current_user: CurrentUser,
     converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
+    db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
     booking = await bookings.get_visible_by_reservation_number(
         reservation_number, current_user
     )
     if booking is None:
         raise not_found("Booking not found")
-    return _to_read(booking, current_user, converter)
+    cancel_map = await active_cancellation_status_map(db, [booking.id])
+    return _to_read(booking, current_user, converter, cancel_map.get(booking.id))
 
 
 @router.get("/{booking_id}", response_model=BookingRead)
@@ -178,11 +192,13 @@ async def get_booking(
     current_user: CurrentUser,
     converter: ConverterDep,
     bookings: BookingService = Depends(get_booking_service),
+    db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
     booking = await bookings.get_visible_by_reference(booking_id, current_user)
     if booking is None:
         raise not_found("Booking not found")
-    return _to_read(booking, current_user, converter)
+    cancel_map = await active_cancellation_status_map(db, [booking.id])
+    return _to_read(booking, current_user, converter, cancel_map.get(booking.id))
 
 
 @router.patch(

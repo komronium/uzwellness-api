@@ -6,6 +6,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, BookingType
+from app.models.cancellation import CancellationStatus
 from app.models.rate_plan import BoardType, ConfirmationType, PaymentTiming
 from app.models.user import UserRole
 from app.schemas.common import Page
@@ -127,6 +128,10 @@ class BookingRead(BaseModel):
     free_cancellation_days: int | None = None
     cancellation_penalty_percent: Decimal | None = None
     cancellation_penalty_amount: Decimal | None = None
+    # Latest active cancellation request status (code_sent / awaiting_approval);
+    # null when there is no pending cancellation. Admins use this to find
+    # bookings awaiting approval.
+    cancellation_status: CancellationStatus | None = None
     payment_timing: PaymentTiming | None = None
     confirmation: ConfirmationType | None = None
     rate_plan_name: dict | None = None

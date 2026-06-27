@@ -13,6 +13,7 @@ from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.core.utils import TASHKENT_TZ, today_tashkent
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
+from app.models.cancellation import CancellationRequest, CancellationStatus
 from app.models.notification import Notification
 from app.models.payment import Payment, PaymentStatus
 from app.models.user import User, UserRole
@@ -74,6 +75,7 @@ class BookingService:
         q: str | None = None,
         status_filter: BookingStatus | None = None,
         is_processed: bool | None = None,
+        cancellation_status: CancellationStatus | None = None,
         date_filter: BookingDateFilter = BookingDateFilter.BOOKING_DATE,
         date_from: date | None = None,
         date_to: date | None = None,
@@ -87,6 +89,15 @@ class BookingService:
             filters.append(Booking.status == status_filter)
         if is_processed is not None:
             filters.append(Booking.is_processed.is_(is_processed))
+        if cancellation_status is not None:
+            filters.append(
+                select(CancellationRequest.id)
+                .where(
+                    CancellationRequest.booking_id == Booking.id,
+                    CancellationRequest.status == cancellation_status,
+                )
+                .exists()
+            )
 
         base = select(Booking).outerjoin(User, Booking.user_id == User.id)
         for clause in filters:

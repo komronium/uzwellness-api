@@ -73,6 +73,49 @@ async def test_full_request_confirm_approve(
     assert approved.json()["status"] == "cancelled"
 
 
+async def test_admin_discovers_awaiting_approval(
+    client, db, admin_user, customer_headers, admin_headers, monkeypatch
+) -> None:
+    codes = _capture_codes(monkeypatch)
+    booking = await _book(client, db, admin_user, customer_headers)
+    bid = booking["id"]
+
+    # No request yet -> field is null.
+    detail = await client.get(f"/api/bookings/{bid}", headers=admin_headers)
+    assert detail.json()["cancellation_status"] is None
+
+    await client.post(
+        f"/api/bookings/{bid}/cancellation/request", headers=customer_headers
+    )
+    await client.post(
+        f"/api/bookings/{bid}/cancellation/confirm",
+        json={"code": codes["code"]},
+        headers=customer_headers,
+    )
+
+    # Detail now flags the pending cancellation.
+    detail = await client.get(f"/api/bookings/{bid}", headers=admin_headers)
+    assert detail.json()["cancellation_status"] == "awaiting_approval"
+
+    # Admin can list bookings awaiting approval via the filter.
+    listed = await client.get(
+        "/api/bookings?cancellation_status=awaiting_approval", headers=admin_headers
+    )
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()["items"]
+    assert any(r["id"] == bid for r in rows)
+    assert all(r["cancellation_status"] == "awaiting_approval" for r in rows)
+
+    # After approval the field clears (terminal state).
+    await client.post(f"/api/bookings/{bid}/cancellation/approve", headers=admin_headers)
+    detail = await client.get(f"/api/bookings/{bid}", headers=admin_headers)
+    assert detail.json()["cancellation_status"] is None
+    empty = await client.get(
+        "/api/bookings?cancellation_status=awaiting_approval", headers=admin_headers
+    )
+    assert all(r["id"] != bid for r in empty.json()["items"])
+
+
 async def test_wrong_code_rejected(
     client, db, admin_user, customer_headers, monkeypatch
 ) -> None:
