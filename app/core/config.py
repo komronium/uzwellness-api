@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # Frontend page that receives tokens in the URL fragment after login
     OAUTH_FRONTEND_REDIRECT_URL: str = "https://uzwellness.com/auth/callback"
 
+    # EMAIL_BACKEND: "log" (print only), "smtp", or "resend" (HTTPS API on 443 —
+    # use this when the host blocks outbound SMTP ports).
     EMAIL_FROM: str = "noreply@uzwellness.com"
     EMAIL_BACKEND: str = "log"
     SMTP_HOST: str | None = None
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
     # Implicit SSL (port 465). TimeWeb domain mailboxes use this; when true the
     # client connects over SSL directly instead of upgrading via STARTTLS.
     SMTP_USE_SSL: bool = False
+    RESEND_API_KEY: str | None = None
 
     EXCHANGE_RATE_SYNC_ENABLED: bool = True
     EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6
@@ -108,6 +111,8 @@ class Settings(BaseSettings):
             errors.append(
                 "SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD are required for SMTP"
             )
+        if self.EMAIL_BACKEND == "resend" and not self.RESEND_API_KEY:
+            errors.append("RESEND_API_KEY is required when EMAIL_BACKEND=resend")
         if errors:
             raise ValueError("; ".join(errors))
         return self

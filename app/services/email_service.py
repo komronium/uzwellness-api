@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import smtplib
 from collections.abc import Sequence
@@ -8,6 +9,8 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from email.message import EmailMessage
+
+import httpx
 
 from app.core.config import settings
 
@@ -49,10 +52,54 @@ def send_email(
             _send_smtp, to=to, subject=subject, body=body, attachments=attachments
         )
         return
+    if settings.EMAIL_BACKEND == "resend" and settings.RESEND_API_KEY:
+        _smtp_executor.submit(
+            _send_resend, to=to, subject=subject, body=body, attachments=attachments
+        )
+        return
     extra = f" (+{len(attachments)} attachment(s))" if attachments else ""
     logger.info(
         "email[%s] → %s: %s%s\n%s", settings.EMAIL_BACKEND, to, subject, extra, body
     )
+
+
+def _send_resend(
+    *,
+    to: str,
+    subject: str,
+    body: str,
+    attachments: Sequence[EmailAttachment] | None = None,
+) -> None:
+    """Send via the Resend HTTPS API (port 443) — works where SMTP is blocked."""
+    if not settings.RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not configured; skipping email to %s", to)
+        return
+
+    payload: dict = {
+        "from": settings.EMAIL_FROM,
+        "to": [to],
+        "subject": subject,
+        "text": body,
+    }
+    if attachments:
+        payload["attachments"] = [
+            {
+                "filename": a.filename,
+                "content": base64.b64encode(a.content).decode("ascii"),
+            }
+            for a in attachments
+        ]
+
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            json=payload,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except Exception:
+        logger.exception("Failed to send email via Resend to %s", to)
 
 
 def _send_smtp(
