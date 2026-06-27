@@ -1,21 +1,27 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 from app.models.booking import BookingStatus, BookingType
 from app.schemas.common import Page
 
-PaymentRollupStatus = Literal[
-    "unpaid",
-    "pending",
-    "partially_paid",
-    "paid",
-    "refund_pending",
-    "refunded",
-]
+
+class FinancePaymentStatus(StrEnum):
+    """Derived payment state of a booking (payments vs. amount due).
+
+    Not a stored column — computed in ``finance_rules.payment_status`` and the
+    matching SQL in ``finance_rules.payment_status_expr``.
+    """
+
+    UNPAID = "unpaid"
+    PENDING = "pending"
+    PARTIALLY_PAID = "partially_paid"
+    PAID = "paid"
+    REFUND_PENDING = "refund_pending"
+    REFUNDED = "refunded"
 
 
 class FinanceCurrencyTotals(BaseModel):
@@ -43,7 +49,7 @@ class FinanceOrderItem(BaseModel):
     booking_code: str
     booking_type: BookingType
     booking_status: BookingStatus
-    payment_status: PaymentRollupStatus
+    payment_status: FinancePaymentStatus
     sanatorium_id: uuid.UUID | None
     sanatorium_name: str | None
     agent_id: uuid.UUID | None

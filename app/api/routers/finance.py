@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import CurrentUser
 from app.core.pagination import Pagination
-from app.schemas.finance import FinanceOrderItem, FinanceOrdersList, FinanceSummary
+from app.models.booking import BookingStatus, BookingType
+from app.schemas.finance import (
+    FinanceOrderItem,
+    FinanceOrdersList,
+    FinancePaymentStatus,
+    FinanceSummary,
+)
 from app.services.finance_service import FinanceService, get_finance_service
 
 router = APIRouter(prefix="/finance", tags=["Finance"])
@@ -19,6 +25,9 @@ async def get_finance_summary(
     sanatorium_id: uuid.UUID | None = Query(default=None),
     agent_id: uuid.UUID | None = Query(default=None),
     is_b2b: bool | None = Query(default=None),
+    booking_status: BookingStatus | None = Query(default=None),
+    payment_status: FinancePaymentStatus | None = Query(default=None),
+    booking_type: BookingType | None = Query(default=None),
     finance: FinanceService = Depends(get_finance_service),
 ) -> FinanceSummary:
     data = await finance.summary(
@@ -28,6 +37,9 @@ async def get_finance_summary(
         sanatorium_id=sanatorium_id,
         agent_id=agent_id,
         is_b2b=is_b2b,
+        booking_status=booking_status,
+        payment_status=payment_status,
+        booking_type=booking_type,
     )
     return FinanceSummary(**data)
 
@@ -41,6 +53,9 @@ async def list_finance_orders(
     sanatorium_id: uuid.UUID | None = Query(default=None),
     agent_id: uuid.UUID | None = Query(default=None),
     is_b2b: bool | None = Query(default=None),
+    booking_status: BookingStatus | None = Query(default=None),
+    payment_status: FinancePaymentStatus | None = Query(default=None),
+    booking_type: BookingType | None = Query(default=None),
     finance: FinanceService = Depends(get_finance_service),
 ) -> FinanceOrdersList:
     items, total = await finance.orders(
@@ -52,6 +67,9 @@ async def list_finance_orders(
         sanatorium_id=sanatorium_id,
         agent_id=agent_id,
         is_b2b=is_b2b,
+        booking_status=booking_status,
+        payment_status=payment_status,
+        booking_type=booking_type,
     )
     return FinanceOrdersList(
         items=[FinanceOrderItem(**item) for item in items],

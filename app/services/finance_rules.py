@@ -3,9 +3,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 
-from app.models.booking import Booking
+from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.package import Package
 from app.models.payment import Payment, PaymentStatus
 from app.models.program import TreatmentProgram
@@ -41,6 +41,8 @@ def finance_filters(
     sanatorium_id: uuid.UUID | None,
     agent_id: uuid.UUID | None,
     is_b2b: bool | None,
+    booking_status: BookingStatus | None = None,
+    booking_type: BookingType | None = None,
 ) -> list:
     filters: list = []
     if actor.role == UserRole.ADMIN:
@@ -59,6 +61,10 @@ def finance_filters(
         filters.append(Booking.created_at >= _start_of_day(date_from))
     if date_to is not None:
         filters.append(Booking.created_at < _next_day(date_to))
+    if booking_status is not None:
+        filters.append(Booking.status == booking_status)
+    if booking_type is not None:
+        filters.append(Booking.booking_type == booking_type)
     return filters
 
 
@@ -113,6 +119,27 @@ def payment_status(
     if pending_amount > ZERO:
         return "pending"
     return "unpaid"
+
+
+def payment_status_expr(payments):
+    """SQL mirror of :func:`payment_status`, evaluated against a payment rollup.
+
+    Returns a CASE expression yielding the exact same string the response shows,
+    so filtering by ``payment_status`` can never diverge from the displayed value.
+    The branch order must stay identical to :func:`payment_status`.
+    """
+    paid = func.coalesce(payments.c.paid_amount, 0)
+    pending = func.coalesce(payments.c.pending_amount, 0)
+    refund_pending = func.coalesce(payments.c.refund_pending_amount, 0)
+    refunded = func.coalesce(payments.c.refunded_amount, 0)
+    return case(
+        (refund_pending > ZERO, "refund_pending"),
+        (and_(refunded > ZERO, paid == ZERO, pending == ZERO), "refunded"),
+        (and_(Booking.final_price > ZERO, paid >= Booking.final_price), "paid"),
+        (paid > ZERO, "partially_paid"),
+        (pending > ZERO, "pending"),
+        else_="unpaid",
+    )
 
 
 def booking_belongs_to_sanatorium(sanatorium_id: uuid.UUID):

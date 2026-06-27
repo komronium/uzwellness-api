@@ -13,10 +13,11 @@ from app.services.finance_rules import (
     money,
     payment_rollup_subquery,
     payment_status,
+    payment_status_expr,
 )
 
 
-def summary_statement(filters: list):
+def summary_statement(filters: list, *, payment_status: str | None = None):
     payments = payment_rollup_subquery()
     active = Booking.status != BookingStatus.CANCELLED
     gross = case((active, Booking.final_price), else_=ZERO)
@@ -57,14 +58,25 @@ def summary_statement(filters: list):
         .group_by(Booking.currency)
         .order_by(Booking.currency)
     )
+    stmt = _with_filters(stmt, filters)
+    if payment_status is not None:
+        stmt = stmt.where(payment_status_expr(payments) == payment_status)
+    return stmt
+
+
+def order_count_statement(filters: list, *, payment_status: str | None = None):
+    stmt = select(func.count(Booking.id))
+    if payment_status is not None:
+        payments = payment_rollup_subquery()
+        stmt = stmt.outerjoin(payments, payments.c.booking_id == Booking.id)
+        stmt = _with_filters(stmt, filters)
+        return stmt.where(payment_status_expr(payments) == payment_status)
     return _with_filters(stmt, filters)
 
 
-def order_count_statement(filters: list):
-    return _with_filters(select(func.count(Booking.id)), filters)
-
-
-def orders_statement(filters: list, *, limit: int, offset: int):
+def orders_statement(
+    filters: list, *, limit: int, offset: int, payment_status: str | None = None
+):
     payments = payment_rollup_subquery()
     room_sanatorium = aliased(Sanatorium)
     program_sanatorium = aliased(Sanatorium)
@@ -105,7 +117,10 @@ def orders_statement(filters: list, *, limit: int, offset: int):
         .limit(limit)
         .offset(offset)
     )
-    return _with_filters(stmt, filters)
+    stmt = _with_filters(stmt, filters)
+    if payment_status is not None:
+        stmt = stmt.where(payment_status_expr(payments) == payment_status)
+    return stmt
 
 
 def summary_item(row, *, can_see_internal: bool) -> dict:
