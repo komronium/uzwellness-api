@@ -530,6 +530,22 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontSize=15,
             alignment=TA_RIGHT,
         ),
+        "total_label": ParagraphStyle(
+            "total_label",
+            parent=base,
+            fontName=_FONT_BOLD,
+            fontSize=12,
+            textColor=_ACCENT,
+        ),
+        "total_amount": ParagraphStyle(
+            "total_amount",
+            parent=base,
+            fontName=_FONT_BOLD,
+            fontSize=14,
+            leading=18,
+            alignment=TA_RIGHT,
+            textColor=_ACCENT,
+        ),
         "grid_label": ParagraphStyle(
             "grid_label",
             parent=base,
@@ -851,27 +867,49 @@ def _append_price(story, styles, labels, booking, ctx) -> None:
         data.append(
             [cell, Paragraph(_fmt_money(item["amount"], currency), styles["right"])]
         )
-    data.append(
-        [
-            Paragraph(labels["total"], styles["big_total"]),
-            Paragraph(_fmt_money(ctx.invoice["total"], currency), styles["big_total"]),
-        ]
-    )
-    table = Table(data, colWidths=[_CONTENT_W - 45 * mm, 45 * mm])
+    table = Table(data, colWidths=[_CONTENT_W - 50 * mm, 50 * mm])
     table.setStyle(
         TableStyle(
             [
                 ("FONTNAME", (0, 0), (-1, -1), _FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 9.5),
                 ("LINEBELOW", (0, 0), (-1, 0), 0.6, _RULE),
-                ("LINEABOVE", (0, -1), (-1, -1), 0.8, _RULE),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]
         )
     )
     story.append(table)
-    story.append(Spacer(1, 5))
+
+    # Total bar — full width, label left, amount right, with enough room so a
+    # long currency amount (e.g. UZS millions) never wraps.
+    total_bar = Table(
+        [
+            [
+                Paragraph(labels["total"], styles["total_label"]),
+                Paragraph(
+                    _fmt_money(ctx.invoice["total"], currency), styles["total_amount"]
+                ),
+            ]
+        ],
+        colWidths=[_CONTENT_W * 0.5, _CONTENT_W * 0.5],
+    )
+    total_bar.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), _BOX_BG),
+                ("LINEABOVE", (0, 0), (-1, 0), 1.0, _ACCENT),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    story.append(total_bar)
+    story.append(Spacer(1, 6))
     story.append(Paragraph(f"<b>{_esc(labels['total_note'])}</b>", styles["base"]))
     notes: list[str] = [labels["fees_note"]]
     name = ctx.invoice["sanatorium_name"]
@@ -1278,7 +1316,8 @@ def _cancellation_text(booking, sanatorium, lang, labels) -> str:
 
 def _fmt_money(amount, currency: str) -> str:
     value = Decimal(str(amount)).quantize(Decimal("0.01"))
-    return f"{currency} {value:,.2f}"
+    # Non-breaking space so the currency never wraps away from the number.
+    return f"{currency} {value:,.2f}"
 
 
 def _esc(text) -> str:
