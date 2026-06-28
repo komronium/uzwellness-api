@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Static map is stitched from OSM tiles (keyless, reliable). {z}/{x}/{y}.
     VOUCHER_MAP_TILE_URL: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     VOUCHER_MAP_ZOOM: int = 15
+    # Optional TTF overrides; otherwise Ubuntu/DejaVu are auto-detected.
+    VOUCHER_FONT_PATH: str = ""
+    VOUCHER_FONT_BOLD_PATH: str = ""
 
     EXCHANGE_RATE_SYNC_ENABLED: bool = True
     EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6

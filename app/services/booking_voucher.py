@@ -33,7 +33,7 @@ from app.core.config import settings
 from app.core.storage import url_to_key
 from app.core.utils import pick_locale
 from app.models.booking import Booking
-from app.models.package import Package, PackageItem
+from app.models.package import Package
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
@@ -71,7 +71,13 @@ _RED = colors.HexColor("#cc0000")
 
 _CONTENT_W = 174 * mm  # A4 width (210) minus 18mm margins each side
 
+# Prefer the Ubuntu font (modern, clean, Latin+Cyrillic) when present, then
+# DejaVu, then reportlab's bundled Vera as a last resort.
 _FONT_CANDIDATES = [
+    (
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+    ),
     (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -89,9 +95,16 @@ def _ensure_fonts() -> None:
         import reportlab
 
         bundled = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
-        candidates = _FONT_CANDIDATES + [
-            (os.path.join(bundled, "Vera.ttf"), os.path.join(bundled, "VeraBd.ttf")),
-        ]
+        override = (
+            [(settings.VOUCHER_FONT_PATH, settings.VOUCHER_FONT_BOLD_PATH)]
+            if settings.VOUCHER_FONT_PATH and settings.VOUCHER_FONT_BOLD_PATH
+            else []
+        )
+        candidates = (
+            override
+            + _FONT_CANDIDATES
+            + [(os.path.join(bundled, "Vera.ttf"), os.path.join(bundled, "VeraBd.ttf"))]
+        )
         for regular, bold in candidates:
             if os.path.exists(regular) and os.path.exists(bold):
                 pdfmetrics.registerFont(TTFont(_FONT, regular))
@@ -134,6 +147,9 @@ _LABELS: dict[str, dict[str, str]] = {
         "accommodation": "Accommodation: {nights} night(s), {board}",
         "treatment_program": "Treatment program",
         "amenities": "Room facilities",
+        "board": "Board",
+        "stay_line": "Accommodation — {nights} night(s)",
+        "per_night": "≈ {amount} / night",
         "cancellation": "Cancellation policy",
         "prepayment": "Prepayment",
         "prepayment_not_required": "No prepayment needed.",
@@ -195,6 +211,9 @@ _LABELS: dict[str, dict[str, str]] = {
         "accommodation": "Проживание: {nights} ноч., {board}",
         "treatment_program": "Лечебная программа",
         "amenities": "Удобства номера",
+        "board": "Питание",
+        "stay_line": "Проживание — {nights} ноч.",
+        "per_night": "≈ {amount} / ночь",
         "cancellation": "Правила отмены",
         "prepayment": "Предоплата",
         "prepayment_not_required": "Предоплата не требуется.",
@@ -256,6 +275,9 @@ _LABELS: dict[str, dict[str, str]] = {
         "accommodation": "Yashash: {nights} kecha, {board}",
         "treatment_program": "Davolash dasturi",
         "amenities": "Xona qulayliklari",
+        "board": "Ovqatlanish",
+        "stay_line": "Yashash — {nights} kecha",
+        "per_night": "≈ {amount} / kecha",
         "cancellation": "Bekor qilish shartlari",
         "prepayment": "Oldindan to'lov",
         "prepayment_not_required": "Oldindan to'lov talab qilinmaydi.",
@@ -413,7 +435,6 @@ class _Ctx:
     room: Room | None
     invoice: dict
     stay_name: str | None
-    inclusions: list[str]
     photo: bytes | None
     map_image: bytes | None
     amenities: list[str] = field(default_factory=list)
@@ -444,11 +465,10 @@ async def build_voucher_pdf(
 
     _append_header_band(story, styles, labels, booking)
     _append_top_box(story, styles, labels, booking, ctx, lang)
-    _append_guests(story, styles, labels, booking, ctx, lang)
-    _append_price(story, styles, labels, ctx)
-    _append_included(story, styles, labels, ctx)
-    _append_map(story, ctx)
     _append_room_box(story, styles, labels, booking, ctx, lang)
+    _append_guests(story, styles, labels, booking, ctx, lang)
+    _append_price(story, styles, labels, booking, ctx)
+    _append_map(story, ctx)
     _append_extras(story, styles, labels, ctx, lang)
     _append_footer(story, styles, labels, ctx)
 
@@ -543,6 +563,9 @@ def _styles() -> dict[str, ParagraphStyle]:
             textColor=colors.white,
         ),
         "td": ParagraphStyle("td", parent=base, fontSize=9, leading=12),
+        "td_small": ParagraphStyle(
+            "td_small", parent=base, fontSize=7.5, leading=9.5, textColor=_MUTED
+        ),
         "red": ParagraphStyle("red", parent=base, textColor=_RED),
     }
 
@@ -704,13 +727,16 @@ def _append_guests(story, styles, labels, booking, ctx, lang) -> None:
         Paragraph(labels["treatment_program"], styles["th"]),
     ]
     data = [header]
-    for idx, (name, passport, program) in enumerate(rows, start=1):
+    for idx, (name, passport, title, detail) in enumerate(rows, start=1):
+        program_cell: list = [Paragraph(f"<b>{_esc(title)}</b>", styles["td"])]
+        if detail:
+            program_cell.append(Paragraph(_esc(detail), styles["td_small"]))
         data.append(
             [
                 Paragraph(str(idx), styles["td"]),
                 Paragraph(_esc(name), styles["td"]),
                 Paragraph(_esc(passport), styles["td"]),
-                Paragraph(_esc(program), styles["td"]),
+                program_cell,
             ]
         )
     table = Table(
@@ -740,30 +766,37 @@ def _append_guests(story, styles, labels, booking, ctx, lang) -> None:
     story.append(table)
 
 
-def _guest_rows(booking, ctx, lang) -> list[tuple[str, str, str]]:
+def _guest_rows(booking, ctx, lang) -> list[tuple[str, str, str, str]]:
+    """Rows of (name, passport, program_title, program_detail) per guest."""
     labels = _LABELS[lang]
     dash = labels["no_program"]
     treatments = _guest_treatments(booking)
-    fallback = ""
-    if not any(treatments) and booking.program_id is not None:
-        fallback = ctx.stay_name or ""
+    fallback = ("", "")
+    if not any(t[0] for t in treatments) and booking.program_id is not None:
+        fallback = (ctx.stay_name or "", "")
 
-    rows: list[tuple[str, str, str]] = []
+    def pick(i: int) -> tuple[str, str]:
+        title, detail = treatments[i] if i < len(treatments) else ("", "")
+        if not title:
+            title, detail = fallback
+        return (title or dash, detail)
+
+    rows: list[tuple[str, str, str, str]] = []
     details = booking.guest_details or []
     if details:
         for i, gd in enumerate(details):
             name = (gd.get("full_name") if isinstance(gd, dict) else None) or dash
             passport = (gd.get("passport") if isinstance(gd, dict) else None) or dash
-            program = (treatments[i] if i < len(treatments) else "") or fallback or dash
-            rows.append((name, passport, program))
+            title, detail = pick(i)
+            rows.append((name, passport, title, detail))
     elif ctx.invoice["customer_name"]:
-        program = (treatments[0] if treatments else "") or fallback or dash
-        rows.append((ctx.invoice["customer_name"], dash, program))
+        title, detail = pick(0)
+        rows.append((ctx.invoice["customer_name"], dash, title, detail))
     return rows
 
 
-def _guest_treatments(booking) -> list[str]:
-    """Per-guest treatment titles from the offer snapshot, in guest order."""
+def _guest_treatments(booking) -> list[tuple[str, str]]:
+    """Per-guest (title, detail) treatment from the offer snapshot, in order."""
     snapshot = booking.offer_snapshot or {}
     inclusions = snapshot.get("inclusions") or []
 
@@ -771,24 +804,26 @@ def _guest_treatments(booking) -> list[str]:
         guest = entry.get("guest") or {}
         return (entry.get("room_index", 0), guest.get("guest_index", 0))
 
-    titles: list[str] = []
+    out: list[tuple[str, str]] = []
     for entry in sorted(inclusions, key=_key):
-        title = ""
+        title, detail = "", ""
         for item in entry.get("items") or []:
             if item.get("type") in ("treatment", "special_package"):
                 title = (item.get("title") or "").strip()
+                detail = (item.get("description") or "").strip()
                 if title:
                     break
-        titles.append(title)
-    return titles
+        out.append((title, detail))
+    return out
 
 
 # ── price ─────────────────────────────────────────────────────────────────────
 
 
-def _append_price(story, styles, labels, ctx) -> None:
+def _append_price(story, styles, labels, booking, ctx) -> None:
     story.append(Paragraph(labels["price"], styles["h2"]))
     currency = ctx.invoice["currency"]
+    nights = max(ctx.invoice["nights"], 1)
     data = [
         [
             Paragraph(labels["description"], styles["base"]),
@@ -796,11 +831,25 @@ def _append_price(story, styles, labels, ctx) -> None:
         ]
     ]
     for item in ctx.invoice["line_items"]:
-        data.append(
-            [
-                Paragraph(_esc(_localize_line(item, labels, ctx)), styles["base"]),
-                Paragraph(_fmt_money(item["amount"], currency), styles["right"]),
+        desc = str(item.get("description") or "")
+        if desc == "Room/program":
+            per_night = (Decimal(str(item["amount"])) / nights).quantize(
+                Decimal("0.01")
+            )
+            cell: list = [
+                Paragraph(
+                    f"<b>{_esc(labels['stay_line'].format(nights=nights))}</b>",
+                    styles["base"],
+                ),
+                Paragraph(
+                    labels["per_night"].format(amount=_fmt_money(per_night, currency)),
+                    styles["td_small"],
+                ),
             ]
+        else:
+            cell = [Paragraph(_esc(_localize_line(item, labels, ctx)), styles["base"])]
+        data.append(
+            [cell, Paragraph(_fmt_money(item["amount"], currency), styles["right"])]
         )
     data.append(
         [
@@ -835,17 +884,6 @@ def _append_price(story, styles, labels, ctx) -> None:
     story.append(Paragraph(_esc(" ".join(notes)), styles["muted"]))
 
 
-# ── what's included (board + treatment) ──────────────────────────────────────
-
-
-def _append_included(story, styles, labels, ctx) -> None:
-    if not ctx.inclusions:
-        return
-    story.append(Paragraph(labels["included"], styles["h2"]))
-    for line in ctx.inclusions:
-        story.append(Paragraph(f"•&nbsp; {_esc(line)}", styles["base"]))
-
-
 # ── map ───────────────────────────────────────────────────────────────────────
 
 
@@ -863,25 +901,19 @@ def _append_map(story, ctx) -> None:
 
 
 def _append_room_box(story, styles, labels, booking, ctx, lang) -> None:
-    left: list = []
-    if ctx.stay_name:
-        left.append(Paragraph(_esc(ctx.stay_name), styles["name"]))
-    guest_names = _guest_names(booking) or (
-        [ctx.invoice["customer_name"]] if ctx.invoice["customer_name"] else []
-    )
-    if guest_names:
+    # Service / room type as the heading, then board and room facilities.
+    left: list = [
+        Paragraph(_esc(ctx.stay_name or labels["description"]), styles["name"])
+    ]
+    board = _board_label(booking.board, lang)
+    nights = ctx.invoice["nights"]
+    if board:
         left.append(
             Paragraph(
-                f"<b>{labels['guest_name']}:</b> {_esc(', '.join(guest_names))}",
+                f"<b>{labels['board']}:</b> {_esc(board)} · {nights} "
+                f"{labels['nights'].lower()}",
                 styles["base"],
             )
-        )
-    left.append(
-        Paragraph(f"<b>{labels['guests']}:</b> {ctx.invoice['guests']}", styles["base"])
-    )
-    if ctx.room is not None and ctx.room.capacity:
-        left.append(
-            Paragraph(labels["sleeps"].format(n=ctx.room.capacity), styles["muted"])
         )
     if ctx.amenities:
         left.append(Spacer(1, 4))
@@ -1016,7 +1048,6 @@ async def _load_context(db: AsyncSession, booking: Booking, lang: str) -> _Ctx:
     stay_name = await _stay_name(db, booking, lang)
     amenities = [pick_locale(a.name, lang) for a in room.amenities][:14] if room else []
     amenities = [a for a in amenities if a]
-    inclusions = await _inclusions(db, booking, lang)
 
     photo = await _fetch_photo(sanatorium)
     map_image = await _fetch_map(sanatorium)
@@ -1026,7 +1057,6 @@ async def _load_context(db: AsyncSession, booking: Booking, lang: str) -> _Ctx:
         room=room,
         invoice=invoice,
         stay_name=stay_name,
-        inclusions=inclusions,
         photo=photo,
         map_image=map_image,
         amenities=amenities,
@@ -1090,53 +1120,6 @@ async def _stay_name(db: AsyncSession, booking: Booking, lang: str) -> str | Non
             select(Package.title).where(Package.id == booking.package_id)
         )
     return (pick_locale(name, lang) or None) if name else None
-
-
-async def _inclusions(db: AsyncSession, booking: Booking, lang: str) -> list[str]:
-    """Board + treatment program / package inclusions, deduplicated."""
-    labels = _LABELS[lang]
-    lines: list[str] = []
-
-    nights = max((booking.check_out - booking.check_in).days, 1)
-    board = _board_label(booking.board, lang)
-    if board:
-        lines.append(labels["accommodation"].format(nights=nights, board=board))
-
-    seen: set[str] = set()
-    snapshot = booking.offer_snapshot or {}
-    for guest in snapshot.get("inclusions", []) or []:
-        for item in guest.get("items", []) or []:
-            if item.get("type") == "accommodation":
-                continue
-            title = (item.get("title") or "").strip()
-            if title and title not in seen:
-                seen.add(title)
-                desc = (item.get("description") or "").strip()
-                lines.append(f"{title} — {desc}" if desc else title)
-
-    if not seen and booking.program_id is not None:
-        program = await db.get(TreatmentProgram, booking.program_id)
-        if program is not None:
-            title = pick_locale(program.name, lang)
-            desc = pick_locale(program.description, lang)
-            if title:
-                lines.append(f"{title} — {desc}" if desc else title)
-
-    if booking.package_id is not None:
-        items = (
-            await db.scalars(
-                select(PackageItem)
-                .where(PackageItem.package_id == booking.package_id)
-                .order_by(PackageItem.display_order)
-            )
-        ).all()
-        for item in items:
-            title = pick_locale(item.title, lang)
-            if title and title not in seen:
-                seen.add(title)
-                lines.append(title)
-
-    return lines
 
 
 # ── external assets (best-effort) ────────────────────────────────────────────
