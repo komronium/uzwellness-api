@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     RESEND_API_KEY: str | None = None
 
+    # Booking voucher PDF
+    VOUCHER_BRAND_NAME: str = "UzWellness"
+    # Keyless static map; {lat}/{lng} are substituted. Swap for a keyed provider
+    # (Geoapify/Mapbox) if you need higher reliability.
+    VOUCHER_MAP_URL_TEMPLATE: str = (
+        "https://staticmap.openstreetmap.de/staticmap.php"
+        "?center={lat},{lng}&zoom=15&size=640x260&markers={lat},{lng},red-pushpin"
+    )
+
     EXCHANGE_RATE_SYNC_ENABLED: bool = True
     EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6
     EXCHANGE_RATE_SYNC_CURRENCIES: list[str] = ["USD", "EUR", "RUB", "KZT"]
