@@ -75,12 +75,9 @@ class Settings(BaseSettings):
 
     # Booking voucher PDF
     VOUCHER_BRAND_NAME: str = "UzWellness"
-    # Keyless static map; {lat}/{lng} are substituted. Swap for a keyed provider
-    # (Geoapify/Mapbox) if you need higher reliability.
-    VOUCHER_MAP_URL_TEMPLATE: str = (
-        "https://staticmap.openstreetmap.de/staticmap.php"
-        "?center={lat},{lng}&zoom=15&size=640x260&markers={lat},{lng},red-pushpin"
-    )
+    # Static map is stitched from OSM tiles (keyless, reliable). {z}/{x}/{y}.
+    VOUCHER_MAP_TILE_URL: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    VOUCHER_MAP_ZOOM: int = 15
 
     EXCHANGE_RATE_SYNC_ENABLED: bool = True
     EXCHANGE_RATE_SYNC_INTERVAL_HOURS: int = 6

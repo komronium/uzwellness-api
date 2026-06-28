@@ -12,7 +12,9 @@ on any failure, so the voucher always renders.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import math
 import os
 import threading
 from dataclasses import dataclass, field
@@ -22,6 +24,7 @@ from io import BytesIO
 
 import httpx
 from PIL import Image as PILImage
+from PIL import ImageDraw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -110,11 +113,19 @@ _LABELS: dict[str, dict[str, str]] = {
         "status": "Status",
         "booking_date": "Booking date",
         "guests": "Guests",
+        "guests_heading": "Guests",
+        "guest_no": "#",
         "guest_name": "Guest name",
+        "passport": "Passport",
+        "no_program": "—",
         "price": "Price",
         "description": "Description",
         "amount": "Amount",
         "total": "Total price (incl. taxes)",
+        "total_note": "The total shown is the amount you pay the property.",
+        "fees_note": (
+            "Any optional on-site services are paid directly at the property."
+        ),
         "extra_bed": "Extra bed",
         "payment": "Payment details",
         "payment_by": "All payments are handled by the property {name}.",
@@ -163,11 +174,19 @@ _LABELS: dict[str, dict[str, str]] = {
         "status": "Статус",
         "booking_date": "Дата бронирования",
         "guests": "Гостей",
+        "guests_heading": "Гости",
+        "guest_no": "№",
         "guest_name": "Имя гостя",
+        "passport": "Паспорт",
+        "no_program": "—",
         "price": "Цена",
         "description": "Описание",
         "amount": "Сумма",
         "total": "Итоговая цена (включая налоги)",
+        "total_note": "Указанная итоговая цена — это сумма, которую вы платите объекту.",
+        "fees_note": (
+            "Дополнительные услуги на месте (при наличии) оплачиваются в объекте."
+        ),
         "extra_bed": "Доп. кровать",
         "payment": "Сведения об оплате",
         "payment_by": "Все платежи обрабатывает объект размещения {name}.",
@@ -216,11 +235,19 @@ _LABELS: dict[str, dict[str, str]] = {
         "status": "Holati",
         "booking_date": "Bron sanasi",
         "guests": "Mehmonlar",
+        "guests_heading": "Mehmonlar",
+        "guest_no": "№",
         "guest_name": "Mehmon ismi",
+        "passport": "Pasport",
+        "no_program": "—",
         "price": "Narx",
         "description": "Tavsif",
         "amount": "Summa",
         "total": "Yakuniy narx (soliqlar bilan)",
+        "total_note": "Ko'rsatilgan yakuniy narx — siz obyektga to'laydigan summa.",
+        "fees_note": (
+            "Joyida ko'rsatiladigan qo'shimcha xizmatlar (bo'lsa) obyektda to'lanadi."
+        ),
         "extra_bed": "Qo'shimcha o'rin",
         "payment": "To'lov ma'lumotlari",
         "payment_by": "Barcha to'lovlarni obyekt ({name}) o'zi qabul qiladi.",
@@ -417,6 +444,7 @@ async def build_voucher_pdf(
 
     _append_header_band(story, styles, labels, booking)
     _append_top_box(story, styles, labels, booking, ctx, lang)
+    _append_guests(story, styles, labels, booking, ctx, lang)
     _append_price(story, styles, labels, ctx)
     _append_included(story, styles, labels, ctx)
     _append_map(story, ctx)
@@ -502,11 +530,19 @@ def _styles() -> dict[str, ParagraphStyle]:
         "grid_sub": ParagraphStyle(
             "grid_sub",
             parent=base,
-            fontSize=8,
-            leading=10,
+            fontSize=7.5,
+            leading=9.5,
             alignment=TA_CENTER,
             textColor=_MUTED,
         ),
+        "th": ParagraphStyle(
+            "th",
+            parent=base,
+            fontName=_FONT_BOLD,
+            fontSize=9,
+            textColor=colors.white,
+        ),
+        "td": ParagraphStyle("td", parent=base, fontSize=9, leading=12),
         "red": ParagraphStyle("red", parent=base, textColor=_RED),
     }
 
@@ -576,7 +612,7 @@ def _append_top_box(story, styles, labels, booking, ctx, lang) -> None:
             )
 
     grid = _date_grid(styles, labels, booking, ctx, lang)
-    box = Table([[left_cells, grid]], colWidths=[_CONTENT_W * 0.5, _CONTENT_W * 0.5])
+    box = Table([[left_cells, grid]], colWidths=[_CONTENT_W * 0.46, _CONTENT_W * 0.54])
     box.setStyle(
         TableStyle(
             [
@@ -608,8 +644,11 @@ def _date_grid(styles, labels, booking, ctx, lang) -> Table:
         Paragraph(str(booking.rooms_count), styles["grid_day"]),
         Paragraph(str(ctx.invoice["nights"]), styles["grid_day"]),
     ]
-    w = (_CONTENT_W * 0.5 - 20) / 4
-    grid = Table([header, values], colWidths=[w, w, w, w])
+    # Date cells need more room (weekday names); rooms/nights are single digits.
+    usable = _CONTENT_W * 0.54 - 20
+    wide = usable * 0.3
+    narrow = usable * 0.2
+    grid = Table([header, values], colWidths=[wide, wide, narrow, narrow])
     grid.setStyle(
         TableStyle(
             [
@@ -648,6 +687,100 @@ def _date_cell(styles, value: date, t: time | None, lang: str) -> Table:
         )
     )
     return cell
+
+
+# ── guests table (name / passport / treatment) ───────────────────────────────
+
+
+def _append_guests(story, styles, labels, booking, ctx, lang) -> None:
+    rows = _guest_rows(booking, ctx, lang)
+    if not rows:
+        return
+    story.append(Paragraph(labels["guests_heading"], styles["h2"]))
+    header = [
+        Paragraph(labels["guest_no"], styles["th"]),
+        Paragraph(labels["guest_name"], styles["th"]),
+        Paragraph(labels["passport"], styles["th"]),
+        Paragraph(labels["treatment_program"], styles["th"]),
+    ]
+    data = [header]
+    for idx, (name, passport, program) in enumerate(rows, start=1):
+        data.append(
+            [
+                Paragraph(str(idx), styles["td"]),
+                Paragraph(_esc(name), styles["td"]),
+                Paragraph(_esc(passport), styles["td"]),
+                Paragraph(_esc(program), styles["td"]),
+            ]
+        )
+    table = Table(
+        data,
+        colWidths=[
+            10 * mm,
+            _CONTENT_W * 0.30,
+            _CONTENT_W * 0.24,
+            _CONTENT_W - 10 * mm - _CONTENT_W * 0.54,
+        ],
+    )
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), _ACCENT),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.4, _RULE),
+        ("BOX", (0, 0), (-1, -1), 0.6, _RULE),
+    ]
+    for r in range(1, len(data)):
+        if r % 2 == 0:
+            style.append(("BACKGROUND", (0, r), (-1, r), _BOX_BG))
+    table.setStyle(TableStyle(style))
+    story.append(table)
+
+
+def _guest_rows(booking, ctx, lang) -> list[tuple[str, str, str]]:
+    labels = _LABELS[lang]
+    dash = labels["no_program"]
+    treatments = _guest_treatments(booking)
+    fallback = ""
+    if not any(treatments) and booking.program_id is not None:
+        fallback = ctx.stay_name or ""
+
+    rows: list[tuple[str, str, str]] = []
+    details = booking.guest_details or []
+    if details:
+        for i, gd in enumerate(details):
+            name = (gd.get("full_name") if isinstance(gd, dict) else None) or dash
+            passport = (gd.get("passport") if isinstance(gd, dict) else None) or dash
+            program = (treatments[i] if i < len(treatments) else "") or fallback or dash
+            rows.append((name, passport, program))
+    elif ctx.invoice["customer_name"]:
+        program = (treatments[0] if treatments else "") or fallback or dash
+        rows.append((ctx.invoice["customer_name"], dash, program))
+    return rows
+
+
+def _guest_treatments(booking) -> list[str]:
+    """Per-guest treatment titles from the offer snapshot, in guest order."""
+    snapshot = booking.offer_snapshot or {}
+    inclusions = snapshot.get("inclusions") or []
+
+    def _key(entry: dict):
+        guest = entry.get("guest") or {}
+        return (entry.get("room_index", 0), guest.get("guest_index", 0))
+
+    titles: list[str] = []
+    for entry in sorted(inclusions, key=_key):
+        title = ""
+        for item in entry.get("items") or []:
+            if item.get("type") in ("treatment", "special_package"):
+                title = (item.get("title") or "").strip()
+                if title:
+                    break
+        titles.append(title)
+    return titles
 
 
 # ── price ─────────────────────────────────────────────────────────────────────
@@ -689,16 +822,17 @@ def _append_price(story, styles, labels, ctx) -> None:
         )
     )
     story.append(table)
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(f"<b>{_esc(labels['total_note'])}</b>", styles["base"]))
+    notes: list[str] = [labels["fees_note"]]
     name = ctx.invoice["sanatorium_name"]
-    notes: list[str] = []
     if name:
         notes.append(labels["payment_by"].format(name=name))
     methods = _payment_methods(ctx)
     if methods:
         notes.append(labels["payment_methods"].format(methods=methods))
-    if notes:
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(_esc(" ".join(notes)), styles["muted"]))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph(_esc(" ".join(notes)), styles["muted"]))
 
 
 # ── what's included (board + treatment) ──────────────────────────────────────
@@ -1036,17 +1170,61 @@ async def _fetch_photo(sanatorium: Sanatorium | None) -> bytes | None:
 async def _fetch_map(sanatorium: Sanatorium | None) -> bytes | None:
     if sanatorium is None or sanatorium.lat is None or sanatorium.lng is None:
         return None
-    url = settings.VOUCHER_MAP_URL_TEMPLATE.format(
-        lat=sanatorium.lat, lng=sanatorium.lng
-    )
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        return await _render_tile_map(float(sanatorium.lat), float(sanatorium.lng))
+    except Exception:
+        logger.warning("voucher: failed to render map")
+        return None
+
+
+async def _render_tile_map(
+    lat: float, lng: float, *, width: int = 660, height: int = 280
+) -> bytes | None:
+    """Stitch a static map from OSM tiles and draw a marker at the point."""
+    zoom = settings.VOUCHER_MAP_ZOOM
+    n = 2**zoom
+    x = (lng + 180.0) / 360.0 * n
+    y = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
+    cx_px, cy_px = x * 256.0, y * 256.0
+    left, top = cx_px - width / 2, cy_px - height / 2
+    x0, x1 = int(left // 256), int((left + width) // 256)
+    y0, y1 = int(top // 256), int((top + height) // 256)
+
+    headers = {"User-Agent": f"{settings.VOUCHER_BRAND_NAME}/1.0 (booking voucher)"}
+    async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
+
+        async def _tile(tx: int, ty: int):
+            url = settings.VOUCHER_MAP_TILE_URL.format(z=zoom, x=tx % n, y=ty)
             resp = await client.get(url)
             resp.raise_for_status()
-            return resp.content
-    except Exception:
-        logger.warning("voucher: failed to load static map")
-        return None
+            return tx, ty, resp.content
+
+        coords = [(tx, ty) for ty in range(y0, y1 + 1) for tx in range(x0, x1 + 1)]
+        tiles = await asyncio.gather(*[_tile(tx, ty) for tx, ty in coords])
+
+    canvas = PILImage.new(
+        "RGB", ((x1 - x0 + 1) * 256, (y1 - y0 + 1) * 256), (235, 235, 235)
+    )
+    for tx, ty, content in tiles:
+        canvas.paste(
+            PILImage.open(BytesIO(content)).convert("RGB"),
+            ((tx - x0) * 256, (ty - y0) * 256),
+        )
+    crop_left, crop_top = int(left - x0 * 256), int(top - y0 * 256)
+    crop = canvas.crop((crop_left, crop_top, crop_left + width, crop_top + height))
+
+    draw = ImageDraw.Draw(crop)
+    mx, my, r = width // 2, height // 2, 9
+    draw.ellipse(
+        [mx - r, my - 2 * r, mx + r, my],
+        fill=(204, 0, 0),
+        outline=(255, 255, 255),
+        width=2,
+    )
+    draw.polygon([(mx - 6, my - 5), (mx + 6, my - 5), (mx, my + 7)], fill=(204, 0, 0))
+    buf = BytesIO()
+    crop.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _rl_image(raw: bytes, max_w: float, max_h: float) -> RLImage | None:
