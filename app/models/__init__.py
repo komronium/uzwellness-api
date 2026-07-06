@@ -16,6 +16,7 @@ from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.cancellation import CancellationRequest, CancellationStatus
 from app.models.exchange_rate import ExchangeRate
 from app.models.extra_bed import BookingExtraBed, ExtraBedConfig
+from app.models.news import NewsArticle, NewsCategory
 from app.models.newsletter import NewsletterSubscriber
 from app.models.notification import Notification
 from app.models.package import Package, PackageItem, PackageItemType
@@ -86,6 +87,8 @@ __all__ = [
     "ExchangeRate",
     "ExtraBedConfig",
     "HostType",
+    "NewsArticle",
+    "NewsCategory",
     "NewsletterSubscriber",
     "Notification",
     "Package",

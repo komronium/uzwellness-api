@@ -10,6 +10,7 @@ OPENAPI_TAGS = [
     {"name": "Bookings", "description": "Booking creation and management"},
     {"name": "Guest Relations", "description": "Review and guest question workflows"},
     {"name": "Packages", "description": "All-inclusive package journeys"},
+    {"name": "News", "description": "News and SEO articles"},
     {"name": "Payments", "description": "Payments and exchange rates"},
     {"name": "Finance", "description": "Role-based finance reports"},
     {"name": "B2B", "description": "B2B agent dashboard and clients"},
