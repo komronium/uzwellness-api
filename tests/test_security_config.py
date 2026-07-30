@@ -58,17 +58,24 @@ def test_production_rejects_debug_and_weak_jwt_secret():
     assert "JWT_SECRET_KEY must be at least 32 characters" in message
 
 
-def test_production_requires_enabled_payment_webhook_secrets():
+def test_production_requires_uzum_webhook_credentials():
+    with pytest.raises(ValidationError) as exc:
+        _base_settings(ENVIRONMENT="production", UZUM_SERVICE_ID=123123)
+
+    assert "UZUM_MERCHANT_USERNAME and UZUM_MERCHANT_PASSWORD are required" in str(
+        exc.value
+    )
+
+
+def test_production_requires_uzum_service_id_when_credentials_set():
     with pytest.raises(ValidationError) as exc:
         _base_settings(
             ENVIRONMENT="production",
-            PAYME_MERCHANT_ID="payme-merchant",
-            CLICK_SERVICE_ID="click-service",
+            UZUM_MERCHANT_USERNAME="uzwellness",
+            UZUM_MERCHANT_PASSWORD="secret",
         )
 
-    message = str(exc.value)
-    assert "PAYME_MERCHANT_KEY is required" in message
-    assert "CLICK_SECRET_KEY is required" in message
+    assert "UZUM_SERVICE_ID is required" in str(exc.value)
 
 
 def test_production_accepts_unconfigured_payment_providers():

@@ -132,6 +132,41 @@ class XyzList(BaseModel):
 
 Cancel: room booking sanalardagi `units_available` ni qaytaradi; session booking faqat statusni `cancelled` qiladi.
 
+## To'lov — Uzum Bank Merchant API
+
+Yagona online provider — **Uzum Bank**. To'lov *ilovadan* boshlanadi: mijoz Uzum
+Bank ilovasida UzWellness xizmatini tanlaydi, **bron raqamini** (`reservation_number`,
+16 raqam) kiritadi, keyin Uzum bizning webhooklarni chaqiradi. Biz Uzumga hech
+qachon so'rov yubormaymiz.
+
+```
+Uzum → POST /payments/uzum/check     → bron bor/to'lanmagan ekanini tasdiqlaymiz
+Uzum → POST /payments/uzum/create    → Payment(status=pending) yaratamiz
+Uzum → POST /payments/uzum/confirm   → Payment=paid, Booking=confirmed, email
+Uzum → POST /payments/uzum/reverse   → pending→cancelled, paid→refunded
+Uzum → POST /payments/uzum/status    → confirm timeout bo'lsa holatni so'raydi
+```
+
+| Uzum holati | `PaymentStatus` |
+|---|---|
+| `CREATED` | `pending` |
+| `CONFIRMED` | `paid` |
+| `REVERSED` | `cancelled` (to'lanmagan) / `refunded` (to'langandan keyin) |
+| 30 daqiqa confirm yo'q | `failed` |
+
+- **Auth:** HTTP Basic (`UZUM_MERCHANT_USERNAME` / `UZUM_MERCHANT_PASSWORD`).
+  Sozlanmagan bo'lsa — hamma so'rov `10001` bilan rad etiladi (fail-closed).
+- **Xatolar:** har qanday xato = HTTP `400` + `{"status":"FAILED","errorCode":"1000X"}`.
+  Kodlar `app/integrations/uzum/errors.py` da.
+- **Summa:** `amount` — **tiyin**, faqat **UZS**. Bron USD bo'lsa
+  `ExchangeRateService` orqali UZS ga o'giriladi; mos kelmasa `10011`.
+- **Idempotentlik:** `transId` bo'yicha partial unique index
+  (`uq_payments_uzum_provider_payment_id`) — takroriy `/create` → `10010`.
+- **Naqd** (`cash`) alohida qoladi: `POST /payments/initiate` + admin
+  `POST /payments/{id}/confirm-cash`.
+
+Uzum jamoasi uchun hujjat va Postman collection: `docs/uzum/`.
+
 ## Narx hisoblash
 
 ```python
@@ -286,6 +321,12 @@ GET/PATCH/DELETE  /programs/{id}
 POST      /bookings                   { room_category_id | program_id, ... }
 GET       /bookings                   bronlar ro'yxati (RBAC)
 PATCH     /bookings/{id}/cancel       bekor qilish
+
+# To'lov (Uzum Bank Merchant API + naqd)
+POST      /payments/initiate            faqat naqd (cash) uchun
+POST      /payments/{id}/confirm-cash   admin naqd to'lovni tasdiqlaydi
+GET       /payments/uzum/order/{booking_id}   mehmonga ko'rsatiladigan order_id + UZS summa
+POST      /payments/uzum/check|create|confirm|reverse|status   ← Uzum chaqiradi (Basic auth)
 
 # Amenitlar (global katalog — super_admin)
 GET/POST  /amenities

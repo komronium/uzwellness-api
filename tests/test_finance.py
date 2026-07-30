@@ -78,7 +78,7 @@ async def _seed_booking(
         db.add(
             Payment(
                 booking_id=booking.id,
-                method=PaymentMethod.PAYME,
+                method=PaymentMethod.UZUM,
                 status=payment_status,
                 amount=booking.final_price,
                 currency=booking.currency,

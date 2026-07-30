@@ -5,7 +5,7 @@ ADMIN_CONFIG_PAYLOAD = {
         "global_rate": 12.0,
         "overrides": [{"region": "tashkent", "rate": 10.0}],
     },
-    "payment_gateways": {"stripe": False, "payme": True, "click": True},
+    "payment_gateways": {"uzum": True, "cash": False},
     "email_templates": {
         "booking_confirmed": {
             "subject": "Booking {{code}} confirmed",
@@ -59,7 +59,7 @@ async def test_get_admin_config_returns_defaults(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["commission"]["global_rate"] == 0.0
-    assert body["payment_gateways"] == {"stripe": True, "payme": True, "click": True}
+    assert body["payment_gateways"] == {"uzum": True, "cash": True}
     assert body["feature_flags"]["maintenance_mode"] is False
 
 

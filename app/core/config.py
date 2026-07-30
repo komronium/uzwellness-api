@@ -43,13 +43,16 @@ class Settings(BaseSettings):
     IMAGE_MAX_DIMENSION: int = 1920
     IMAGE_WEBP_QUALITY: int = 85
 
-    PAYME_CHECKOUT_URL: str = "https://checkout.paycom.uz/"
-    PAYME_MERCHANT_ID: str = ""
-    PAYME_MERCHANT_KEY: str = ""
-    CLICK_CHECKOUT_URL: str = "https://my.click.uz/services/pay"
-    CLICK_SERVICE_ID: str = ""
-    CLICK_MERCHANT_ID: str = ""
-    CLICK_SECRET_KEY: str = ""
+    # Uzum Bank Merchant API. The customer pays inside the Uzum Bank app and
+    # Uzum calls our /payments/uzum/* webhooks, authenticated with Basic auth.
+    # Credentials and serviceId are agreed with Uzum (we pick them for testing,
+    # Uzum issues the production serviceId afterwards).
+    UZUM_SERVICE_ID: int = 0
+    UZUM_MERCHANT_USERNAME: str = ""
+    UZUM_MERCHANT_PASSWORD: str = ""
+    # A created transaction that is never confirmed expires after this many
+    # minutes (Uzum's protocol fixes this at 30).
+    UZUM_TRANSACTION_TIMEOUT_MINUTES: int = 30
 
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
@@ -103,10 +106,17 @@ class Settings(BaseSettings):
             errors.append("DEBUG must be false in production")
         if len(self.JWT_SECRET_KEY) < 32:
             errors.append("JWT_SECRET_KEY must be at least 32 characters in production")
-        if self.PAYME_MERCHANT_ID and not self.PAYME_MERCHANT_KEY:
-            errors.append("PAYME_MERCHANT_KEY is required when Payme is enabled")
-        if self.CLICK_SERVICE_ID and not self.CLICK_SECRET_KEY:
-            errors.append("CLICK_SECRET_KEY is required when Click is enabled")
+        if self.UZUM_SERVICE_ID and not (
+            self.UZUM_MERCHANT_USERNAME and self.UZUM_MERCHANT_PASSWORD
+        ):
+            errors.append(
+                "UZUM_MERCHANT_USERNAME and UZUM_MERCHANT_PASSWORD are required "
+                "when Uzum is enabled"
+            )
+        if (
+            self.UZUM_MERCHANT_USERNAME or self.UZUM_MERCHANT_PASSWORD
+        ) and not self.UZUM_SERVICE_ID:
+            errors.append("UZUM_SERVICE_ID is required when Uzum credentials are set")
         if self.GOOGLE_CLIENT_ID and not (
             self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI
         ):

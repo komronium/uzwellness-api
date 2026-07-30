@@ -7,9 +7,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Uuid,
+    text,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -21,8 +23,7 @@ from app.core.ids import uuid7
 
 
 class PaymentMethod(StrEnum):
-    PAYME = "payme"
-    CLICK = "click"
+    UZUM = "uzum"
     CASH = "cash"
 
 
@@ -39,6 +40,16 @@ class Payment(TimestampMixin, Base):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_payments_amount_non_negative"),
+        # One Uzum transaction id can only ever back a single payment row; the
+        # /create webhook relies on this to answer "already created" (10010).
+        Index(
+            "uq_payments_uzum_provider_payment_id",
+            "provider_payment_id",
+            unique=True,
+            postgresql_where=text(
+                "method = 'uzum' AND provider_payment_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
@@ -76,3 +87,6 @@ class Payment(TimestampMixin, Base):
         JSONB, nullable=False, default=dict, server_default="{}"
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the provider reverses the transaction (Uzum /reverse) or the
+    # payment is cancelled; reported back as ``reverseTime``.
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -14,9 +14,8 @@ class CommissionConfig(BaseModel):
 
 
 class PaymentGatewaysConfig(BaseModel):
-    stripe: bool = True
-    payme: bool = True
-    click: bool = True
+    uzum: bool = True
+    cash: bool = True
 
 
 class EmailTemplate(BaseModel):

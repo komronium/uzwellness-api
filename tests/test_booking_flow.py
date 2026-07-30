@@ -525,7 +525,7 @@ class TestCancellation:
         db.add(
             Payment(
                 booking_id=booking_id,
-                method=PaymentMethod.PAYME,
+                method=PaymentMethod.UZUM,
                 status=PaymentStatus.PAID,
                 amount=Decimal("100.00"),
                 currency="USD",
@@ -534,7 +534,7 @@ class TestCancellation:
         db.add(
             Payment(
                 booking_id=booking_id,
-                method=PaymentMethod.CLICK,
+                method=PaymentMethod.CASH,
                 status=PaymentStatus.PENDING,
                 amount=Decimal("100.00"),
                 currency="USD",
@@ -555,8 +555,8 @@ class TestCancellation:
             ).scalars()
         )
         statuses = {r.method: r.status for r in rows}
-        assert statuses[PaymentMethod.PAYME] == PaymentStatus.REFUND_PENDING
-        assert statuses[PaymentMethod.CLICK] == PaymentStatus.CANCELLED
+        assert statuses[PaymentMethod.UZUM] == PaymentStatus.REFUND_PENDING
+        assert statuses[PaymentMethod.CASH] == PaymentStatus.CANCELLED
 
 
 # ── concurrency: two requests racing for the last unit ────────────────────

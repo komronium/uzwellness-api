@@ -1,6 +1,6 @@
+import uuid
 from datetime import datetime
 from decimal import Decimal
-import uuid
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,7 +15,16 @@ class PaymentInitiateRequest(BaseModel):
 class PaymentInitiateResponse(BaseModel):
     payment_id: uuid.UUID
     status: PaymentStatus
-    redirect_url: str | None = None
+
+
+class UzumOrderInfo(BaseModel):
+    """What the guest types into the Uzum Bank app to pay for a booking."""
+
+    booking_id: uuid.UUID
+    order_id: str
+    service_id: int
+    amount: Decimal
+    currency: str
 
 
 class BookingPaymentSummary(BaseModel):
