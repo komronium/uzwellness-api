@@ -52,9 +52,18 @@ from app.services.payment_service import send_booking_confirmed_email
 logger = logging.getLogger("uzwellness.uzum")
 
 # Keys the Uzum app may use for the identifier the customer types in. The
-# first one is what we register with Uzum; the rest keep manual testing and
-# older field names working.
-_ORDER_ID_KEYS = ("order_id", "orderId", "account", "booking_code", "code")
+# first one is what we register with Uzum; the rest are accepted so a field
+# renamed on their side cannot break payments. Whatever the key, the value is
+# looked up as a reservation number or booking code — never as a user id.
+_ORDER_ID_KEYS = (
+    "order_id",
+    "orderId",
+    "account",
+    "user_id",
+    "userId",
+    "booking_code",
+    "code",
+)
 
 _TIYIN = Decimal("100")
 UZUM_CURRENCY = "UZS"

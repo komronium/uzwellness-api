@@ -271,6 +271,25 @@ class TestCheck:
         )
         assert resp.status_code == 200, resp.text
 
+    @pytest.mark.parametrize("key", ["orderId", "account", "user_id", "code"])
+    async def test_alternative_param_keys_resolve(
+        self, client: AsyncClient, db: AsyncSession, key: str
+    ):
+        """Uzum's field name must not decide whether a payment can happen."""
+
+        booking = await make_booking(db, email=f"alias-{key}@test.com")
+        resp = await client.post(
+            f"{BASE}/check",
+            json={
+                "serviceId": SERVICE_ID,
+                "timestamp": 1698361456728,
+                "params": {key: booking.reservation_number},
+            },
+            headers=auth_headers(),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "OK"
+
     async def test_unknown_order_id_is_account_not_found(self, client: AsyncClient):
         resp = await client.post(
             f"{BASE}/check", json=check_body("0000000000000000"), headers=auth_headers()
