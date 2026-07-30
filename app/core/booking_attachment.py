@@ -32,7 +32,7 @@ async def resolve_owner_for_booking(
             detail="Booking not found",
         )
 
-    if actor.role == UserRole.SUPER_ADMIN:
+    if actor.role in (UserRole.SUPER_ADMIN, UserRole.TRANSFER_ADMIN):
         return booking.user_id or actor.id
 
     if booking.user_id != actor.id:

@@ -58,6 +58,7 @@ HTTP → Router (yupqa) → Service (biznes mantiq) → ORM Model → PostgreSQL
 | `super_admin` | Hamma narsani boshqaradi, markup belgilaydi, sanatoriyani tasdiqlaydi |
 | `admin` | Faqat o'z sanatoriyasi, xonalari, mavjudligi, dasturlar, qo'shimcha o'rinlar |
 | `agent` | Faqat o'z bronlarini ko'radi |
+| `transfer_admin` | Transfer tariflari, avtoparki, buyurtmalari va moliyasi (platformada **bitta**) |
 | `customer` | Qidiradi, bron qiladi, o'zini bekor qiladi |
 
 ```python
@@ -167,6 +168,67 @@ Uzum → POST /payments/uzum/status    → confirm timeout bo'lsa holatni so'ray
 
 Uzum jamoasi uchun hujjat va Postman collection: `docs/uzum/`.
 
+## Transfer — tarif, bron qo'shimchasi, moliya
+
+Transferni **bitta** platforma operatori (`transfer_admin`) boshqaradi. Bitta
+bo'lishi partial unique index bilan majburlanadi
+(`uq_users_single_transfer_admin`); ikkinchisini yaratish → `409`
+`{detail:{code:"transfer_admin_exists", existing_user_id}}`.
+
+### Tarif — versiyalanadi, o'zgartirilmaydi
+
+`transfer_tariffs` — append-only. "Tahrirlash" = joriy qatorni yopish
+(`effective_to = now()`) + yangi ochiq qator qo'shish, **bitta tranzaksiyada**.
+PATCH/DELETE yo'q. Har (route_from, route_to, vehicle_type) uchun `effective_to
+IS NULL` bo'lgan faqat bitta qator bo'ladi — `uq_transfer_tariffs_current`.
+
+Shu sababli bronning `applied_tariff_id` si doim mehmon to'lagan aniq narxga
+ishora qiladi, tarif keyinchalik o'zgarsa ham.
+
+`round_trip` narxi = to'g'ri yo'nalish tarifi + **teskari** yo'nalish tarifi.
+Uchinchi o'lchov (direction) tarif jadvalida yo'q.
+
+### Bron ichida transfer (bitta to'lov)
+
+`POST /bookings` va `POST /bookings/room-offer` ixtiyoriy `transfer` blokini
+qabul qiladi. **Mijoz hech qachon narx yubormaydi** — backend submit paytidagi
+joriy tarifni topadi:
+
+```
+flush(booking) → attach_booking_transfer() → commit
+                 ├─ tarifni yechadi (yo'q bo'lsa 422 no_tariff_for_route)
+                 ├─ kerak bo'lsa bron valyutasiga o'giradi va snapshot qiladi
+                 ├─ booking.final_price += transfer narxi
+                 └─ TransferRequest(payment_state='included')
+```
+
+Hammasi bitta tranzaksiyada — tarif topilmasa bron ham yaratilmaydi.
+
+| Holat | `payment_state` |
+|---|---|
+| Checkout ichida qo'shilgan | `included` (bron to'lovi bilan birga) |
+| Brondan keyin `POST /transfers` | `unpaid` (alohida, offline hisob-kitob) |
+| Operator to'lovni qabul qildi | `paid` |
+
+Bron bekor qilinsa → bog'liq transferlar `cancelled` bo'ladi va moliyadan
+chiqib ketadi.
+
+### Komissiya
+
+`users.transfer_commission_percent` — `transfer_admin` uchun majburiy (yo'q
+bo'lsa `422`). Har transferga narxlash paytida **snapshot** qilinadi
+(`commission_percent_snapshot`, `commission_amount_snapshot`), shuning uchun
+foizni keyin o'zgartirish eski buyurtmalarga ta'sir qilmaydi.
+
+Bu sanatoriya bilan bo'linishdan **alohida**: `GET /transfer-finance/summary`
+o'z hisobini beradi (`net_payout = gross − commission`).
+
+> ⚠️ `booking.final_price` transfer narxini ham o'z ichiga oladi, lekin
+> `bookings.commission_snapshot` faqat xona/dastur qismidan hisoblanadi.
+> Shuning uchun umumiy `/finance/summary` da `sanatorium_net_amount` transfer
+> summasini ham ko'rsatadi. Sanatoriya hisob-kitobi uchun undan
+> `/transfer-finance` gross'ini ayirish kerak.
+
 ## Narx hisoblash
 
 ```python
@@ -264,6 +326,12 @@ users → sanatoriums ───────────────────�
               │
               └─→ sanatorium_reviews
 
+transfer_locations ──→ transfer_tariffs (versiyalangan, append-only)
+        │                      │
+        └──────────────────────┴──→ transfer_requests ←── bookings
+                                          ↑
+                                  transfer_vehicles
+
 exchange_rates (alohida)
 ```
 
@@ -339,6 +407,19 @@ GET/PATCH/DELETE  /extra-beds/{id}
 # Reviews
 GET/POST  /sanatoriums/{id}/reviews
 PATCH/DELETE  /reviews/{id}
+
+# Transfer (transfer_admin + super_admin yozadi)
+GET       /transfer-locations           public; ?is_active&kind&include_translations
+POST/PATCH/DELETE  /transfer-locations[/{id}]
+GET       /transfer-tariffs             tarix, ?route_from_id&route_to_id&vehicle_type&current_only
+POST      /transfer-tariffs             yangi versiya (eskisini yopadi)
+GET       /transfer-tariffs/current     public — checkout narxi (route + vehicle_type)
+GET/POST/PATCH/DELETE  /transfer-vehicles[/{id}]
+GET       /transfers                    ?status&payment_state&booking_id
+POST      /transfers                    brondan keyin qo'shish → unpaid
+PATCH     /transfers/{id}               rolga qarab: operator hammasini, mijoz faqat reys/kontakt
+POST      /transfers/{id}/cancel
+GET       /transfer-finance/summary|orders   ?date_from&date_to&currency
 ```
 
 ## Test infratuzilmasi

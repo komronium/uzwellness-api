@@ -24,6 +24,7 @@ from app.services.booking_pricing_policy import (
     BookingPricingPolicy,
     get_booking_pricing_policy,
 )
+from app.services.booking_transfer import attach_booking_transfer
 from app.services.reservation_numbers import next_reservation_number
 from app.services.room_offer_service import RoomOfferService, get_room_offer_service
 
@@ -149,6 +150,9 @@ class RoomOfferBookingService:
         )
         self.db.add(booking)
         await self.db.flush()
+        await attach_booking_transfer(
+            self.db, booking=booking, payload=payload.transfer, locale=locale
+        )
         self.db.add(
             Notification(booking_id=booking.id, type="booking_created", channel="email")
         )
@@ -188,6 +192,7 @@ class RoomOfferBookingService:
                 selectinload(Booking.extra_beds),
                 selectinload(Booking.user),
                 selectinload(Booking.payments),
+                selectinload(Booking.transfers),
             )
             .where(Booking.id == booking_id)
         )

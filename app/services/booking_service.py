@@ -33,11 +33,13 @@ from app.services.booking_visibility import (
     booking_visibility_clauses,
 )
 from app.services.email_service import BookingEmailContext, send_booking_cancelled
+from app.services.transfer_request_service import cancel_transfers_for_booking
 
 _LOAD_OPTIONS = (
     selectinload(Booking.extra_beds),
     selectinload(Booking.user),
     selectinload(Booking.payments),
+    selectinload(Booking.transfers),
 )
 
 
@@ -50,7 +52,9 @@ class BookingService:
         self.db = db
         self.flows = flows
 
-    async def create(self, payload: BookingCreate, user: User) -> Booking:
+    async def create(
+        self, payload: BookingCreate, user: User, *, locale: str = "en"
+    ) -> Booking:
         if payload.check_in < today_tashkent():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -58,7 +62,7 @@ class BookingService:
             )
         for flow in self.flows:
             if flow.matches(payload):
-                return await flow.create(payload, user)
+                return await flow.create(payload, user, locale=locale)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="One of room_id, program_id, or package_id is required",
@@ -204,6 +208,9 @@ class BookingService:
 
         locked.status = BookingStatus.CANCELLED
         await self._mark_payments_for_refund(locked.id)
+        # `included` transfers ride the booking's refund path; `unpaid` ones
+        # simply stop being owed.
+        await cancel_transfers_for_booking(self.db, locked.id)
         self.db.add(
             Notification(
                 booking_id=locked.id, type="booking_cancelled", channel="email"

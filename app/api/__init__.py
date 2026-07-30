@@ -29,6 +29,10 @@ from app.api.routers import (
     sanatorium_images,
     sanatorium_search,
     sanatoriums,
+    transfer_finance,
+    transfer_locations,
+    transfer_tariffs,
+    transfer_vehicles,
     transfers,
     treatment_focuses,
     users,
@@ -64,6 +68,10 @@ api_router.include_router(finance.router)
 api_router.include_router(admin.router)
 api_router.include_router(b2b.router)
 api_router.include_router(transfers.router)
+api_router.include_router(transfer_locations.router)
+api_router.include_router(transfer_tariffs.router)
+api_router.include_router(transfer_vehicles.router)
+api_router.include_router(transfer_finance.router)
 api_router.include_router(treatment_focuses.router)
 api_router.include_router(regions.router)
 api_router.include_router(newsletter.router)

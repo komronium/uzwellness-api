@@ -6,7 +6,7 @@ import smtplib
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from email.message import EmailMessage
 
@@ -213,6 +213,49 @@ def send_admin_cancellation_request(
             f"Confirmation number: {reservation_number}\n\n"
             "Please review and approve or reject the cancellation in the admin "
             "panel. Approving will cancel the booking and queue the refund.\n\n"
+            "— UzWellness"
+        ),
+    )
+
+
+def send_transfer_confirmed(
+    *,
+    to: str,
+    pickup_location: str,
+    dropoff_location: str,
+    flight_time: datetime | None,
+) -> None:
+    send_email(
+        to=to,
+        subject="Transfer confirmed — UzWellness",
+        body=(
+            "Your transfer is confirmed.\n\n"
+            f"Pickup: {pickup_location}\n"
+            f"Drop-off: {dropoff_location}\n"
+            f"Flight time: {flight_time.isoformat() if flight_time else '—'}\n\n"
+            "We will share the driver's details once assigned.\n\n"
+            "— UzWellness"
+        ),
+    )
+
+
+def send_transfer_driver_assigned(
+    *,
+    to: str,
+    driver_name: str,
+    driver_phone: str | None,
+    pickup_location: str,
+    dropoff_location: str,
+) -> None:
+    send_email(
+        to=to,
+        subject="Your transfer driver — UzWellness",
+        body=(
+            "A driver has been assigned to your transfer.\n\n"
+            f"Driver: {driver_name}\n"
+            f"Phone: {driver_phone or '—'}\n"
+            f"Pickup: {pickup_location}\n"
+            f"Drop-off: {dropoff_location}\n\n"
             "— UzWellness"
         ),
     )

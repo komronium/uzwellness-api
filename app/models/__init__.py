@@ -60,12 +60,16 @@ from app.models.sanatorium import (
     WellnessCategory,
 )
 from app.models.stay_option import SanatoriumStayOptionPrice, StayOptionGuestType
+from app.models.transfer_location import TransferLocation, TransferLocationKind
 from app.models.transfer_request import (
     TransferDirection,
+    TransferPaymentState,
     TransferRequest,
     TransferStatus,
     VehicleType,
 )
+from app.models.transfer_tariff import TransferTariff
+from app.models.transfer_vehicle import TransferVehicle
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -125,8 +129,13 @@ __all__ = [
     "SanatoriumStayOptionPrice",
     "StayOptionGuestType",
     "TransferDirection",
+    "TransferLocation",
+    "TransferLocationKind",
+    "TransferPaymentState",
     "TransferRequest",
     "TransferStatus",
+    "TransferTariff",
+    "TransferVehicle",
     "TreatmentFocus",
     "TreatmentGuestApplicability",
     "TreatmentProgram",

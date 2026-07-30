@@ -57,7 +57,9 @@ class RoomBookingFlow(BookingFlowBase):
             and payload.room_id is not None
         )
 
-    async def create(self, payload: BookingCreate, user: User) -> Booking:
+    async def create(
+        self, payload: BookingCreate, user: User, *, locale: str = "en"
+    ) -> Booking:
         context = await self._prepare_context(payload, user)
         await self._reserve_units(context.room, context.dates, context.rooms_count)
 
@@ -67,6 +69,7 @@ class RoomBookingFlow(BookingFlowBase):
         self.db.add(booking)
         await self.db.flush()
         self._attach_extra_beds(booking, quote.extra_beds)
+        await self._attach_transfer(booking, payload, locale)
         self.db.add(self._queue_created_notification(booking))
         await self.db.commit()
         self._send_received_email(booking, user, pick_locale(context.sanatorium.name))

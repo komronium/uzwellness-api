@@ -17,6 +17,7 @@ from app.schemas.room_offer import (
     RoomOfferRequestedRoom,
     RoomOfferTreatmentSelection,
 )
+from app.schemas.transfer_request import BookingTransferCreate, TransferRequestRead
 
 
 class BookingCustomerRead(BaseModel):
@@ -46,6 +47,9 @@ class BookingCreate(BaseModel):
     extra_beds: list[ExtraBedItem] = Field(default_factory=list)
     guest_details: list[GuestDetail] = Field(default_factory=list)
     special_requests: str | None = Field(default=None, max_length=1000)
+    # Optional add-on, priced server-side and folded into final_price so the
+    # guest still makes a single payment.
+    transfer: BookingTransferCreate | None = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -76,6 +80,7 @@ class RoomOfferBookingCreate(BaseModel):
     )
     guest_details: list[GuestDetail] = Field(default_factory=list)
     special_requests: str | None = Field(default=None, max_length=1000)
+    transfer: BookingTransferCreate | None = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -148,6 +153,11 @@ class BookingRead(BaseModel):
     processed_by_id: uuid.UUID | None = None
     extra_beds: list[BookingExtraBedRead] = []
     payments: list[BookingPaymentSummary] = Field(default_factory=list)
+    # The transfer attached to this booking, if any, plus its share of the
+    # total so checkout and the booking page can render a "Transfer" line.
+    transfer: TransferRequestRead | None = None
+    transfer_price: Decimal | None = None
+    transfer_currency: str | None = None
     customer: BookingCustomerRead | None = None
     created_at: datetime
     updated_at: datetime

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.models.booking import Booking
+from app.models.transfer_request import TransferPaymentState
 from app.models.user import User
 
 
@@ -14,7 +15,20 @@ async def build_invoice(db: AsyncSession, booking: Booking) -> dict:
     nights = max((booking.check_out - booking.check_in).days, 1)
     total = booking.final_price
     extras_total = sum((eb.total_price for eb in booking.extra_beds), Decimal("0"))
-    rooms_subtotal = total - extras_total
+    transfer = next(
+        (
+            t
+            for t in booking.transfers
+            if t.payment_state == TransferPaymentState.INCLUDED
+        ),
+        None,
+    )
+    transfer_total = (
+        transfer.applied_price
+        if transfer is not None and transfer.applied_price is not None
+        else Decimal("0")
+    )
+    rooms_subtotal = total - extras_total - transfer_total
 
     line_items: list[dict] = [
         {
@@ -29,6 +43,17 @@ async def build_invoice(db: AsyncSession, booking: Booking) -> dict:
                 "description": f"Extra bed × {eb.count}",
                 "qty": eb.count,
                 "amount": eb.total_price,
+            }
+        )
+    if transfer is not None and transfer_total:
+        line_items.append(
+            {
+                "description": (
+                    f"Transfer ({transfer.pickup_location} → "
+                    f"{transfer.dropoff_location})"
+                ),
+                "qty": 1,
+                "amount": transfer_total,
             }
         )
 

@@ -20,7 +20,9 @@ class SessionBookingFlow(BookingFlowBase):
     def matches(self, payload: BookingCreate) -> bool:
         return payload.program_id is not None
 
-    async def create(self, payload: BookingCreate, user: User) -> Booking:
+    async def create(
+        self, payload: BookingCreate, user: User, *, locale: str = "en"
+    ) -> Booking:
         program = await self._load_bookable_program(payload.program_id)
         self._assert_group_size(program, payload.guests)
         check_out = self._check_out(payload)
@@ -44,6 +46,7 @@ class SessionBookingFlow(BookingFlowBase):
         await self._assign_reservation_number(booking)
         self.db.add(booking)
         await self.db.flush()
+        await self._attach_transfer(booking, payload, locale)
         self.db.add(self._queue_created_notification(booking))
         await self.db.commit()
         self._send_received_email(booking, user, pick_locale(sanatorium.name))

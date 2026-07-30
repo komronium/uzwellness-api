@@ -21,6 +21,7 @@ from app.services.booking_guards import (
     reserve_units,
 )
 from app.services.booking_pricing_policy import BookingPricingPolicy
+from app.services.booking_transfer import attach_booking_transfer
 from app.services.email_service import BookingEmailContext, send_booking_received
 from app.services.reservation_numbers import next_reservation_number
 
@@ -28,7 +29,9 @@ from app.services.reservation_numbers import next_reservation_number
 class BookingFlow(Protocol):
     def matches(self, payload: BookingCreate) -> bool: ...
 
-    async def create(self, payload: BookingCreate, user: User) -> Booking: ...
+    async def create(
+        self, payload: BookingCreate, user: User, *, locale: str = "en"
+    ) -> Booking: ...
 
 
 class BookingFlowBase:
@@ -61,12 +64,21 @@ class BookingFlowBase:
                 selectinload(Booking.extra_beds),
                 selectinload(Booking.user),
                 selectinload(Booking.payments),
+                selectinload(Booking.transfers),
             )
             .where(Booking.id == booking_id)
         )
 
     async def _reserve_units(self, room: Room, dates: list, rooms_count: int) -> None:
         await reserve_units(self.db, room, dates=dates, rooms_count=rooms_count)
+
+    async def _attach_transfer(
+        self, booking: Booking, payload: BookingCreate, locale: str
+    ) -> None:
+        """Fold the optional transfer add-on in before the flow commits."""
+        await attach_booking_transfer(
+            self.db, booking=booking, payload=payload.transfer, locale=locale
+        )
 
     @staticmethod
     def _queue_created_notification(booking: Booking) -> Notification:

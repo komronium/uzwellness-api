@@ -29,6 +29,7 @@ from app.schemas.booking import (
     RoomOfferBookingCreate,
 )
 from app.schemas.cancellation import CancellationConfirm, CancellationRequestRead
+from app.schemas.transfer_request import TransferRequestRead
 from app.services.admin_reservation_service import (
     AdminReservationService,
     get_admin_reservation_service,
@@ -66,6 +67,11 @@ def _to_read(
     if converter is not None:
         data.display_price = converter.convert(booking.final_price, booking.currency)
         data.display_currency = converter.target
+    transfer = next(iter(booking.transfers), None)
+    if transfer is not None:
+        data.transfer = TransferRequestRead.model_validate(transfer)
+        data.transfer_price = transfer.applied_price
+        data.transfer_currency = transfer.applied_currency
     return data
 
 
@@ -83,7 +89,7 @@ async def create_booking(
     bookings: BookingService = Depends(get_booking_service),
     db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
-    booking = await bookings.create(payload, current_user)
+    booking = await bookings.create(payload, current_user, locale=locale)
     await send_booking_confirmation_email(db, booking, locale)
     return _to_read(booking, current_user, converter)
 

@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from app.models.extra_bed import BookingExtraBed
     from app.models.notification import Notification
     from app.models.payment import Payment
+    from app.models.transfer_request import TransferRequest
     from app.models.user import User
 
 _ALPHABET = string.ascii_uppercase + string.digits
@@ -302,6 +303,12 @@ class Booking(TimestampMixin, Base):
     payments: Mapped[list["Payment"]] = relationship(
         primaryjoin="Booking.id == Payment.booking_id",
         order_by="Payment.created_at.desc()",
+        lazy="raise",
+        viewonly=True,
+    )
+    transfers: Mapped[list["TransferRequest"]] = relationship(
+        primaryjoin="Booking.id == TransferRequest.booking_id",
+        order_by="TransferRequest.created_at.asc()",
         lazy="raise",
         viewonly=True,
     )

@@ -22,7 +22,9 @@ class PackageBookingFlow(BookingFlowBase):
     def matches(self, payload: BookingCreate) -> bool:
         return payload.package_id is not None
 
-    async def create(self, payload: BookingCreate, user: User) -> Booking:
+    async def create(
+        self, payload: BookingCreate, user: User, *, locale: str = "en"
+    ) -> Booking:
         package = await self._load_package(payload.package_id)
         sanatorium = await self._approved_sanatorium(package.sanatorium_id)
         check_out = self._check_out(payload, package)
@@ -53,6 +55,7 @@ class PackageBookingFlow(BookingFlowBase):
         await self._assign_reservation_number(booking)
         self.db.add(booking)
         await self.db.flush()
+        await self._attach_transfer(booking, payload, locale)
         self.db.add(self._queue_created_notification(booking))
         await self.db.commit()
 
