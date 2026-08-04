@@ -257,7 +257,10 @@ class TestCheck:
         body = resp.json()
         assert body["status"] == "OK"
         assert body["serviceId"] == SERVICE_ID
-        assert body["data"]["order_id"]["value"] == booking.reservation_number
+        # Uzum's payment form pre-fills and locks `data.amount`, which is in
+        # so'm — unlike every wire `amount` field, which is in tiyin.
+        assert body["data"]["amount"]["value"] == "1250000"
+        assert "order_id" not in body["data"]
         assert body["data"]["property"]["value"] == "Test Sanatorium"
 
     async def test_booking_code_also_resolves(
@@ -354,6 +357,8 @@ class TestCreate:
         assert body["transId"] == trans_id
         assert body["amount"] == EXPECTED_TIYIN
         assert isinstance(body["transTime"], int)
+        # The displayed figure must always be the charged one, /100.
+        assert int(body["data"]["amount"]["value"]) * 100 == body["amount"]
 
         payment = await db.scalar(
             select(Payment).where(Payment.provider_payment_id == trans_id)

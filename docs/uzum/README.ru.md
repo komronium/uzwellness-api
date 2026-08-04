@@ -57,6 +57,12 @@ Authorization: Basic base64(<username>:<password>)
 
 Пример: бронь на 1 250 000 UZS → `"amount": 125000000`.
 
+> ⚠️ Единственное исключение — `data.amount`, который платёжная форма Uzum
+> подставляет клиенту: он в **сумах**. Для той же брони это
+> `"amount": {"value": "1250000"}`. Значение всегда выводится из тийинной
+> суммы делением на 100, поэтому показанное клиенту и списанное совпадают
+> всегда.
+
 ## 5. Модель состояний
 
 ```
@@ -80,7 +86,7 @@ Authorization: Basic base64(<username>:<password>)
   "status": "CONFIRMED",
   "confirmTime": 1698361458054,
   "data": {
-    "order_id": { "value": "2607301100123456" },
+    "amount":    { "value": "1250000" },
     "property":  { "value": "Charvak Resort" },
     "guest":     { "value": "Ali Valiyev" },
     "check_in":  { "value": "2026-08-01" },

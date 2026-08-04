@@ -94,7 +94,9 @@ class UzumService:
         return UzumCheckResponse(
             service_id=payload.service_id,
             timestamp=now_ms(),
-            data=await self._booking_data(booking),
+            data=await self._booking_data(
+                booking, amount_tiyin=await self.expected_amount_tiyin(booking)
+            ),
         )
 
     async def create(self, payload: UzumCreateRequest) -> UzumCreateResponse:
@@ -149,7 +151,7 @@ class UzumService:
             service_id=payload.service_id,
             trans_id=payload.trans_id,
             trans_time=to_ms(payment.created_at) or now_ms(),
-            data=await self._booking_data(booking),
+            data=await self._booking_data(booking, amount_tiyin=payload.amount),
             amount=payload.amount,
         )
 
@@ -202,7 +204,9 @@ class UzumService:
             service_id=payload.service_id,
             trans_id=payload.trans_id,
             confirm_time=to_ms(payment.paid_at) or now_ms(),
-            data=await self._booking_data(booking),
+            data=await self._booking_data(
+                booking, amount_tiyin=self._amount_tiyin(payment)
+            ),
             amount=self._amount_tiyin(payment),
         )
 
@@ -239,7 +243,11 @@ class UzumService:
             booking.status = BookingStatus.PENDING
         await self.db.commit()
 
-        data = await self._booking_data(booking) if booking is not None else {}
+        data = (
+            await self._booking_data(booking, amount_tiyin=self._amount_tiyin(payment))
+            if booking is not None
+            else {}
+        )
         return UzumReverseResponse(
             service_id=payload.service_id,
             trans_id=payload.trans_id,
@@ -271,7 +279,13 @@ class UzumService:
             trans_time=to_ms(payment.created_at) or now_ms(),
             confirm_time=to_ms(payment.paid_at),
             reverse_time=to_ms(payment.cancelled_at),
-            data=await self._booking_data(booking) if booking is not None else {},
+            data=(
+                await self._booking_data(
+                    booking, amount_tiyin=self._amount_tiyin(payment)
+                )
+                if booking is not None
+                else {}
+            ),
             amount=self._amount_tiyin(payment),
         )
 
@@ -416,11 +430,17 @@ class UzumService:
     def _amount_tiyin(payment: Payment) -> int:
         return int((payment.amount * _TIYIN).to_integral_value(ROUND_HALF_UP))
 
-    async def _booking_data(self, booking: Booking) -> UzumData:
-        """Key/value pairs Uzum renders in the app before the customer pays."""
+    async def _booking_data(self, booking: Booking, *, amount_tiyin: int) -> UzumData:
+        """Key/value pairs Uzum renders in the app before the customer pays.
+
+        ``amount`` is what Uzum's payment form pre-fills and locks, so it is in
+        **so'm** — unlike every wire ``amount`` field, which is in tiyin. It is
+        always derived from the tiyin figure the caller already settled on, so
+        the number the customer sees can never drift from the one we charge.
+        """
 
         data: UzumData = {
-            "order_id": {"value": booking.reservation_number},
+            "amount": {"value": _soum_str(amount_tiyin)},
             "check_in": {"value": booking.check_in.isoformat()},
             "check_out": {"value": booking.check_out.isoformat()},
         }
@@ -439,6 +459,15 @@ class UzumService:
         if user is None:
             return None
         return user.full_name or user.email
+
+
+def _soum_str(amount_tiyin: int) -> str:
+    """Tiyin → a so'm string for display ("1000000" → "10000")."""
+
+    soum = Decimal(amount_tiyin) / _TIYIN
+    if soum == soum.to_integral_value():
+        return str(int(soum))
+    return f"{soum:.2f}"
 
 
 _STATUS_MAP: dict[PaymentStatus, str] = {
