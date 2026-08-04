@@ -462,12 +462,15 @@ class UzumService:
 
 
 def _soum_str(amount_tiyin: int) -> str:
-    """Tiyin → a so'm string for display ("1000000" → "10000")."""
+    """Tiyin → whole so'm, as a string (1000000 → "10000").
 
-    soum = Decimal(amount_tiyin) / _TIYIN
-    if soum == soum.to_integral_value():
-        return str(int(soum))
-    return f"{soum:.2f}"
+    Uzum's form takes a whole number, so a booking whose total is not a round
+    so'm is rounded to the nearest one for display only — at most half a so'm
+    away from the tiyin figure that is actually charged.
+    """
+
+    soum = (Decimal(amount_tiyin) / _TIYIN).to_integral_value(ROUND_HALF_UP)
+    return str(int(soum))
 
 
 _STATUS_MAP: dict[PaymentStatus, str] = {
