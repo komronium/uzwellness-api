@@ -37,6 +37,7 @@ from app.api.routers import (
     treatment_focuses,
     users,
     uzum,
+    uzum_checkout,
 )
 
 api_router = APIRouter()
@@ -64,6 +65,7 @@ api_router.include_router(reviews.router)
 api_router.include_router(availability.router)
 api_router.include_router(payments.router)
 api_router.include_router(uzum.router)
+api_router.include_router(uzum_checkout.router)
 api_router.include_router(finance.router)
 api_router.include_router(admin.router)
 api_router.include_router(b2b.router)

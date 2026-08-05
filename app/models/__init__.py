@@ -71,6 +71,10 @@ from app.models.transfer_request import (
 from app.models.transfer_tariff import TransferTariff
 from app.models.transfer_vehicle import TransferVehicle
 from app.models.user import User, UserRole
+from app.models.uzum_checkout_event import (
+    UzumCheckoutCallbackKind,
+    UzumCheckoutEvent,
+)
 
 __all__ = [
     "Amenity",
@@ -143,6 +147,8 @@ __all__ = [
     "TreatmentStayPackageKind",
     "User",
     "UserRole",
+    "UzumCheckoutCallbackKind",
+    "UzumCheckoutEvent",
     "VehicleType",
     "WellnessCategory",
 ]

@@ -168,6 +168,31 @@ Uzum → POST /payments/uzum/status    → confirm timeout bo'lsa holatni so'ray
 
 Uzum jamoasi uchun hujjat va Postman collection: `docs/uzum/`.
 
+### Uzum Checkout — callback'lar (qabul qilish bosqichi)
+
+Checkout **alohida mahsulot**: saytdagi karta to'lovi. U yerda *biz* Uzumga
+so'rov yuboramiz (`/payment/register` → to'lov sahifasi URL'i), Uzum esa
+natijani callback bilan qaytaradi. Merchant API bilan aralashtirmaslik kerak.
+
+```
+POST /payments/uzum-checkout/callback   moliyaviy natija (COMPLETE/REFUND/...)
+POST /payments/uzum-checkout/event      biznes hodisa (FORM_CLOSED)
+POST /payments/uzum-checkout/receipt    fiskal chek tayyor
+```
+
+Uchalasi ham `200 {}` qaytaradi — tasdiq kelmasa Uzum 5 martagacha qayta
+yuboradi. URL'lar Uzum terminalida onboarding paytida qotib qoladi.
+
+⚠️ **Checkout callback'lari imzolanmagan** (spetsifikatsiyada HMAC/signature
+yo'q). Shuning uchun body'ga ishonilmaydi: hozircha faqat
+`uzum_checkout_events` jadvaliga yoziladi va `processed_at = NULL` qoladi.
+To'lov holatini o'zgartirish `POST /api/v1/payment/getOrderStatus` orqali
+tasdiqlangandan keyin qo'shiladi (terminal kredensiallari kerak).
+
+Parsing ataylab yumshoq: noma'lum maydonlar saqlanadi, yetishmagani `None`
+bo'ladi, JSON buzilgan bo'lsa ham `200` qaytadi (qayta yuborish yordam
+bermaydi) — bildirishnomani yo'qotmaslik uchun.
+
 ## Transfer — tarif, bron qo'shimchasi, moliya
 
 Transferni **bitta** platforma operatori (`transfer_admin`) boshqaradi. Bitta
