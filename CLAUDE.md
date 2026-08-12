@@ -204,7 +204,9 @@ Uzum → /callback  → biz Uzumga /payment/getOrderStatus yuboramiz
   bizning `UZUM_CHECKOUT_AUTOFISCALIZATION` faqat cart yuborish/yubormaslikni
   boshqaradi. `spic`/`packageCode` tasnif katalogi bo'yicha tekshiriladi
   (`3055`), shuning uchun ular sozlamalarda:
-  `10204001001000000` = "Гостиничные услуги (за проживание)", `1504157` = сутки.
+  `10703999001000000` = "Услуги турагентств/туроператоров (бронирование,
+  реализация турпакетов)", `1495084` = «услуга (раз)» — terminal MCC 4722 ga
+  mos. (Mehmonxona varianti: `10204001001000000` + `1504157` «сутки».)
   Cart'da `receiptType` bo'lishi shart, item `title` ≤ 63 belgi.
 - **Redirect URL'lar https bo'lishi shart** (`http://localhost` → `2000`).
   Register javobida to'lov sahifasi `result.paymentRedirectUrl` da keladi.

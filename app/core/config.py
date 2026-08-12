@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn, model_validator
+from pydantic import PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -119,6 +119,27 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 3600
+
+    @field_validator(
+        "UZUM_CHECKOUT_TERMINAL_ID",
+        "UZUM_CHECKOUT_API_KEY",
+        "UZUM_CHECKOUT_TIN",
+        "UZUM_CHECKOUT_SPIC",
+        "UZUM_CHECKOUT_PACKAGE_CODE",
+        mode="after",
+    )
+    @classmethod
+    def strip_inline_comment(cls, value: str) -> str:
+        """Drop a trailing ``# ...`` note and surrounding whitespace.
+
+        ``.env`` files are edited by hand on the server, and dotenv only treats
+        ``#`` as a comment when a space precedes it — ``SPIC=1020...# сутки``
+        otherwise reaches Uzum as part of the code and is rejected mid-payment.
+        These fields are opaque identifiers that never legitimately contain
+        ``#``, so stripping one here turns a silent outage into a no-op.
+        """
+
+        return value.split("#", 1)[0].strip()
 
     @property
     def uzum_checkout_enabled(self) -> bool:

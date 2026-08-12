@@ -358,3 +358,25 @@ class TestResultParsing:
         session = await UzumCheckoutService(db, stub).start(booking.id, owner)
 
         assert session.payment_url == PAY_URL
+
+
+class TestSettingsHygiene:
+    """`.env` is hand-edited on the server; a stray comment must not ship."""
+
+    def test_inline_comment_is_stripped_from_fiscal_codes(self):
+        from app.core.config import Settings
+
+        parsed = Settings(
+            DATABASE_URL="postgresql+asyncpg://u:p@localhost/db",
+            REDIS_URL="redis://localhost:6379/0",
+            JWT_SECRET_KEY="x" * 32,
+            # dotenv only strips `#` when a space precedes it, so this is
+            # exactly what reached Uzum from the VPS and was rejected.
+            UZUM_CHECKOUT_SPIC="10204001001000000# Гостиничные услуги",
+            UZUM_CHECKOUT_PACKAGE_CODE="1495084   # услуга (раз)",
+            UZUM_CHECKOUT_TIN=" 300717633 ",
+        )
+
+        assert parsed.UZUM_CHECKOUT_SPIC == "10204001001000000"
+        assert parsed.UZUM_CHECKOUT_PACKAGE_CODE == "1495084"
+        assert parsed.UZUM_CHECKOUT_TIN == "300717633"
