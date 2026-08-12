@@ -18,8 +18,16 @@ import json
 import logging
 from typing import Any
 
+import uuid
+
 from fastapi import APIRouter, Depends, Request
 
+from app.api.deps import CurrentUser, get_locale
+from app.schemas.uzum_checkout import (
+    CheckoutPaymentStatusRead,
+    CheckoutSessionRead,
+    CheckoutStartRequest,
+)
 from app.services.uzum_checkout_service import (
     UzumCheckoutService,
     client_ip,
@@ -57,6 +65,45 @@ async def _payload(request: Request) -> dict:
         logger.warning("Checkout callback body is not an object: %r", raw[:500])
         return {"_unparsed": parsed}
     return parsed
+
+
+@router.post("/create", response_model=CheckoutSessionRead)
+async def create_checkout_payment(
+    payload: CheckoutStartRequest,
+    current_user: CurrentUser,
+    locale: str = Depends(get_locale),
+    checkout: UzumCheckoutService = Depends(get_uzum_checkout_service),
+) -> CheckoutSessionRead:
+    """Register the booking with Uzum and return its payment page URL.
+
+    The guest is sent to `payment_url`; Uzum then drives the callbacks below.
+    """
+    return await checkout.start(
+        payload.booking_id, current_user, locale=payload.locale or locale
+    )
+
+
+@router.get("/payments/{payment_id}", response_model=CheckoutPaymentStatusRead)
+async def read_checkout_payment(
+    payment_id: uuid.UUID,
+    current_user: CurrentUser,
+    checkout: UzumCheckoutService = Depends(get_uzum_checkout_service),
+) -> CheckoutPaymentStatusRead:
+    """Current state of a Checkout payment, re-read from Uzum.
+
+    Used by the return page: the callback and the guest's redirect race each
+    other, so the page asks rather than assumes.
+    """
+    payment, order_status = await checkout.refresh(payment_id, current_user)
+    return CheckoutPaymentStatusRead(
+        payment_id=payment.id,
+        booking_id=payment.booking_id,
+        order_id=payment.provider_payment_id,
+        status=payment.status,
+        order_status=order_status or None,
+        amount=payment.amount,
+        currency=payment.currency,
+    )
 
 
 @router.post("/callback", responses=_DOC_RESPONSES)

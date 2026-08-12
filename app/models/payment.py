@@ -23,7 +23,8 @@ from app.core.ids import uuid7
 
 
 class PaymentMethod(StrEnum):
-    UZUM = "uzum"
+    UZUM = "uzum"  # Merchant API — the guest pays inside the Uzum Bank app
+    UZUM_CHECKOUT = "uzum_checkout"  # Checkout — card payment on our own site
     CASH = "cash"
 
 
@@ -48,6 +49,16 @@ class Payment(TimestampMixin, Base):
             unique=True,
             postgresql_where=text(
                 "method = 'uzum' AND provider_payment_id IS NOT NULL"
+            ),
+        ),
+        # Same guarantee for Checkout: one Uzum `orderId` backs one payment
+        # row, so a redelivered callback can only ever update that row.
+        Index(
+            "uq_payments_uzum_checkout_order_id",
+            "provider_payment_id",
+            unique=True,
+            postgresql_where=text(
+                "method = 'uzum_checkout' AND provider_payment_id IS NOT NULL"
             ),
         ),
     )

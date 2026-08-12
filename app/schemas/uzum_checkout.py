@@ -11,7 +11,12 @@ is a best-effort read of a payload that is always kept verbatim alongside it.
 
 from __future__ import annotations
 
+import uuid
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.payment import PaymentStatus
 
 
 class _CallbackModel(BaseModel):
@@ -51,3 +56,38 @@ class ReceiptCallback(_CallbackModel):
     # PURCHASE | PREPAID | REFUND
     receipt_type: str | None = Field(default=None, alias="receiptType")
     receipt_url: str | None = Field(default=None, alias="receiptUrl")
+
+
+class CheckoutStartRequest(BaseModel):
+    """Ask Uzum to open a card payment for a booking."""
+
+    booking_id: uuid.UUID
+    # Language of Uzum's payment form; falls back to the request locale.
+    locale: str | None = Field(default=None, pattern="^(uz|ru|en)$")
+
+
+class CheckoutSessionRead(BaseModel):
+    """What the frontend needs to send the guest to Uzum's payment page."""
+
+    payment_id: uuid.UUID
+    booking_id: uuid.UUID
+    order_id: str
+    order_number: str
+    payment_url: str
+    amount: Decimal  # UZS, whole so'm — what the guest is charged
+    currency: str = "UZS"
+    status: PaymentStatus
+
+
+class CheckoutPaymentStatusRead(BaseModel):
+    """Current state of a Checkout payment, refreshed from Uzum."""
+
+    payment_id: uuid.UUID
+    booking_id: uuid.UUID
+    order_id: str | None
+    status: PaymentStatus
+    # Uzum's own order state (REGISTERED / COMPLETED / DECLINED / REFUNDED);
+    # None when Uzum could not be reached and the local state is being shown.
+    order_status: str | None = None
+    amount: Decimal
+    currency: str

@@ -54,6 +54,30 @@ class Settings(BaseSettings):
     # minutes (Uzum's protocol fixes this at 30).
     UZUM_TRANSACTION_TIMEOUT_MINUTES: int = 30
 
+    # Uzum Checkout — the card-payment gateway on our own site. Unlike the
+    # Merchant API above, *we* call Uzum (`/payment/register`) and the guest is
+    # sent to the returned payment page. Terminal id and API key are issued by
+    # Uzum per environment; while they are empty the endpoints answer 503.
+    UZUM_CHECKOUT_API_URL: str = "https://test-chk-api.uzumcheckout.uz"
+    UZUM_CHECKOUT_TERMINAL_ID: str = ""
+    UZUM_CHECKOUT_API_KEY: str = ""
+    UZUM_CHECKOUT_TIMEOUT_SECONDS: float = 20.0
+    # Where Uzum sends the guest's browser once the form is finished.
+    UZUM_CHECKOUT_SUCCESS_URL: str = "https://uzwellness.com/payment/success"
+    UZUM_CHECKOUT_FAILURE_URL: str = "https://uzwellness.com/payment/failure"
+    # How long the payment form stays open. Uzum allows 600..1800 seconds.
+    UZUM_CHECKOUT_SESSION_TIMEOUT_SECS: int = 900
+    # Auto-fiscalization is a per-terminal switch on Uzum's side. When it is on
+    # (the default on our test terminal) every /payment/register must carry a
+    # cart with the tax data below, or Uzum answers 3045.
+    UZUM_CHECKOUT_AUTOFISCALIZATION: bool = True
+    # Merchant INN and the catalogue codes of the service we sell, from
+    # https://tasnif.soliq.uz — Uzum validates both against the catalogue.
+    UZUM_CHECKOUT_TIN: str = ""
+    UZUM_CHECKOUT_SPIC: str = ""
+    UZUM_CHECKOUT_PACKAGE_CODE: str = ""
+    UZUM_CHECKOUT_VAT_PERCENT: int = 0
+
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     # Callback registered in Google Cloud Console, e.g.
@@ -96,6 +120,12 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 3600
 
+    @property
+    def uzum_checkout_enabled(self) -> bool:
+        """Both credentials present — otherwise Checkout stays switched off."""
+
+        return bool(self.UZUM_CHECKOUT_TERMINAL_ID and self.UZUM_CHECKOUT_API_KEY)
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
         if self.ENVIRONMENT != "production":
@@ -117,6 +147,25 @@ class Settings(BaseSettings):
             self.UZUM_MERCHANT_USERNAME or self.UZUM_MERCHANT_PASSWORD
         ) and not self.UZUM_SERVICE_ID:
             errors.append("UZUM_SERVICE_ID is required when Uzum credentials are set")
+        if self.uzum_checkout_enabled and self.UZUM_CHECKOUT_AUTOFISCALIZATION:
+            missing = [
+                name
+                for name, value in (
+                    ("UZUM_CHECKOUT_TIN", self.UZUM_CHECKOUT_TIN),
+                    ("UZUM_CHECKOUT_SPIC", self.UZUM_CHECKOUT_SPIC),
+                    ("UZUM_CHECKOUT_PACKAGE_CODE", self.UZUM_CHECKOUT_PACKAGE_CODE),
+                )
+                if not value
+            ]
+            if missing:
+                errors.append(
+                    f"{', '.join(missing)} are required when Uzum Checkout "
+                    "auto-fiscalization is enabled"
+                )
+        if not 600 <= self.UZUM_CHECKOUT_SESSION_TIMEOUT_SECS <= 1800:
+            errors.append(
+                "UZUM_CHECKOUT_SESSION_TIMEOUT_SECS must be between 600 and 1800"
+            )
         if self.GOOGLE_CLIENT_ID and not (
             self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI
         ):

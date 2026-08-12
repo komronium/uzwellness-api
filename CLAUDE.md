@@ -168,30 +168,61 @@ Uzum → POST /payments/uzum/status    → confirm timeout bo'lsa holatni so'ray
 
 Uzum jamoasi uchun hujjat va Postman collection: `docs/uzum/`.
 
-### Uzum Checkout — callback'lar (qabul qilish bosqichi)
+### Uzum Checkout — saytdagi karta to'lovi
 
-Checkout **alohida mahsulot**: saytdagi karta to'lovi. U yerda *biz* Uzumga
-so'rov yuboramiz (`/payment/register` → to'lov sahifasi URL'i), Uzum esa
+Checkout **alohida mahsulot** (spetsifikatsiya 1.10.3): mijoz UzWellness
+saytida karta bilan to'laydi. Bu yerda *biz* Uzumga so'rov yuboramiz, Uzum esa
 natijani callback bilan qaytaradi. Merchant API bilan aralashtirmaslik kerak.
 
 ```
-POST /payments/uzum-checkout/callback   moliyaviy natija (COMPLETE/REFUND/...)
-POST /payments/uzum-checkout/event      biznes hodisa (FORM_CLOSED)
-POST /payments/uzum-checkout/receipt    fiskal chek tayyor
+POST /payments/uzum-checkout/create            bron uchun to'lov ochish (auth)
+GET  /payments/uzum-checkout/payments/{id}     holatni Uzumdan qayta o'qish
+POST /payments/uzum-checkout/callback          moliyaviy natija (COMPLETE/REFUND/...)
+POST /payments/uzum-checkout/event             biznes hodisa (FORM_CLOSED)
+POST /payments/uzum-checkout/receipt           fiskal chek tayyor
 ```
 
-Uchalasi ham `200 {}` qaytaradi — tasdiq kelmasa Uzum 5 martagacha qayta
-yuboradi. URL'lar Uzum terminalida onboarding paytida qotib qoladi.
+Oqim:
+
+```
+POST /create → Uzum /api/v1/payment/register → {orderId, payment_url}
+             → Payment(method='uzum_checkout', status=pending) saqlanadi
+mijoz payment_url'ga yuboriladi va kartani kiritadi
+Uzum → /callback  → biz Uzumga /payment/getOrderStatus yuboramiz
+                  → COMPLETED bo'lsa Payment=paid, Booking=confirmed, email
+```
+
+- **Auth:** `X-Terminal-Id` + `X-API-Key` (Uzum beradi, har muhit uchun alohida).
+  Sozlanmagan bo'lsa `/create` → `503`.
+- **Summa:** `amount` — **tiyin**, faqat **UZS** (`currency: 860`). Bron USD
+  bo'lsa `ExchangeRateService` orqali o'giriladi; kurs yo'q bo'lsa `503`.
+- **`orderNumber`:** `{reservation_number}-{payment_id[:8]}` — har urinishda
+  yangi (takroriy orderNumber → Uzum `3027`). Ochiq forma bo'lsa yangi order
+  ochilmaydi, eskisi qayta ishlatiladi (ikki marta to'lash xavfi).
+- **Fiskalizatsiya:** terminalda auto-fiscalization yoqilgan bo'lsa har
+  `register` da `cart` kerak (aks holda `3045`) — bu Uzum tarafidagi sozlama,
+  bizning `UZUM_CHECKOUT_AUTOFISCALIZATION` faqat cart yuborish/yubormaslikni
+  boshqaradi. `spic`/`packageCode` tasnif katalogi bo'yicha tekshiriladi
+  (`3055`), shuning uchun ular sozlamalarda:
+  `10204001001000000` = "Гостиничные услуги (за проживание)", `1504157` = сутки.
+  Cart'da `receiptType` bo'lishi shart, item `title` ≤ 63 belgi.
+- **Redirect URL'lar https bo'lishi shart** (`http://localhost` → `2000`).
+  Register javobida to'lov sahifasi `result.paymentRedirectUrl` da keladi.
+- **Xato kodlari:** javob har doim HTTP 200, haqiqiy holat — `errorCode`
+  (`0` = OK). Non-zero → `UzumCheckoutApiError` → API `502`.
 
 ⚠️ **Checkout callback'lari imzolanmagan** (spetsifikatsiyada HMAC/signature
-yo'q). Shuning uchun body'ga ishonilmaydi: hozircha faqat
-`uzum_checkout_events` jadvaliga yoziladi va `processed_at = NULL` qoladi.
-To'lov holatini o'zgartirish `POST /api/v1/payment/getOrderStatus` orqali
-tasdiqlangandan keyin qo'shiladi (terminal kredensiallari kerak).
+yo'q). Shuning uchun body'ga hech qachon ishonilmaydi: u faqat *qaysi order
+o'zgargani*ni bildiradi, holat esa `POST /api/v1/payment/getOrderStatus` dan
+olinadi. Tasdiqlab bo'lmagan callback `processed_at = NULL` bilan
+`uzum_checkout_events` da qoladi va baribir `200 {}` qaytadi.
 
 Parsing ataylab yumshoq: noma'lum maydonlar saqlanadi, yetishmagani `None`
 bo'ladi, JSON buzilgan bo'lsa ham `200` qaytadi (qayta yuborish yordam
 bermaydi) — bildirishnomani yo'qotmaslik uchun.
+
+Test kartalar: HUMO `9860 0901 0121 9724` (10/26), UzCard `8600 3129 2957 7175`
+(09/26), 3-DS kodi `777777`.
 
 ## Transfer — tarif, bron qo'shimchasi, moliya
 
