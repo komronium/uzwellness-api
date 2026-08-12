@@ -127,6 +127,20 @@ class PaymentService:
             )
         if payment.status == PaymentStatus.PAID:
             return payment
+        # Cancelling a booking cancels its pending intents; re-confirming one
+        # would record money against a stay nobody is having.
+        if payment.status != PaymentStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Payment is {payment.status}, only pending cash can be confirmed",
+            )
+
+        booking = await self.db.get(Booking, payment.booking_id)
+        if booking is not None and booking.status == BookingStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot confirm payment for a cancelled booking",
+            )
 
         payment.status = PaymentStatus.PAID
         payment.provider_payment_id = f"cash:{user.id}"
@@ -136,7 +150,6 @@ class PaymentService:
             "confirmed_by": str(user.id),
         }
 
-        booking = await self.db.get(Booking, payment.booking_id)
         if booking is not None and booking.status == BookingStatus.PENDING:
             booking.status = BookingStatus.CONFIRMED
         await self.db.commit()

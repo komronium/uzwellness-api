@@ -240,10 +240,27 @@ class UzumCheckoutService:
             )
             return
         payment.raw_payload = {**(payment.raw_payload or {}), "status": result}
+        booking = await self.db.get(Booking, payment.booking_id)
 
         confirmed = False
         if order_status == ORDER_COMPLETED:
-            if payment.status != PaymentStatus.PAID:
+            self._check_amount(payment, result)
+            if booking is not None and booking.status == BookingStatus.CANCELLED:
+                # The form stays open after a cancellation and Uzum has no way
+                # to withdraw an order, so the guest can still pay for a stay
+                # that no longer exists. The money did arrive — book it as owed
+                # back rather than as a settled payment, which is what the
+                # cancellation path would have done had it arrived first.
+                if payment.status != PaymentStatus.REFUND_PENDING:
+                    payment.status = PaymentStatus.REFUND_PENDING
+                    payment.paid_at = payment.paid_at or datetime.now(UTC)
+                    logger.error(
+                        "Uzum Checkout order %s paid after booking %s was "
+                        "cancelled — refund owed",
+                        payment.provider_payment_id,
+                        booking.code,
+                    )
+            elif payment.status != PaymentStatus.PAID:
                 payment.status = PaymentStatus.PAID
                 payment.paid_at = datetime.now(UTC)
                 confirmed = True
@@ -260,7 +277,6 @@ class UzumCheckoutService:
                 order_status,
             )
 
-        booking = await self.db.get(Booking, payment.booking_id)
         if (
             confirmed
             and booking is not None
@@ -270,6 +286,28 @@ class UzumCheckoutService:
         await self.db.commit()
         if confirmed and booking is not None:
             await send_booking_confirmed_email(self.db, booking)
+
+    @staticmethod
+    def _check_amount(payment: Payment, result: dict) -> None:
+        """Warn when Uzum settled a different sum than the one we registered.
+
+        ``completedAmount`` is what actually left the card, in tiyin. It should
+        equal the payment's own amount; a gap means a partial refund happened
+        outside this flow, or the order does not belong to this payment.
+        """
+
+        completed = result.get("completedAmount")
+        if not isinstance(completed, int):
+            return
+        expected = int((payment.amount * _TIYIN).to_integral_value(ROUND_HALF_UP))
+        if completed != expected:
+            logger.error(
+                "Uzum Checkout order %s settled %s tiyin, expected %s (payment %s)",
+                payment.provider_payment_id,
+                completed,
+                expected,
+                payment.id,
+            )
 
     # --- inbound: callbacks --------------------------------------------------
 

@@ -38,6 +38,7 @@ class StubCheckout:
             else {"orderId": ORDER_ID, "paymentRedirectUrl": PAY_URL}
         )
         self.status = status
+        self.extra_status: dict[str, Any] = {}
         self.register_error: UzumCheckoutApiError | None = None
 
     async def register(self, **kwargs: Any) -> dict:
@@ -48,7 +49,7 @@ class StubCheckout:
 
     async def get_order_status(self, order_id: str) -> dict:
         self.status_calls.append(order_id)
-        return {"orderId": order_id, "status": self.status}
+        return {"orderId": order_id, "status": self.status, **self.extra_status}
 
 
 @pytest.fixture(autouse=True)
@@ -421,3 +422,48 @@ class TestPaymentDescription:
         # Uzum rejects a cart item title longer than 63 characters with 2000.
         assert len(title) <= 63
         assert booking.code in title
+
+
+class TestPaymentAfterCancellation:
+    """The payment form outlives the booking: Uzum cannot withdraw an order."""
+
+    async def test_paying_a_cancelled_booking_owes_a_refund(self, db: AsyncSession):
+        owner = await make_user(db, email="late-1@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+        service = UzumCheckoutService(db, stub)
+        session = await service.start(booking.id, owner)
+
+        booking.status = BookingStatus.CANCELLED
+        await db.commit()
+
+        stub.status = "COMPLETED"
+        await service.sync_order(ORDER_ID)
+
+        payment = await db.get(Payment, session.payment_id)
+        await db.refresh(booking)
+        assert payment is not None
+        # Not "paid": the money arrived but is owed back, exactly as the
+        # cancellation path would have marked it.
+        assert payment.status == PaymentStatus.REFUND_PENDING
+        assert payment.paid_at is not None
+        assert booking.status == BookingStatus.CANCELLED
+
+    async def test_settled_amount_mismatch_is_logged(
+        self, db: AsyncSession, caplog: pytest.LogCaptureFixture
+    ):
+        owner = await make_user(db, email="late-2@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+        service = UzumCheckoutService(db, stub)
+        session = await service.start(booking.id, owner)
+
+        stub.status = "COMPLETED"
+        stub.extra_status = {"completedAmount": 1}  # booking is 120_000_000 tiyin
+        with caplog.at_level("ERROR", logger="uzwellness.uzum_checkout"):
+            await service.sync_order(ORDER_ID)
+
+        assert "settled 1 tiyin" in caplog.text
+        payment = await db.get(Payment, session.payment_id)
+        assert payment is not None
+        assert payment.status == PaymentStatus.PAID
