@@ -380,3 +380,44 @@ class TestSettingsHygiene:
         assert parsed.UZUM_CHECKOUT_SPIC == "10204001001000000"
         assert parsed.UZUM_CHECKOUT_PACKAGE_CODE == "1495084"
         assert parsed.UZUM_CHECKOUT_TIN == "300717633"
+
+
+class TestPaymentDescription:
+    """The "Description" line above the card form — the guest's only receipt
+    of what they are about to pay for."""
+
+    async def test_names_property_room_dates_and_party(self, db: AsyncSession):
+        owner = await make_user(db, email="desc-1@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+
+        await UzumCheckoutService(db, stub).start(booking.id, owner, locale="uz")
+
+        details = stub.register_calls[0]["payment_details"]
+        assert "2 kecha" in details
+        assert "1 mehmon" in details
+        assert f"Bron {booking.code}" in details
+        assert booking.check_in.strftime("%d.%m.%Y") in details
+
+    async def test_follows_the_form_language(self, db: AsyncSession):
+        owner = await make_user(db, email="desc-2@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+
+        await UzumCheckoutService(db, stub).start(booking.id, owner, locale="ru")
+
+        details = stub.register_calls[0]["payment_details"]
+        assert "ноч." in details
+        assert "Бронь" in details
+
+    async def test_cart_title_stays_within_uzum_limit(self, db: AsyncSession):
+        owner = await make_user(db, email="desc-3@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+
+        service = UzumCheckoutService(db, stub)
+        title = await service._cart_title(booking, "uz")
+
+        # Uzum rejects a cart item title longer than 63 characters with 2000.
+        assert len(title) <= 63
+        assert booking.code in title

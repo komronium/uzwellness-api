@@ -9,7 +9,9 @@ from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 
 
-async def sanatorium_name_for_booking(db: AsyncSession, booking: Booking) -> str | None:
+async def sanatorium_name_for_booking(
+    db: AsyncSession, booking: Booking, locale: str = "uz"
+) -> str | None:
     """Resolve a display name for the sanatorium behind a booking.
 
     For package bookings without a linked sanatorium, falls back to the
@@ -49,4 +51,4 @@ async def sanatorium_name_for_booking(db: AsyncSession, booking: Booking) -> str
             name_dict = sanatorium_name or package_title
     if name_dict is None:
         return None
-    return pick_locale(name_dict) or None
+    return pick_locale(name_dict, locale) or None

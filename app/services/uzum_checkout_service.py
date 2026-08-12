@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import Depends, HTTPException, Request, status
@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.ids import uuid7
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
+from app.core.utils import pick_locale
 from app.integrations.uzum.checkout import (
     ORDER_COMPLETED,
     ORDER_DECLINED,
@@ -38,8 +39,10 @@ from app.integrations.uzum.checkout import (
     pick_payment_url,
     pick_status,
 )
-from app.models.booking import Booking, BookingStatus
+from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.models.program import TreatmentProgram
+from app.models.room import Room
 from app.models.user import User, UserRole
 from app.models.uzum_checkout_event import UzumCheckoutCallbackKind, UzumCheckoutEvent
 from app.schemas.uzum_checkout import (
@@ -120,8 +123,11 @@ class UzumCheckoutService:
 
         payment_id = uuid7()
         order_number = _order_number(booking, payment_id)
-        details = await self._payment_details(booking)
-        cart = self._cart(payment_id, booking, amount_tiyin, details)
+        details = await self._payment_details(booking, locale)
+        # The fiscal receipt line is its own thing: capped at 63 characters, so
+        # it names the property and the booking rather than the whole stay.
+        cart_title = await self._cart_title(booking, locale)
+        cart = self._cart(payment_id, booking, amount_tiyin, cart_title)
 
         try:
             result = await self.client.register(
@@ -479,10 +485,62 @@ class UzumCheckoutService:
             )
         return amount
 
-    async def _payment_details(self, booking: Booking) -> str:
-        name = await sanatorium_name_for_booking(self.db, booking)
-        stay = f"{booking.check_in.isoformat()} — {booking.check_out.isoformat()}"
-        return f"UzWellness {booking.code}: {name or 'booking'} ({stay})"
+    async def _payment_details(self, booking: Booking, locale: str | None) -> str:
+        """The "Description" line the guest reads above the card form.
+
+        This is the only place where they can check *what* they are paying
+        for, so it names the property, the room or programme, the dates and
+        the party size — in the same language as the form itself.
+        """
+
+        lang = _details_locale(locale)
+        words = _DETAIL_WORDS[lang]
+        parts: list[str] = []
+
+        property_name = await sanatorium_name_for_booking(self.db, booking, lang)
+        item_name = await self._booked_item_name(booking, lang)
+        headline = " — ".join(p for p in (property_name, item_name) if p)
+        if headline:
+            parts.append(headline)
+
+        if booking.booking_type == BookingType.ROOM:
+            nights = (booking.check_out - booking.check_in).days
+            parts.append(
+                f"{_short_date(booking.check_in)}–{_short_date(booking.check_out)}"
+            )
+            if nights > 0:
+                parts.append(f"{nights} {words['nights']}")
+            if booking.rooms_count > 1:
+                parts.append(f"{booking.rooms_count} {words['rooms']}")
+        else:
+            parts.append(_short_date(booking.check_in))
+
+        parts.append(f"{booking.guests} {words['guests']}")
+        parts.append(f"{words['booking']} {booking.code}")
+        return " · ".join(parts)
+
+    async def _cart_title(self, booking: Booking, locale: str | None) -> str:
+        lang = _details_locale(locale)
+        name = await sanatorium_name_for_booking(self.db, booking, lang)
+        title = f"{name} · {booking.code}" if name else f"UzWellness {booking.code}"
+        return title[:63]
+
+    async def _booked_item_name(self, booking: Booking, locale: str) -> str:
+        """Room category or programme name, whichever the booking points at."""
+
+        if booking.room_id is not None:
+            name = await self.db.scalar(
+                select(Room.name).where(Room.id == booking.room_id)
+            )
+        elif booking.program_id is not None:
+            name = await self.db.scalar(
+                select(TreatmentProgram.name).where(
+                    TreatmentProgram.id == booking.program_id
+                )
+            )
+        else:
+            return ""
+        return pick_locale(name, locale) if name else ""
 
     @staticmethod
     def _cart(
@@ -519,6 +577,37 @@ class UzumCheckoutService:
                 }
             ],
         }
+
+
+_DETAIL_WORDS = {
+    "uz": {
+        "nights": "kecha",
+        "guests": "mehmon",
+        "rooms": "xona",
+        "booking": "Bron",
+    },
+    "ru": {
+        "nights": "ноч.",
+        "guests": "гост.",
+        "rooms": "номер(а)",
+        "booking": "Бронь",
+    },
+    "en": {
+        "nights": "nights",
+        "guests": "guests",
+        "rooms": "rooms",
+        "booking": "Booking",
+    },
+}
+
+
+def _details_locale(locale: str | None) -> str:
+    lang = (locale or "").lower()[:2]
+    return lang if lang in _DETAIL_WORDS else "en"
+
+
+def _short_date(value: date) -> str:
+    return value.strftime("%d.%m.%Y")
 
 
 def _order_number(booking: Booking, payment_id: uuid.UUID) -> str:
