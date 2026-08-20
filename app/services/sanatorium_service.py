@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.amenity_scope import assert_amenity_scope
 from app.core.database import get_db
 from app.core.db_utils import assert_fk, fetch_by_ids
 from app.core.permissions import (
@@ -115,8 +116,10 @@ class SanatoriumService:
         amenities = await fetch_by_ids(
             self.db, Amenity, [i.amenity_id for i in items], label="amenity"
         )
-        _assert_amenity_scope(
-            amenities, allowed={AmenityScope.SANATORIUM, AmenityScope.BOTH}
+        assert_amenity_scope(
+            amenities,
+            allowed={AmenityScope.SANATORIUM, AmenityScope.BOTH},
+            resource="sanatorium",
         )
         return [
             SanatoriumAmenity(
@@ -292,17 +295,6 @@ def _deep_merge(base: dict, patch: dict) -> dict:
         else:
             result[key] = value
     return result
-
-
-def _assert_amenity_scope(
-    amenities: list[Amenity], *, allowed: set[AmenityScope]
-) -> None:
-    invalid = [str(item.id) for item in amenities if item.scope not in allowed]
-    if invalid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One or more amenity IDs are not valid for this resource scope",
-        )
 
 
 def get_sanatorium_service(db: AsyncSession = Depends(get_db)) -> SanatoriumService:

@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.amenity_scope import assert_amenity_scope
 from app.core.currency import CurrencyConverter
 from app.core.database import get_db
 from app.core.db_utils import fetch_by_ids
@@ -192,7 +193,11 @@ class RoomService:
         amenities = await fetch_by_ids(
             self.db, Amenity, [item.amenity_id for item in items], label="amenity"
         )
-        _assert_amenity_scope(amenities, allowed={AmenityScope.ROOM, AmenityScope.BOTH})
+        assert_amenity_scope(
+            amenities,
+            allowed={AmenityScope.ROOM, AmenityScope.BOTH},
+            resource="room",
+        )
         return [
             RoomAmenity(
                 amenity_id=item.amenity_id,
@@ -393,13 +398,3 @@ def _room_amenity_items(
     if amenity_items:
         return amenity_items
     return [RoomAmenityItem(amenity_id=amenity_id) for amenity_id in amenity_ids]
-
-
-def _assert_amenity_scope(
-    amenities: list[Amenity], *, allowed: set[AmenityScope]
-) -> None:
-    if any(item.scope not in allowed for item in amenities):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One or more amenity IDs are not valid for this resource scope",
-        )

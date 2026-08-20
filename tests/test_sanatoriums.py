@@ -99,7 +99,9 @@ async def test_create_rejects_room_scoped_facility_amenity(
     )
 
     assert resp.status_code == 400, resp.text
-    assert "resource scope" in resp.json()["detail"]
+    detail = resp.json()["detail"]
+    assert "Safe" in detail
+    assert "GET /amenities?scope=sanatorium" in detail
 
 
 async def test_create_as_admin_auto_assigns_owner(

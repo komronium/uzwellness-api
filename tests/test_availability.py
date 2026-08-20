@@ -195,7 +195,10 @@ class TestRoomCRUD:
         )
 
         assert resp.status_code == 400, resp.text
-        assert "resource scope" in resp.json()["detail"]
+        detail = resp.json()["detail"]
+        # The message names the offending amenity so the picker can flag it.
+        assert "Restaurant" in detail
+        assert "GET /amenities?scope=room" in detail
 
     async def test_admin_creates_room_with_admin_information_fields(
         self, client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers
@@ -727,3 +730,31 @@ class TestExchangeRates:
         body = resp.json()
         assert body["final_price_uzs"] == "12500.00"
         assert body["final_price_usd"] == "1.00"
+
+
+async def test_invalid_room_payload_logs_the_offending_fields(
+    client: AsyncClient, db: AsyncSession, admin_user: User, admin_headers, caplog
+) -> None:
+    """A 422 the browser swallows still leaves a trace in the server log."""
+
+    san = await make_sanatorium(
+        db, status=SanatoriumStatus.APPROVED, admin_user_id=admin_user.id
+    )
+    with caplog.at_level("WARNING", logger="uzwellness.validation"):
+        resp = await client.post(
+            "/api/rooms",
+            json={
+                "sanatorium_id": str(san.id),
+                "name": {"en": "Suite"},  # uz/ru missing
+                "capacity": 2,
+                "base_price": "220.00",
+                "base_currency": "USD",
+            },
+            headers=admin_headers,
+        )
+
+    assert resp.status_code == 422, resp.text
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "422 POST /api/rooms" in logged
+    assert "body.name.uz" in logged
+    assert "body.name.ru" in logged
