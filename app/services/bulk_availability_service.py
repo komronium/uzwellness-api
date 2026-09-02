@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -393,7 +394,9 @@ class BulkAvailabilityService:
 
     def _log_rooms(
         self,
-        rooms: set[Room],
+        # The caller sorts its deduplicated set, so the log rows come out in a
+        # stable order; this only iterates, and says so.
+        rooms: Sequence[Room],
         *,
         user: User,
         sanatorium_id: uuid.UUID,
