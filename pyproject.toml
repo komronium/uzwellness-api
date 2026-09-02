@@ -34,3 +34,37 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 addopts = "-n auto"
+
+[tool.pyright]
+# Zed and the CLI both read this. Without it basedpyright runs in its
+# "recommended" mode, which reports several thousand diagnostics that are the
+# checker disagreeing with SQLAlchemy and FastAPI rather than anything wrong:
+# `Depends()` in a parameter default, `__tablename__` without an annotation,
+# and every value that reaches us through SQLAlchemy's untyped surface.
+include = ["app", "tests", "scripts"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+# The declarative Base has no typed `id`/`slug`, so generic helpers that take a
+# model class read as attribute errors on `type[Base]`.
+reportAttributeAccessIssue = "warning"
+# pydantic-settings fills required fields from the environment, which looks
+# like a constructor called with no arguments.
+reportCallIssue = "warning"
+
+# Tests hand-build lightweight stand-ins (a class with three attributes where
+# the signature says `Sanatorium`) to exercise pure functions without touching
+# the database. That is the point of them, so structural mismatches there are
+# not findings.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+# An execution environment also resets the import root, so the project root has
+# to be handed back or every `from app...` in a test reads as unresolved.
+extraPaths = ["."]
+reportArgumentType = "none"
+reportOptionalMemberAccess = "none"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+extraPaths = ["."]

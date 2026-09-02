@@ -1288,15 +1288,6 @@ def _payment_methods(ctx) -> str:
     return ", ".join(methods)
 
 
-def _guest_names(booking: Booking) -> list[str]:
-    names: list[str] = []
-    for entry in booking.guest_details or []:
-        if isinstance(entry, dict):
-            name = entry.get("full_name") or entry.get("name")
-            if name:
-                names.append(str(name))
-    return names
-
 
 def _localize_line(item: dict, labels, ctx) -> str:
     desc = str(item.get("description") or "")
