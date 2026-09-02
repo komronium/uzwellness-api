@@ -151,7 +151,10 @@ class RoomService:
         if "markup_percent" in data and user.role != UserRole.SUPER_ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super_admin can change markup_percent",
+                detail=(
+                    "Only a platform administrator can change markup_percent. "
+                    "Remove it from your request and try again."
+                ),
             )
         if "inventory_count" in data and data["inventory_count"] is not None:
             await self._assert_inventory_safe(room.id, data["inventory_count"])
@@ -253,7 +256,10 @@ class RoomService:
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="All rooms must belong to the selected sanatorium",
+                detail=(
+                    "These room ids do not belong to the selected property: "
+                    f"{', '.join(str(room_id) for room_id in missing)}"
+                ),
             )
         order_by_id = {item.room_id: item.display_order for item in payload.items}
         for room in rooms:
@@ -320,8 +326,9 @@ class RoomService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Cannot lower inventory_count to {new_count}: at least one "
-                    f"date already has {max_used} units in use (blocked + booked)"
+                    f"inventory_count cannot go below {max_used}: that many "
+                    "units are already blocked or booked on at least one date. "
+                    "Release those dates first."
                 ),
             )
 

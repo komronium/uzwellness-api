@@ -54,7 +54,10 @@ async def google_login() -> RedirectResponse:
     if not google_oauth.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth is not configured",
+            detail=(
+                "Signing in with Google is not available on this site. "
+                "Please use your email and password."
+            ),
         )
     state = google_oauth.make_state()
     response = RedirectResponse(google_oauth.build_authorization_url(state))
@@ -89,7 +92,10 @@ async def google_callback(
     if not google_oauth.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth is not configured",
+            detail=(
+                "Signing in with Google is not available on this site. "
+                "Please use your email and password."
+            ),
         )
     if error:  # user cancelled the consent screen
         return _frontend_redirect("error=google_access_denied")

@@ -29,7 +29,11 @@ class PackageBookingFlow(BookingFlowBase):
         sanatorium = await self._approved_sanatorium(package.sanatorium_id)
         check_out = self._check_out(payload, package)
         room = await self._lock_room(
-            package.room_id, detail="Package's assigned room is unavailable"
+            package.room_id,
+            detail=(
+                "The room this package includes is not available to book. "
+                "Please choose another package or contact the property."
+            ),
         )
         rooms_count = rooms_count_for_guests(room, payload.guests)
         all_dates = list(date_range(payload.check_in, check_out))
@@ -66,7 +70,8 @@ class PackageBookingFlow(BookingFlowBase):
         package = await self.db.get(Package, package_id)
         if package is None or not package.is_active:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This package is no longer on sale",
             )
         return package
 
@@ -78,8 +83,9 @@ class PackageBookingFlow(BookingFlowBase):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"check_out must equal check_in + {package.duration_nights} "
-                    "nights for this package"
+                    f"This package is a fixed {package.duration_nights}-night "
+                    f"stay, so check_out must be {package.duration_nights} "
+                    "nights after check_in."
                 ),
             )
         return check_out
@@ -109,7 +115,11 @@ class PackageBookingFlow(BookingFlowBase):
             check_out=check_out,
             guests=payload.guests,
             rooms_count=rooms_count,
-            status=BookingStatus.CONFIRMED,
+            # A booking is not confirmed until its money is: the payment
+            # paths (Uzum Merchant confirm, Checkout COMPLETED, admin cash
+            # confirm) are what move it to CONFIRMED. Creating it confirmed
+            # told the property a stay was settled that nobody had paid for.
+            status=BookingStatus.PENDING,
             final_price=pricing.final_price,
             currency=package.currency,
             is_b2b=is_b2b,

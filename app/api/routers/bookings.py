@@ -12,7 +12,7 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.currency import CurrencyConverter
-from app.api.rate_limits import booking_rate_limit
+from app.api.rate_limits import booking_rate_limit, cancellation_code_rate_limit
 from app.core.database import get_db
 from app.core.pagination import Pagination
 from app.models.booking import Booking, BookingStatus
@@ -187,7 +187,7 @@ async def get_booking_by_reservation_number(
         reservation_number, current_user
     )
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     cancel_map = await active_cancellation_status_map(db, [booking.id])
     return _to_read(booking, current_user, converter, cancel_map.get(booking.id))
 
@@ -202,7 +202,7 @@ async def get_booking(
 ) -> BookingRead:
     booking = await bookings.get_visible_by_reference(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     cancel_map = await active_cancellation_status_map(db, [booking.id])
     return _to_read(booking, current_user, converter, cancel_map.get(booking.id))
 
@@ -220,7 +220,7 @@ async def process_booking(
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     processed = await bookings.mark_processed(booking, current_user)
     return _to_read(processed, current_user, converter)
 
@@ -234,7 +234,7 @@ async def get_booking_invoice(
 ) -> InvoiceRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     data = await build_invoice(db, booking)
     return InvoiceRead(**data)
 
@@ -249,7 +249,7 @@ async def get_booking_voucher(
 ) -> Response:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     pdf = await build_voucher_pdf(db, booking, locale)
     filename = f"Booking #{booking.reservation_number}.pdf"
     return Response(
@@ -269,7 +269,7 @@ async def cancel_booking(
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     cancelled = await bookings.cancel(booking, current_user)
     return _to_read(cancelled, current_user, converter)
 
@@ -281,6 +281,7 @@ async def cancel_booking(
     "/{booking_id}/cancellation/request",
     response_model=CancellationRequestRead,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(cancellation_code_rate_limit)],
 )
 async def request_cancellation_code(
     booking_id: uuid.UUID,
@@ -290,7 +291,7 @@ async def request_cancellation_code(
 ) -> CancellationRequestRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     request = await cancellations.request_code(booking, current_user)
     return CancellationRequestRead.model_validate(request)
 
@@ -308,7 +309,7 @@ async def confirm_cancellation_code(
 ) -> CancellationRequestRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     request = await cancellations.confirm_code(booking, current_user, payload.code)
     return CancellationRequestRead.model_validate(request)
 
@@ -327,7 +328,7 @@ async def approve_cancellation(
 ) -> BookingRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     cancelled = await cancellations.approve(booking, current_user)
     return _to_read(cancelled, current_user, converter)
 
@@ -345,6 +346,6 @@ async def reject_cancellation(
 ) -> CancellationRequestRead:
     booking = await bookings.get_visible(booking_id, current_user)
     if booking is None:
-        raise not_found("Booking not found")
+        raise not_found("No booking found with this id under your account")
     request = await cancellations.reject(booking, current_user)
     return CancellationRequestRead.model_validate(request)

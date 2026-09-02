@@ -16,16 +16,53 @@ _last_cleanup: float = 0.0
 
 
 def _client_ip(request: Request) -> str:
+    """The guest's own address, or a constant when we genuinely cannot tell.
+
+    In production the app listens on a unix socket, so there *is* no peer
+    address: ``request.client`` is ``None`` and ``TRUSTED_PROXY_IPS`` can never
+    match. Nothing but nginx can open that socket, so its forwarded headers are
+    the only signal there is, and they are believed. Over TCP (dev, or a
+    port-bound deploy) the peer is real, so they are believed only when the
+    peer is a proxy we listed — otherwise any caller could pick its own
+    rate-limit bucket.
+    """
+
+    peer = request.client.host if request.client else None
+    if peer is None or _is_trusted_proxy(peer):
+        return _forwarded_ip(request) or peer or "unknown"
+    return peer
+
+
+def _forwarded_ip(request: Request) -> str | None:
+    """The address our proxies recorded, ignoring anything the client claimed.
+
+    ``X-Real-IP`` is set by nginx to ``$remote_addr``: one address, overwritten
+    rather than appended, so it cannot carry a client's invention and is used
+    as-is. ``X-Forwarded-For`` is appended to by each hop, so the client's own
+    guesses sit on the left and our proxies on the right. Walking it from the
+    right past every address we recognise as a proxy lands on the first hop we
+    did not add — the real caller.
+    """
+
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        return real_ip[:64]
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded and _is_trusted_proxy(request):
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    if not forwarded:
+        return None
+    hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+    for hop in reversed(hops):
+        if not _is_trusted_proxy(hop):
+            return hop[:64]
+    # Every hop is one of our own proxies, which should not happen; the
+    # outermost of them is still a better bucket than lumping the world
+    # together under "unknown".
+    return hops[0][:64] if hops else None
 
 
-def _is_trusted_proxy(request: Request) -> bool:
+def _is_trusted_proxy(peer: str) -> bool:
     if not settings.TRUSTED_PROXY_IPS:
         return False
-    peer = request.client.host if request.client else None
     return peer in settings.TRUSTED_PROXY_IPS
 
 
@@ -75,9 +112,14 @@ class RateLimiter:
         key = f"rl:{self.prefix}:{identity}"
         count = await self._increment(key)
         if count > self.limit:
+            # Retry-After is what a well-behaved client waits on; the
+            # sentence is what the guest reads when it does not.
+            wait = self.window_seconds
+            phrase = f"{wait // 60} minute(s)" if wait >= 60 else f"{wait} second(s)"
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many requests, please try again later",
+                detail=(f"Too many attempts. Please wait {phrase} and try again."),
+                headers={"Retry-After": str(wait)},
             )
 
     def _identity(self, request: Request, user: User | None) -> str | None:

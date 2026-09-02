@@ -70,7 +70,7 @@ async def get_transfer_location(
 ) -> TransferLocationRead | TransferLocationAdminRead:
     location = await locations.get_by_id(location_id)
     if location is None:
-        raise not_found("Transfer location not found")
+        raise not_found("No transfer location found with this id")
     if include_translations:
         return TransferLocationAdminRead.model_validate(location)
     return TransferLocationRead.from_obj(location, locale)
@@ -101,7 +101,7 @@ async def update_transfer_location(
 ) -> TransferLocationAdminRead:
     location = await locations.get_by_id(location_id)
     if location is None:
-        raise not_found("Transfer location not found")
+        raise not_found("No transfer location found with this id")
     return TransferLocationAdminRead.model_validate(
         await locations.update(location, payload)
     )
@@ -118,5 +118,5 @@ async def delete_transfer_location(
 ) -> None:
     location = await locations.get_by_id(location_id)
     if location is None:
-        raise not_found("Transfer location not found")
+        raise not_found("No transfer location found with this id")
     await locations.delete(location)

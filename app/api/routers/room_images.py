@@ -42,7 +42,7 @@ async def upload_room_image(
 ) -> RoomImageRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     await assert_sanatorium_access(
         rooms.db,
         room.sanatorium_id,
@@ -60,9 +60,9 @@ async def upload_room_image(
         is_video=is_video,
         is_360=is_360,
         category=category,
-        caption_i18n=json_form(caption_i18n, default={}),
-        alt_text=json_form(alt_text, default={}),
-        tags=json_form(tags, default=[]),
+        caption_i18n=json_form(caption_i18n, default={}, field="caption_i18n"),
+        alt_text=json_form(alt_text, default={}, field="alt_text"),
+        tags=json_form(tags, default=[], field="tags"),
         order=order,
     )
     return RoomImageRead.model_validate(image)
@@ -83,10 +83,10 @@ async def update_room_image(
 ) -> RoomImageRead:
     image = await images.get(image_id)
     if image is None or image.room_id != room_id:
-        raise not_found("Image not found")
+        raise not_found("No image found with this id")
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     await assert_sanatorium_access(
         rooms.db,
         room.sanatorium_id,
@@ -129,10 +129,10 @@ async def delete_room_image(
 ) -> None:
     image = await images.get(image_id)
     if image is None or image.room_id != room_id:
-        raise not_found("Image not found")
+        raise not_found("No image found with this id")
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     await assert_sanatorium_access(
         rooms.db,
         room.sanatorium_id,

@@ -92,7 +92,10 @@ class PackageService:
         if user is None or user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only sanatorium admins can create packages",
+                detail=(
+                    "Only a property administrator can create packages for "
+                    "their own property."
+                ),
             )
         title_dict = payload.title.model_dump()
         slug_seed = payload.slug or pick_locale(title_dict)
@@ -237,7 +240,8 @@ class PackageService:
         )
         if sanatorium_id is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Package not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No package found with this id",
             )
         await assert_sanatorium_access(
             self.db, sanatorium_id, user, action="manage this package"
@@ -253,17 +257,23 @@ class PackageService:
         if room is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_id not found",
+                detail="No room found with the room_id you sent",
             )
         if room.sanatorium_id != sanatorium_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_id does not belong to the package's sanatorium",
+                detail=(
+                    "The room you linked belongs to a different property than "
+                    "this package."
+                ),
             )
         if not room.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_id refers to an inactive room",
+                detail=(
+                    "The room you linked is not active, so it cannot be sold "
+                    "as part of a package. Activate it first."
+                ),
             )
         if room.base_currency != currency:
             raise HTTPException(

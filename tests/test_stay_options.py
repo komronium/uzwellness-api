@@ -107,4 +107,4 @@ async def test_stay_option_prices_reject_duplicate_keys(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "Duplicate stay option price"
+    assert "priced only once" in resp.json()["detail"]

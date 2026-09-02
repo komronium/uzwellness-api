@@ -13,6 +13,7 @@ from app.core.discount_tiers import best_tier_discount_percent
 from app.models.booking import Booking, BookingStatus
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
+from app.services.finance_rules import booking_belongs_to_sanatorium
 
 _CENTS = Decimal("0.01")
 _ZERO = Decimal("0")
@@ -82,15 +83,24 @@ class BookingPricingPolicy:
         return percent, apply_percent(final_price, percent)
 
     async def _agent_tier_discount(self, user: User, sanatorium: Sanatorium) -> Decimal:
+        """The tier this agent has earned *at this property* this year.
+
+        The tiers are the property's own table and the discount comes out of
+        the property's own money, so the count that unlocks them is the
+        business this agent brought to that property. Counting the agent's
+        whole platform history instead handed a brand-new property a large
+        agent's top tier on their very first booking.
+        """
+
         if not sanatorium.agent_discount_tiers:
             return _ZERO
-        year_start = datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC)
         count = await self.db.scalar(
             select(func.count(Booking.id)).where(
                 Booking.user_id == user.id,
                 Booking.is_b2b.is_(True),
                 Booking.status != BookingStatus.CANCELLED,
-                Booking.created_at >= year_start,
+                Booking.created_at >= _year_start(),
+                booking_belongs_to_sanatorium(sanatorium.id),
             )
         )
         return best_tier_discount_percent(
@@ -110,3 +120,7 @@ def get_booking_pricing_policy(
     db: AsyncSession = Depends(get_db),
 ) -> BookingPricingPolicy:
     return BookingPricingPolicy(db)
+
+
+def _year_start() -> datetime:
+    return datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC)

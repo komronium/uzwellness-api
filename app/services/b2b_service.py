@@ -79,7 +79,7 @@ class B2BService:
         if sanatorium is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sanatorium not found",
+                detail="No property found with this id",
             )
 
         year_start = _year_start(datetime.now(UTC))

@@ -86,10 +86,10 @@ async def get_news_article(
     if article is None:
         article = await news.get_by_slug(article_id_or_slug)
     if article is None:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     super_admin = is_super_admin(current_user)
     if not article.is_published and not super_admin:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     if include_translations and super_admin:
         return NewsArticleAdminRead.model_validate(article)
     return NewsArticleRead.from_obj(article, locale)
@@ -120,7 +120,7 @@ async def update_news_article(
 ) -> NewsArticleAdminRead:
     article = await news.get_by_id(article_id)
     if article is None:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     return NewsArticleAdminRead.model_validate(await news.update(article, payload))
 
 
@@ -137,7 +137,7 @@ async def upload_news_cover_image(
 ) -> NewsArticleAdminRead:
     article = await news.get_by_id(article_id)
     if article is None:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     content, mime = await read_image_upload_as_webp(file)
     updated = await news.update_cover_image(
         article, content=content, content_type=mime, storage=storage
@@ -157,7 +157,7 @@ async def delete_news_cover_image(
 ) -> NewsArticleAdminRead:
     article = await news.get_by_id(article_id)
     if article is None:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     updated = await news.delete_cover_image(article, storage)
     return NewsArticleAdminRead.model_validate(updated)
 
@@ -173,5 +173,5 @@ async def delete_news_article(
 ) -> None:
     article = await news.get_by_id(article_id)
     if article is None:
-        raise not_found("News article not found")
+        raise not_found("No news article found with this id or slug")
     await news.delete(article)

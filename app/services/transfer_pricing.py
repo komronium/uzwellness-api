@@ -11,7 +11,6 @@ import uuid
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +20,7 @@ from app.models.transfer_request import TransferDirection, VehicleType
 from app.models.user import User, UserRole
 from app.services.exchange_rate_service import ExchangeRateService
 from app.services.transfer_tariff_service import TransferTariffService
+from app.core.errors import missing_exchange_rate
 
 _CENTS = Decimal("0.01")
 
@@ -93,10 +93,7 @@ async def _convert(
     converter = await ExchangeRateService(db).get_converter(target)
     converted = converter.convert(amount, source, target)
     if converted is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Exchange rate {source}→{target} is unavailable",
-        )
+        raise missing_exchange_rate(source, target)
     return converted
 
 

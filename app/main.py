@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
+from app.api.error_handlers import UnhandledErrorMiddleware, register_error_handlers
 from app.api.openapi_responses import COMMON_ERROR_RESPONSES
 from app.api.openapi_tags import OPENAPI_TAGS
 from app.core.config import settings
@@ -42,6 +43,10 @@ app = FastAPI(
     responses=COMMON_ERROR_RESPONSES,
 )
 
+# Registered before CORS on purpose: the most recently added middleware ends up
+# outermost, so CORS wraps the error middleware and its 500s keep the
+# Access-Control-Allow-Origin header the browser needs to read the body at all.
+app.add_middleware(UnhandledErrorMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -49,6 +54,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+register_error_handlers(app)
 
 
 @app.exception_handler(RequestValidationError)

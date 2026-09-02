@@ -41,6 +41,10 @@ class Payment(TimestampMixin, Base):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_payments_amount_non_negative"),
+        CheckConstraint(
+            "refund_amount >= 0 AND refund_amount <= amount",
+            name="ck_payments_refund_within_amount",
+        ),
         # One Uzum transaction id can only ever back a single payment row; the
         # /create webhook relies on this to answer "already created" (10010).
         Index(
@@ -96,6 +100,14 @@ class Payment(TimestampMixin, Base):
     provider_payment_id: Mapped[str | None] = mapped_column(String(120), index=True)
     raw_payload: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    # How much of ``amount`` is owed back to the guest, set when the booking is
+    # cancelled. It is not always the whole payment: the rate plan's
+    # cancellation terms can withhold a fee (see ``cancellation_policy``), and
+    # a wholly non-refundable stay leaves this at zero with the payment still
+    # ``paid``.
+    refund_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0"), server_default="0"
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set when the provider reverses the transaction (Uzum /reverse) or the

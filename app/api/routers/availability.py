@@ -45,15 +45,27 @@ _MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
 
 def _parse_month(value: str) -> tuple[date, date]:
+    """``"2026-08"`` → the first and last day of that month.
+
+    The year is range-checked as well as shape-checked: ``0000-01`` matches the
+    pattern but ``date()`` cannot represent it, and an unguarded ValueError
+    here would answer a public endpoint with a 500.
+    """
+
     match = _MONTH_RE.match(value)
+    bad_format = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="month must be in YYYY-MM format, for example 2026-08",
+    )
     if match is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="month must be in YYYY-MM format",
-        )
+        raise bad_format
     year, month = int(match.group(1)), int(match.group(2))
+    try:
+        first = date(year, month, 1)
+    except ValueError as exc:
+        raise bad_format from exc
     last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last_day)
+    return first, date(year, month, last_day)
 
 
 @router.get(

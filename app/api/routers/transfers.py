@@ -74,7 +74,7 @@ async def get_transfer(
 ) -> TransferRequestRead:
     transfer = await transfers.get_visible(transfer_id, current_user)
     if transfer is None:
-        raise not_found("Transfer request not found")
+        raise not_found("No transfer request found with this id under your account")
     return _to_read(transfer, converter)
 
 
@@ -109,7 +109,7 @@ async def update_transfer(
     guest may only correct their own flight and contact details."""
     transfer = await transfers.get_visible(transfer_id, current_user)
     if transfer is None:
-        raise not_found("Transfer request not found")
+        raise not_found("No transfer request found with this id under your account")
     updated = await transfers.apply_patch(transfer, payload, current_user)
     return _to_read(updated, converter)
 
@@ -128,5 +128,5 @@ async def cancel_transfer(
 ) -> TransferRequestRead:
     transfer = await transfers.get_visible(transfer_id, current_user)
     if transfer is None:
-        raise not_found("Transfer request not found")
+        raise not_found("No transfer request found with this id under your account")
     return _to_read(await transfers.cancel(transfer, current_user), converter)

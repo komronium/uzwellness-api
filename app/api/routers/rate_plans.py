@@ -48,7 +48,12 @@ async def list_rate_plans(
         if not is_admin_or_above(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
+                detail=(
+                    "Listing every rate plan of a property is only available "
+                    "to that property's administrator and to platform "
+                    "administrators. Pass room_id instead to see a room's "
+                    "public rates."
+                ),
             )
         items, total = await rate_plans.list_for_sanatorium(
             sanatorium_id,
@@ -69,7 +74,7 @@ async def list_rate_plans(
     if room_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="room_id or sanatorium_id is required",
+            detail="Pass room_id (public rates) or sanatorium_id (admin view).",
         )
 
     items, total = await rate_plans.list_for_room(
@@ -99,7 +104,7 @@ async def get_rate_plan(
 ) -> RatePlanRead | RatePlanAdminRead:
     rate_plan = await rate_plans.get_by_id(rate_plan_id)
     if rate_plan is None:
-        raise not_found("Rate plan not found")
+        raise not_found("No rate plan found with this id")
     if include_translations:
         return RatePlanAdminRead.model_validate(rate_plan)
     return RatePlanRead.from_obj(rate_plan, locale)
@@ -133,7 +138,7 @@ async def update_rate_plan(
 ) -> RatePlanAdminRead:
     rate_plan = await rate_plans.get_by_id(rate_plan_id)
     if rate_plan is None:
-        raise not_found("Rate plan not found")
+        raise not_found("No rate plan found with this id")
     updated = await rate_plans.update(rate_plan, payload, current_user)
     return RatePlanAdminRead.model_validate(updated)
 
@@ -150,5 +155,5 @@ async def delete_rate_plan(
 ) -> None:
     rate_plan = await rate_plans.get_by_id(rate_plan_id)
     if rate_plan is None:
-        raise not_found("Rate plan not found")
+        raise not_found("No rate plan found with this id")
     await rate_plans.delete(rate_plan, current_user)

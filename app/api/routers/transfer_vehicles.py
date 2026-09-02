@@ -65,7 +65,7 @@ async def update_transfer_vehicle(
 ) -> TransferVehicleRead:
     vehicle = await vehicles.get_by_id(vehicle_id)
     if vehicle is None:
-        raise not_found("Transfer vehicle not found")
+        raise not_found("No transfer vehicle found with this id")
     return TransferVehicleRead.model_validate(await vehicles.update(vehicle, payload))
 
 
@@ -76,5 +76,5 @@ async def delete_transfer_vehicle(
 ) -> None:
     vehicle = await vehicles.get_by_id(vehicle_id)
     if vehicle is None:
-        raise not_found("Transfer vehicle not found")
+        raise not_found("No transfer vehicle found with this id")
     await vehicles.delete(vehicle)

@@ -23,13 +23,20 @@ def _ensure_can_patch_user(
     if current_user.id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to modify this user",
+            detail=(
+                "You can only edit your own profile. A platform administrator "
+                "can edit any account."
+            ),
         )
     blocked = set(payload.model_dump(exclude_unset=True)) - _SELF_EDITABLE_FIELDS
     if blocked:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Not allowed to change: {', '.join(sorted(blocked))}",
+            detail=(
+                f"You cannot change {', '.join(sorted(blocked))} on your own "
+                "account. Only your name, email and phone are editable — "
+                "contact support@uzwellness.com for anything else."
+            ),
         )
 
 
@@ -81,7 +88,7 @@ async def get_user(
 ) -> UserRead:
     user = await users.get_by_id(user_id)
     if user is None:
-        raise not_found("User not found")
+        raise not_found("No user found with this id")
     return await users.to_read(user)
 
 
@@ -95,6 +102,6 @@ async def update_user(
     _ensure_can_patch_user(current_user, user_id, payload)
     user = await users.get_by_id(user_id)
     if user is None:
-        raise not_found("User not found")
+        raise not_found("No user found with this id")
     updated = await users.update(user, payload)
     return await users.to_read(updated)

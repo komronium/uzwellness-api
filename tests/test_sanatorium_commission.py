@@ -64,7 +64,7 @@ class TestSuperAdminOnlyFields:
             headers=admin_headers,
         )
         assert resp.status_code == 403
-        assert "super_admin" in resp.json()["detail"]
+        assert "platform administrator" in resp.json()["detail"]
 
     async def test_admin_cannot_set_b2b_commission(
         self, client: AsyncClient, db: AsyncSession, admin_user, admin_headers

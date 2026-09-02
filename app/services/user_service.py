@@ -43,7 +43,7 @@ class UserService:
         if await self.get_by_email(payload.email) is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered",
+                detail=("An account with this email already exists."),
             )
         if payload.sanatorium_id is not None:
             self._assert_role_can_own_sanatorium(payload.role)
@@ -102,7 +102,7 @@ class UserService:
             if existing is not None and existing.id != user.id:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Email already registered",
+                    detail=("An account with this email already exists."),
                 )
             data["email"] = email
         sanatorium_id = data.pop("sanatorium_id", _MISSING)
@@ -192,8 +192,9 @@ class UserService:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        "transfer_commission_percent only applies to the "
-                        "transfer_admin role"
+                        "transfer_commission_percent applies only to the "
+                        "transfer operator account. Remove it, or set the "
+                        "role to transfer_admin."
                     ),
                 )
             return
@@ -210,8 +211,9 @@ class UserService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
-                    "transfer_commission_percent is required for the "
-                    "transfer_admin role"
+                    "Set transfer_commission_percent (the platform's cut of "
+                    "each transfer, in percent) before assigning the "
+                    "transfer_admin role."
                 ),
             )
 
@@ -225,9 +227,17 @@ class UserService:
         if existing_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
+                # A structured detail on purpose — the admin UI links to the
+                # existing operator. `message` keeps it renderable by any
+                # client that just prints `detail`.
                 detail={
                     "code": "transfer_admin_exists",
                     "existing_user_id": str(existing_id),
+                    "message": (
+                        "The platform already has a transfer operator. "
+                        "Change the existing operator's role first, or edit "
+                        "that account instead."
+                    ),
                 },
             )
 
@@ -241,7 +251,9 @@ class UserService:
         if role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only admin role can be assigned to a sanatorium",
+                detail=(
+                    "Only an account with the admin role can be assigned to a property."
+                ),
             )
 
     async def _assign_sanatorium(
@@ -251,7 +263,7 @@ class UserService:
         if sanatorium is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sanatorium not found",
+                detail="No property found with this id",
             )
         sanatorium.admin_user_id = user_id
 

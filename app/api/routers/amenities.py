@@ -62,7 +62,7 @@ async def get_amenity(
 ) -> AmenityRead | AmenityAdminRead:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise not_found("Amenity not found")
+        raise not_found("No amenity found with this id")
     if include_translations:
         return AmenityAdminRead.model_validate(amenity)
     return AmenityRead.from_obj(amenity, locale)
@@ -93,7 +93,7 @@ async def update_amenity(
 ) -> AmenityAdminRead:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise not_found("Amenity not found")
+        raise not_found("No amenity found with this id")
     return AmenityAdminRead.model_validate(await amenities.update(amenity, payload))
 
 
@@ -108,5 +108,5 @@ async def delete_amenity(
 ) -> None:
     amenity = await amenities.get_by_id(amenity_id)
     if amenity is None:
-        raise not_found("Amenity not found")
+        raise not_found("No amenity found with this id")
     await amenities.delete(amenity)

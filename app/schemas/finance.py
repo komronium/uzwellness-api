@@ -36,6 +36,10 @@ class FinanceCurrencyTotals(BaseModel):
     pending_payment_amount: Decimal
     refund_pending_amount: Decimal
     refunded_amount: Decimal
+    # Settled payments in a currency other than the booking's — Uzum only
+    # settles in UZS, so a non-UZS stay paid by card lands here instead of in
+    # paid_amount, which is denominated in the booking's own currency.
+    foreign_payment_count: int = 0
     platform_commission_amount: Decimal | None = None
     sanatorium_net_amount: Decimal | None = None
 
@@ -61,6 +65,10 @@ class FinanceOrderItem(BaseModel):
     pending_payment_amount: Decimal
     refund_pending_amount: Decimal
     refunded_amount: Decimal
+    # Settled payments in a currency other than the booking's — Uzum only
+    # settles in UZS, so a non-UZS stay paid by card lands here instead of in
+    # paid_amount, which is denominated in the booking's own currency.
+    foreign_payment_count: int = 0
     commission_percent: Decimal | None = None
     platform_commission_amount: Decimal | None = None
     sanatorium_net_amount: Decimal | None = None

@@ -264,6 +264,12 @@ class Booking(TimestampMixin, Base):
     cancellation_penalty_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     cancellation_penalty_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     # Price before a time-boxed promo (strikethrough), when a promo applied.
+    # What the property kept out of the money already paid when this booking
+    # was cancelled, under the terms above. NULL until it is cancelled.
+    cancellation_penalty_snapshot: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2)
+    )
+
     original_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     promo_percent_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     payment_timing: Mapped[PaymentTiming | None] = mapped_column(

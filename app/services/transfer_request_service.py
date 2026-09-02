@@ -150,7 +150,11 @@ class TransferRequestService:
         if forbidden:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Only the transfer operator can change: {', '.join(forbidden)}",
+                detail=(
+                    "Only the transfer operator can change "
+                    f"{', '.join(forbidden)}. You can update your flight "
+                    "details and contact information."
+                ),
             )
         return await self._customer_update(transfer, data)
 
@@ -162,7 +166,7 @@ class TransferRequestService:
         if new_price is not None and new_currency is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="currency is required when price is set",
+                detail="Set a currency together with the price.",
             )
         if data.get("vehicle_id") is not None:
             await self._assert_vehicle_assignable(data["vehicle_id"])
@@ -187,8 +191,9 @@ class TransferRequestService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Transfer in status {transfer.status.value} can no longer "
-                    "be edited"
+                    f"This transfer is {transfer.status.value} and can no "
+                    "longer be edited. Contact the transfer operator if you "
+                    "need to change it."
                 ),
             )
         for field, value in data.items():
@@ -201,13 +206,17 @@ class TransferRequestService:
         if not is_transfer_operator(user) and transfer.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only cancel your own transfer requests",
+                detail=(
+                    "You can only cancel your own transfer requests. "
+                    "Contact the transfer operator to cancel this one."
+                ),
             )
         if transfer.status not in _CANCELLABLE_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Transfer in status {transfer.status.value} cannot be cancelled"
+                    f"This transfer is already {transfer.status.value} and "
+                    "cannot be cancelled."
                 ),
             )
         transfer.status = TransferStatus.CANCELLED
@@ -220,12 +229,15 @@ class TransferRequestService:
         if vehicle is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Vehicle not found",
+                detail=f"No vehicle found with id {vehicle_id}",
             )
         if not vehicle.is_active:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Vehicle is not active",
+                detail=(
+                    "This vehicle is retired and cannot be assigned. "
+                    "Reactivate it or choose another vehicle."
+                ),
             )
 
     async def _notify_operator_changes(

@@ -31,7 +31,10 @@ def assert_super_admin_only_fields(
         if field in data:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Only super_admin can modify {field}",
+                detail=(
+                    f"Only a platform administrator can change {field}. "
+                    "Remove it from your request and try again."
+                ),
             )
 
 
@@ -45,7 +48,8 @@ async def assert_sanatorium_access(
     sanatorium = await db.get(Sanatorium, sanatorium_id)
     if sanatorium is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No property found with this id",
         )
     if user.role == UserRole.SUPER_ADMIN:
         return sanatorium
@@ -53,5 +57,9 @@ async def assert_sanatorium_access(
         return sanatorium
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=f"Not allowed to {action}",
+        detail=(
+            f"Your account is not allowed to {action}. "
+            "Only the property's own administrator or a platform "
+            "administrator can."
+        ),
     )

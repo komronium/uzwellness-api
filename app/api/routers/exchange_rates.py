@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,7 +17,9 @@ from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
 )
-from app.services.exchange_rate_sync import fetch_cbu_rates
+from app.services.exchange_rate_sync import CbuUnavailable, fetch_cbu_rates
+
+logger = logging.getLogger("uzwellness.exchange_rates")
 
 router = APIRouter(prefix="/exchange-rates", tags=["Payments"])
 
@@ -91,7 +95,8 @@ async def delete_exchange_rate(
     synced pairs with the official rate)."""
     if not await rates.delete(pair.upper()):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Exchange rate not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No exchange rate is stored for {pair.upper()}",
         )
 
 
@@ -106,10 +111,18 @@ async def sync_exchange_rates(
     """Pull today's official rates from the Central Bank of Uzbekistan."""
     try:
         payloads = await fetch_cbu_rates()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, CbuUnavailable) as exc:
+        # Covers both "cbu.uz is down" and "cbu.uz changed its JSON"; either
+        # way the operator's next move is the same, and the specifics are in
+        # the log rather than in a message the frontend shows a guest.
+        logger.warning("CBU rate sync failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to fetch exchange rates from CBU",
+            detail=(
+                "Could not read today's rates from the Central Bank of "
+                "Uzbekistan (cbu.uz). Try again in a few minutes, or set the "
+                "rate manually with PATCH /exchange-rates."
+            ),
         ) from exc
     return [
         ExchangeRateRead.model_validate(await rates.upsert(p, source=RATE_SOURCE_CBU))

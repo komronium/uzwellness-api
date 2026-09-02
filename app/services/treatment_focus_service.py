@@ -90,7 +90,10 @@ class TreatmentFocusService:
         if not slug_seed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="name must contain at least one locale",
+                detail=(
+                    "Provide a name in at least one language (uz, ru or en), "
+                    "or send an explicit slug."
+                ),
             )
         focus = TreatmentFocus(
             slug=await resolve_unique_slug(self.db, TreatmentFocus, _slug(slug_seed)),

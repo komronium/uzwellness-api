@@ -56,12 +56,16 @@ class SessionBookingFlow(BookingFlowBase):
         program = await self.db.get(TreatmentProgram, program_id)
         if program is None or not program.is_active:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Program not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This programme is no longer on sale",
             )
         if program.price is None or program.currency is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Program is not bookable (no price set)",
+                detail=(
+                    "This programme has no price yet, so it cannot be booked "
+                    "online. Please contact the property to book it."
+                ),
             )
         return program
 
@@ -70,7 +74,11 @@ class SessionBookingFlow(BookingFlowBase):
         if program.group_size_max is not None and guests > program.group_size_max:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Maximum {program.group_size_max} participant(s) per session",
+                detail=(
+                    f"This session takes at most {program.group_size_max} "
+                    "participant(s). Please book fewer guests or split the "
+                    "booking."
+                ),
             )
 
     @staticmethod
@@ -79,7 +87,7 @@ class SessionBookingFlow(BookingFlowBase):
         if check_out < payload.check_in:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="check_out must be on or after check_in",
+                detail="Check-out cannot be before check-in.",
             )
         return check_out
 
@@ -104,7 +112,11 @@ class SessionBookingFlow(BookingFlowBase):
             check_in=payload.check_in,
             check_out=check_out,
             guests=payload.guests,
-            status=BookingStatus.CONFIRMED,
+            # A booking is not confirmed until its money is: the payment
+            # paths (Uzum Merchant confirm, Checkout COMPLETED, admin cash
+            # confirm) are what move it to CONFIRMED. Creating it confirmed
+            # told the property a stay was settled that nobody had paid for.
+            status=BookingStatus.PENDING,
             final_price=pricing.final_price,
             currency=program.currency,
             is_b2b=is_b2b,

@@ -2,11 +2,23 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import bcrypt
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
 
 TokenType = Literal["access", "refresh"]
+
+
+class TokenError(ValueError):
+    """A token that cannot be trusted — malformed, wrong signature, or expired."""
+
+
+class TokenExpiredError(TokenError):
+    """Signature was valid but the token has aged out.
+
+    Kept separate from :class:`TokenError` so the caller can tell the guest to
+    sign in again rather than implying their credentials were wrong.
+    """
 
 
 def hash_password(password: str) -> str:
@@ -50,5 +62,7 @@ def decode_token(token: str) -> dict[str, Any]:
         return jwt.decode(
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
+    except ExpiredSignatureError as exc:
+        raise TokenExpiredError("Token expired") from exc
     except JWTError as exc:
-        raise ValueError("Invalid token") from exc
+        raise TokenError("Invalid token") from exc

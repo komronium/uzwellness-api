@@ -107,7 +107,9 @@ async def test_admin_discovers_awaiting_approval(
     assert all(r["cancellation_status"] == "awaiting_approval" for r in rows)
 
     # After approval the field clears (terminal state).
-    await client.post(f"/api/bookings/{bid}/cancellation/approve", headers=admin_headers)
+    await client.post(
+        f"/api/bookings/{bid}/cancellation/approve", headers=admin_headers
+    )
     detail = await client.get(f"/api/bookings/{bid}", headers=admin_headers)
     assert detail.json()["cancellation_status"] is None
     empty = await client.get(

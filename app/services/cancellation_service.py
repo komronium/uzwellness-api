@@ -87,7 +87,11 @@ class CancellationService:
         if owner is None or not owner.email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Booking has no email address to send the code to",
+                detail=(
+                    "This booking has no email address, so we cannot send a "
+                    "cancellation code. Please contact "
+                    "support@uzwellness.com to cancel it."
+                ),
             )
 
         await self._supersede_active(booking.id)
@@ -119,7 +123,10 @@ class CancellationService:
         if request is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No pending cancellation request; request a code first",
+                detail=(
+                    "There is no cancellation code waiting for this booking. "
+                    "Request a new code first."
+                ),
             )
         now = datetime.now(UTC)
         if request.expires_at <= now:
@@ -127,21 +134,31 @@ class CancellationService:
             await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cancellation code expired; request a new one",
+                detail=(
+                    "This cancellation code has expired. Request a new one "
+                    f"and enter it within {self.CODE_TTL_MINUTES} minutes."
+                ),
             )
         if request.attempts >= self.MAX_ATTEMPTS:
             request.status = CancellationStatus.EXPIRED
             await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many attempts; request a new code",
+                detail=(
+                    "Too many incorrect codes were entered. "
+                    "Request a new cancellation code to try again."
+                ),
             )
         if not hmac.compare_digest(request.code_hash, _hash_code(code)):
             request.attempts += 1
             await self.db.commit()
+            left = max(self.MAX_ATTEMPTS - request.attempts, 0)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid cancellation code",
+                detail=(
+                    "That cancellation code is not correct. You have "
+                    f"{left} attempt(s) left before you must request a new one."
+                ),
             )
 
         request.status = CancellationStatus.AWAITING_APPROVAL
@@ -170,7 +187,9 @@ class CancellationService:
         if request is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No cancellation request awaiting approval",
+                detail=(
+                    "This booking has no cancellation request waiting for a decision."
+                ),
             )
         # Releases inventory, marks payments refund_pending, emails the customer.
         cancelled = await self.bookings.cancel(booking, admin)
@@ -186,7 +205,9 @@ class CancellationService:
         if request is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No cancellation request awaiting approval",
+                detail=(
+                    "This booking has no cancellation request waiting for a decision."
+                ),
             )
         request.status = CancellationStatus.REJECTED
         request.decided_by_id = admin.id
@@ -206,7 +227,11 @@ class CancellationService:
         if booking.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the booking owner can request its cancellation",
+                detail=(
+                    "Only the guest who made this booking can cancel it. "
+                    "Sign in with that account, or contact "
+                    "support@uzwellness.com."
+                ),
             )
 
     @staticmethod
@@ -214,7 +239,10 @@ class CancellationService:
         if booking.status not in {BookingStatus.PENDING, BookingStatus.CONFIRMED}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"A {booking.status.value} booking cannot be cancelled",
+                detail=(
+                    f"This booking is already {booking.status.value} and "
+                    "cannot be cancelled again."
+                ),
             )
 
     async def _assert_admin_owns(self, booking: Booking, admin: User) -> None:
@@ -226,7 +254,10 @@ class CancellationService:
             return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to decide this cancellation",
+            detail=(
+                "Only the property that received this booking, or a platform "
+                "administrator, can approve or reject its cancellation."
+            ),
         )
 
     async def _latest(

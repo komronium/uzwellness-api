@@ -61,7 +61,7 @@ async def get_region(
     else:
         region = await regions.get_by_id(region_uuid)
     if region is None:
-        raise not_found("Region not found")
+        raise not_found("No region found with this id or slug")
     if include_translations:
         return RegionAdminRead.model_validate(region)
     return RegionRead.from_obj(region, locale)
@@ -92,7 +92,7 @@ async def update_region(
 ) -> RegionAdminRead:
     region = await regions.get_by_id(region_id)
     if region is None:
-        raise not_found("Region not found")
+        raise not_found("No region found with this id or slug")
     return RegionAdminRead.model_validate(await regions.update(region, payload))
 
 
@@ -107,5 +107,5 @@ async def delete_region(
 ) -> None:
     region = await regions.get_by_id(region_id)
     if region is None:
-        raise not_found("Region not found")
+        raise not_found("No region found with this id or slug")
     await regions.delete(region)

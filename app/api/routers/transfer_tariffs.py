@@ -76,7 +76,9 @@ async def get_current_transfer_tariff(
         vehicle_type=vehicle_type,
     )
     if tariff is None:
-        raise not_found("No current tariff for this route and vehicle type")
+        raise not_found(
+            "No tariff is published for this route and vehicle type. Ask the transfer operator to add one."
+        )
     return _to_read(tariff, converter)
 
 

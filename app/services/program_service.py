@@ -140,7 +140,7 @@ class ProgramService:
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="max_nights must be >= min_nights",
+                detail="max_nights cannot be smaller than min_nights.",
             )
 
     @staticmethod
@@ -148,7 +148,11 @@ class ProgramService:
         if (price is None) != (currency is None):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="price and currency must be set together",
+                detail=(
+                    "Set price and currency together: a programme is either "
+                    "priced (both fields) or bundled into the room rate "
+                    "(neither)."
+                ),
             )
 
     async def _assert_focus_exists(self, focus_id: uuid.UUID) -> None:
@@ -156,7 +160,7 @@ class ProgramService:
         if focus is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Treatment focus not found",
+                detail="No treatment focus found with this id",
             )
 
     async def _get_required(self, program_id: uuid.UUID) -> TreatmentProgram:

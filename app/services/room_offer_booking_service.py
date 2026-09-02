@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.utils import date_range, today_tashkent
+from app.core.utils import date_range, pick_locale, today_tashkent
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.rate_plan import RatePlan
@@ -24,6 +24,7 @@ from app.services.booking_pricing_policy import (
     BookingPricingPolicy,
     get_booking_pricing_policy,
 )
+from app.services.booking_flows.base import send_booking_received_for
 from app.services.booking_transfer import attach_booking_transfer
 from app.services.reservation_numbers import next_reservation_number
 from app.services.room_offer_service import RoomOfferService, get_room_offer_service
@@ -46,7 +47,7 @@ class RoomOfferBookingService:
         if payload.check_in < today_tashkent():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="check_in must be today or in the future",
+                detail="Check-in cannot be in the past. Please pick today or a later date.",
             )
         sanatorium = await approved_sanatorium(self.db, payload.sanatorium_id)
         response = await self.offers.search(
@@ -73,7 +74,11 @@ class RoomOfferBookingService:
         if offer is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Selected room offer is no longer available",
+                detail=(
+                    "This room and rate are no longer offered for the dates "
+                    "and guests you selected. Please search again and pick "
+                    "from the current results."
+                ),
             )
 
         room = await lock_room(self.db, payload.room_id)
@@ -103,7 +108,11 @@ class RoomOfferBookingService:
             adults=payload.adults,
             children=payload.children,
             rooms_count=len(payload.rooms),
-            status=BookingStatus.CONFIRMED,
+            # A booking is not confirmed until its money is: the payment
+            # paths (Uzum Merchant confirm, Checkout COMPLETED, admin cash
+            # confirm) are what move it to CONFIRMED. Creating it confirmed
+            # told the property a stay was settled that nobody had paid for.
+            status=BookingStatus.PENDING,
             final_price=pricing.final_price,
             original_price=offer.price.original_total,
             currency=offer.price.currency,
@@ -157,6 +166,9 @@ class RoomOfferBookingService:
             Notification(booking_id=booking.id, type="booking_created", channel="email")
         )
         await self.db.commit()
+        # The classic /bookings path confirms by email; a guest who booked
+        # through the offer search was silently left without one.
+        send_booking_received_for(booking, user, pick_locale(sanatorium.name))
         return await self._load_required(booking.id)
 
     async def _rate_plan(self, rate_plan_id: uuid.UUID | None) -> RatePlan | None:
@@ -166,7 +178,10 @@ class RoomOfferBookingService:
         if rate_plan is None or not rate_plan.is_active:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Selected rate plan is no longer available",
+                detail=(
+                    "This rate plan has been withdrawn. Please search again "
+                    "and choose another rate."
+                ),
             )
         return rate_plan
 
@@ -182,7 +197,12 @@ class RoomOfferBookingService:
             if selected.get((item.room_index, item.guest_index)) != item.program_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Treatment selection is not available for this guest",
+                    detail=(
+                        "The treatment programme chosen for guest "
+                        f"{item.guest_index + 1} in room {item.room_index + 1} "
+                        "is not offered for that guest. Please search again "
+                        "and pick from the programmes shown."
+                    ),
                 )
 
     async def _load_required(self, booking_id: uuid.UUID) -> Booking:

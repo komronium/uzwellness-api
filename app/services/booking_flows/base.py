@@ -97,20 +97,7 @@ class BookingFlowBase:
     def _send_received_email(
         booking: Booking, user: User, sanatorium_name: str
     ) -> None:
-        if not user.email:
-            return
-        send_booking_received(
-            to=user.email,
-            ctx=BookingEmailContext(
-                booking_code=booking.code,
-                sanatorium_name=sanatorium_name,
-                check_in=booking.check_in,
-                check_out=booking.check_out,
-                guest_name=user.full_name or user.email,
-                total_price=booking.final_price,
-                currency=booking.currency,
-            ),
-        )
+        send_booking_received_for(booking, user, sanatorium_name)
 
 
 def rooms_needed_for(guests: int, capacity: int) -> int:
@@ -123,7 +110,7 @@ def rooms_count_for_guests(room: Room, guests: int) -> int:
     if room.capacity < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Room has no capacity",
+            detail="This room has no guest capacity set and cannot be booked",
         )
     rooms_count = rooms_needed_for(guests, room.capacity)
     if rooms_count > room.inventory_count:
@@ -135,3 +122,24 @@ def rooms_count_for_guests(room: Room, guests: int) -> int:
             ),
         )
     return rooms_count
+
+
+def send_booking_received_for(
+    booking: Booking, user: User, sanatorium_name: str
+) -> None:
+    """Tell the guest their booking was taken. Shared by every booking path."""
+
+    if not user.email:
+        return
+    send_booking_received(
+        to=user.email,
+        ctx=BookingEmailContext(
+            booking_code=booking.code,
+            sanatorium_name=sanatorium_name,
+            check_in=booking.check_in,
+            check_out=booking.check_out,
+            guest_name=user.full_name or user.email,
+            total_price=booking.final_price,
+            currency=booking.currency,
+        ),
+    )

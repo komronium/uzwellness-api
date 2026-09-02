@@ -85,7 +85,9 @@ class TestEndToEnd:
         )
         assert booking_resp.status_code == 201
         booking = booking_resp.json()
-        assert booking["status"] == "confirmed"
+        # A new booking is unpaid, so it is not confirmed yet — a payment is
+        # what confirms it.
+        assert booking["status"] == "pending"
         assert booking["guests"] == 2
         assert len(booking["code"]) == 8
 
@@ -112,7 +114,7 @@ class TestEndToEnd:
             headers=headers,
         )
         assert rebook.status_code == 201
-        assert rebook.json()["status"] == "confirmed"
+        assert rebook.json()["status"] == "pending"
 
 
 # ── booking validation ─────────────────────────────────────────────────────

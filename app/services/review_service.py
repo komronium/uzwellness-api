@@ -94,7 +94,8 @@ class ReviewService:
         sanatorium = await self.db.get(Sanatorium, sanatorium_id)
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No published property found with this id",
             )
 
         review = SanatoriumReview(
@@ -145,7 +146,10 @@ class ReviewService:
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not allowed to view review analytics",
+                detail=(
+                    "Review analytics are only available to this property's "
+                    "own administrator and to platform administrators."
+                ),
             )
         rows = (
             await self.db.scalars(
@@ -245,7 +249,10 @@ class ReviewService:
         if not ReviewPolicy.can_moderate(review, user, sanatorium):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not allowed to moderate this review",
+                detail=(
+                    "Only this property's own administrator or a platform "
+                    "administrator can moderate its reviews."
+                ),
             )
 
     async def _assert_can_delete(self, review: SanatoriumReview, user: User) -> None:
@@ -253,7 +260,10 @@ class ReviewService:
         if not ReviewPolicy.can_delete(review, user, sanatorium):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not allowed to delete this review",
+                detail=(
+                    "You can only delete your own review; a platform "
+                    "administrator can delete any."
+                ),
             )
 
     async def _review_sanatorium(self, review: SanatoriumReview) -> Sanatorium | None:

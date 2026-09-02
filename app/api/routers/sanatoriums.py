@@ -130,7 +130,7 @@ async def get_sanatorium_by_slug(
 ) -> SanatoriumRead | SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_visible_by_slug(slug, current_user)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     if include_translations:
         return sanatorium_admin_read(sanatorium)
     return sanatorium_public_read(sanatorium, locale=locale)
@@ -150,7 +150,7 @@ async def get_sanatorium_content_overview(
 ) -> SanatoriumContentOverview:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     return await content.overview(sanatorium, current_user, locale=locale)
 
 
@@ -166,7 +166,7 @@ async def get_sanatorium_policies(
 ) -> SanatoriumPolicies:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     return SanatoriumPolicies.model_validate(sanatorium.policies or {})
 
@@ -184,7 +184,7 @@ async def update_sanatorium_policies(
 ) -> SanatoriumPolicies:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update_policies(sanatorium, payload)
     return SanatoriumPolicies.model_validate(updated.policies or {})
@@ -202,7 +202,7 @@ async def get_stay_option_prices(
 ) -> StayOptionPriceList:
     sanatorium = await sanatoriums.get_visible(sanatorium_id, current_user)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     items = await stay_options.list_for_sanatorium(sanatorium_id)
     return StayOptionPriceList(
         items=[StayOptionPriceRead.model_validate(i) for i in items]
@@ -222,7 +222,7 @@ async def replace_stay_option_prices(
 ) -> StayOptionPriceList:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     items = await stay_options.replace_for_sanatorium(sanatorium_id, payload)
     return StayOptionPriceList(
@@ -240,7 +240,7 @@ async def get_sanatorium(
 ) -> SanatoriumRead | SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_visible(sanatorium_id, current_user)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     if include_translations:
         return sanatorium_admin_read(sanatorium)
     return sanatorium_public_read(sanatorium, locale=locale)
@@ -273,7 +273,7 @@ async def update_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
     return sanatorium_admin_read(updated)
@@ -290,7 +290,7 @@ async def get_reservation_settings(
 ) -> SanatoriumReservationSettingsRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     return SanatoriumReservationSettingsRead.model_validate(sanatorium)
 
@@ -307,7 +307,7 @@ async def update_reservation_settings(
 ) -> SanatoriumReservationSettingsRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update_reservation_settings(sanatorium, payload)
     return SanatoriumReservationSettingsRead.model_validate(updated)
@@ -324,7 +324,7 @@ async def approve_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     approved = await sanatoriums.approve(sanatorium)
     return sanatorium_admin_read(approved)
 
@@ -340,6 +340,6 @@ async def reject_sanatorium(
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     rejected = await sanatoriums.reject(sanatorium)
     return sanatorium_admin_read(rejected)

@@ -45,7 +45,7 @@ class AvailabilityCalendarService:
         if date_from >= date_to:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="date_from must be before date_to",
+                detail="date_to must be at least one day after date_from.",
             )
         await assert_sanatorium_access(
             self.db, sanatorium_id, user, action="view availability calendar"
@@ -80,7 +80,8 @@ class AvailabilityCalendarService:
         )
         if sanatorium is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Sanatorium not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No property found with this id",
             )
         total_inventory = int(
             await self.db.scalar(
@@ -126,7 +127,8 @@ class AvailabilityCalendarService:
         rooms = list((await self.db.scalars(stmt)).all())
         if room_id is not None and not rooms:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No room found with this id",
             )
         if rate_plan_ids:
             existing = {rp.id for room in rooms for rp in room.rate_plans}
@@ -134,7 +136,10 @@ class AvailabilityCalendarService:
             if missing:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="rate_plan_ids must belong to the selected sanatorium",
+                    detail=(
+                        "Every rate plan in rate_plan_ids must belong to the "
+                        "property you are viewing."
+                    ),
                 )
         return rooms
 

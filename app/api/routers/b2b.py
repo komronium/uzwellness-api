@@ -13,7 +13,13 @@ from app.schemas.b2b import (
 )
 from app.services.b2b_service import B2BService, get_b2b_service
 
-require_b2b = require_roles(UserRole.AGENT, detail="B2B account required")
+require_b2b = require_roles(
+    UserRole.AGENT,
+    detail=(
+        "The B2B portal is only available to agency accounts. "
+        "Contact partners@uzwellness.com to have your account upgraded."
+    ),
+)
 
 router = APIRouter(prefix="/b2b", tags=["B2B"], dependencies=[Depends(require_b2b)])
 

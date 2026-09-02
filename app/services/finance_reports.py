@@ -51,6 +51,9 @@ def summary_statement(filters: list, *, payment_status: str | None = None):
             func.coalesce(func.sum(payments.c.refunded_amount), 0).label(
                 "refunded_amount"
             ),
+            func.coalesce(func.sum(payments.c.foreign_payment_count), 0).label(
+                "foreign_payment_count"
+            ),
             func.coalesce(func.sum(commission), 0).label("commission_amount"),
             func.coalesce(func.sum(gross - commission), 0).label("net_amount"),
         )
@@ -101,6 +104,7 @@ def orders_statement(
             payments.c.pending_amount,
             payments.c.refund_pending_amount,
             payments.c.refunded_amount,
+            payments.c.foreign_payment_count,
         )
         .outerjoin(payments, payments.c.booking_id == Booking.id)
         .outerjoin(User, Booking.user_id == User.id)
@@ -136,6 +140,7 @@ def summary_item(row, *, can_see_internal: bool) -> dict:
         "pending_payment_amount": money(row.pending_payment_amount),
         "refund_pending_amount": money(row.refund_pending_amount),
         "refunded_amount": money(row.refunded_amount),
+        "foreign_payment_count": int(row.foreign_payment_count or 0),
         "platform_commission_amount": (
             money(row.commission_amount) if can_see_internal else None
         ),
@@ -173,6 +178,7 @@ def order_item(row, *, can_see_internal: bool) -> dict:
         "pending_payment_amount": amounts["pending_amount"],
         "refund_pending_amount": amounts["refund_pending_amount"],
         "refunded_amount": amounts["refunded_amount"],
+        "foreign_payment_count": amounts["foreign_payment_count"],
         "commission_percent": (
             money(booking.commission_percent_snapshot) if can_see_internal else None
         ),
@@ -193,6 +199,7 @@ def _order_payment_amounts(row) -> dict:
         "pending_amount": money(row.pending_amount),
         "refund_pending_amount": money(row.refund_pending_amount),
         "refunded_amount": money(row.refunded_amount),
+        "foreign_payment_count": int(row.foreign_payment_count or 0),
     }
 
 

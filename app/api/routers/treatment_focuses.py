@@ -109,11 +109,11 @@ async def get_treatment_focus(
     except ValueError:
         focus = await focuses.get_by_slug(slug_or_id)
     if focus is None:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
 
     super_admin = is_super_admin(current_user)
     if not focus.is_active and not super_admin:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
     if include_translations and super_admin:
         return TreatmentFocusAdminRead.model_validate(focus)
     return TreatmentFocusRead.from_obj(focus, locale)
@@ -145,7 +145,7 @@ async def update_treatment_focus(
 ) -> TreatmentFocusAdminRead:
     focus = await focuses.get_by_id(focus_id)
     if focus is None:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
     updated = await focuses.update(focus, payload)
     return TreatmentFocusAdminRead.model_validate(updated)
 
@@ -163,7 +163,7 @@ async def upload_treatment_focus_image(
 ) -> TreatmentFocusAdminRead:
     focus = await focuses.get_by_id(focus_id)
     if focus is None:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
     try:
         content, content_type = await read_image_upload_as_webp(file)
     except ValueError as exc:
@@ -192,7 +192,7 @@ async def delete_treatment_focus_image(
 ) -> TreatmentFocusAdminRead:
     focus = await focuses.get_by_id(focus_id)
     if focus is None:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
     updated = await focuses.delete_image(focus, storage)
     return TreatmentFocusAdminRead.model_validate(updated)
 
@@ -208,5 +208,5 @@ async def delete_treatment_focus(
 ) -> None:
     focus = await focuses.get_by_id(focus_id)
     if focus is None:
-        raise not_found("Treatment focus not found")
+        raise not_found("No treatment focus found with this id")
     await focuses.delete(focus)

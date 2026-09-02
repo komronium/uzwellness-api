@@ -23,6 +23,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import CurrentUser, get_locale
+from app.api.rate_limits import checkout_callback_rate_limit
 from app.schemas.uzum_checkout import (
     CheckoutPaymentStatusRead,
     CheckoutSessionRead,
@@ -106,7 +107,11 @@ async def read_checkout_payment(
     )
 
 
-@router.post("/callback", responses=_DOC_RESPONSES)
+@router.post(
+    "/callback",
+    responses=_DOC_RESPONSES,
+    dependencies=[Depends(checkout_callback_rate_limit)],
+)
 async def acquiring_callback(
     request: Request,
     checkout: UzumCheckoutService = Depends(get_uzum_checkout_service),
@@ -118,7 +123,11 @@ async def acquiring_callback(
     return _ACK
 
 
-@router.post("/event", responses=_DOC_RESPONSES)
+@router.post(
+    "/event",
+    responses=_DOC_RESPONSES,
+    dependencies=[Depends(checkout_callback_rate_limit)],
+)
 async def business_event_callback(
     request: Request,
     checkout: UzumCheckoutService = Depends(get_uzum_checkout_service),
@@ -128,7 +137,11 @@ async def business_event_callback(
     return _ACK
 
 
-@router.post("/receipt", responses=_DOC_RESPONSES)
+@router.post(
+    "/receipt",
+    responses=_DOC_RESPONSES,
+    dependencies=[Depends(checkout_callback_rate_limit)],
+)
 async def receipt_callback(
     request: Request,
     checkout: UzumCheckoutService = Depends(get_uzum_checkout_service),

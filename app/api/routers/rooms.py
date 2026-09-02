@@ -110,7 +110,7 @@ async def search_rooms(
     if check_out <= check_in:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="check_out must be after check_in",
+            detail="Check-out must be at least one night after check-in.",
         )
     hits = await rooms.search(
         converter=converter,
@@ -146,9 +146,9 @@ async def get_room(
 ) -> RoomRead | RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     if room.deleted_at is not None and not await rooms.can_manage(room, current_user):
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     pricing = await rooms.enrich(room, converter)
     if include_translations:
         return room_admin_read(room, pricing)
@@ -185,7 +185,7 @@ async def update_room(
 ) -> RoomAdminRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     updated = await rooms.update(room, payload, current_user)
     return room_admin_read(updated, await rooms.enrich(updated, converter))
 
@@ -202,5 +202,5 @@ async def delete_room(
 ) -> None:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     await rooms.delete(room, current_user)

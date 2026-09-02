@@ -23,6 +23,7 @@ from decimal import Decimal
 from io import BytesIO
 
 import httpx
+from fastapi import HTTPException, status
 from PIL import Image as PILImage
 from PIL import ImageDraw
 from sqlalchemy import select
@@ -112,7 +113,15 @@ def _ensure_fonts() -> None:
                 pdfmetrics.registerFontFamily(_FONT, normal=_FONT, bold=_FONT_BOLD)
                 _FONTS_READY = True
                 return
-        raise RuntimeError("No Unicode TTF font available for voucher rendering")
+        # reportlab ships Vera, so reaching here means the install is broken.
+        # Still a server problem, not a bad request — say so in a sentence.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The voucher PDF cannot be generated right now. "
+                "Please try again later or ask us to email it to you."
+            ),
+        )
 
 
 _LABELS: dict[str, dict[str, str]] = {

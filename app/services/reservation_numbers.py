@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,4 +20,13 @@ async def next_reservation_number(
         )
         if exists is None:
             return reservation_number
-    raise RuntimeError("Could not generate a unique reservation number")
+    # Eight collisions in a row on a 16-digit number means the generator or the
+    # table is in a state we should not silently book against. Answer with a
+    # retry the guest can act on rather than a 500 they cannot.
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            "We could not assign a reservation number just now. "
+            "Please try booking again in a moment."
+        ),
+    )

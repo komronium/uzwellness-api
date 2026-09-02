@@ -86,8 +86,9 @@ async def test_booking_creation_emails_voucher_pdf(
 
     assert len(captured) == 1
     sent = captured[0]
-    assert booking["reservation_number"] in sent["subject"] or booking["code"] in (
-        sent["subject"]
+    assert (
+        booking["reservation_number"] in sent["subject"]
+        or booking["code"] in (sent["subject"])
     )
     attachments = sent["attachments"]
     assert len(attachments) == 1

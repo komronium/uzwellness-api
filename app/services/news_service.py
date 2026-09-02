@@ -144,7 +144,10 @@ class NewsService:
         if existing is not None and existing.id != exclude_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"News article with slug '{slug}' already exists",
+                detail=(
+                    f"Another news article already uses the address '{slug}'. "
+                    "Choose a different title or set an explicit slug."
+                ),
             )
         return slug
 

@@ -30,7 +30,7 @@ async def search_sanatorium_stays(
     if check_out <= check_in:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="check_out must be after check_in",
+            detail="Check-out must be at least one night after check-in.",
         )
     items, total = await search.search_stays(
         locale=locale,

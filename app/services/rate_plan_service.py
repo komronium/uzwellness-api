@@ -84,7 +84,8 @@ class RatePlanService:
         room = await self.db.get(Room, payload.room_id)
         if room is None or room.deleted_at is not None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Room not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No room found with this id",
             )
         await assert_sanatorium_access(
             self.db, room.sanatorium_id, user, action=_ACTION
@@ -191,17 +192,26 @@ class RatePlanService:
         if board == BoardType.ROOM_ONLY and (board_optional or board_price is not None):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_only board cannot have a board price",
+                detail=(
+                    "A room-only rate includes no meals, so it cannot carry a "
+                    "board price. Choose a board type or clear board_price."
+                ),
             )
         if board_optional and board_price is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="board_price is required when board_optional is true",
+                detail=(
+                    "Set board_price: an optional board is something the guest "
+                    "pays extra for."
+                ),
             )
         if not board_optional and board_price is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="board_price is only allowed when board_optional is true",
+                detail=(
+                    "board_price applies only when board_optional is true; "
+                    "included meals are already part of the rate."
+                ),
             )
         if (
             min_nights is not None
@@ -210,7 +220,7 @@ class RatePlanService:
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="max_nights must be >= min_nights",
+                detail="max_nights cannot be smaller than min_nights.",
             )
 
 

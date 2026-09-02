@@ -136,10 +136,16 @@ def _send_smtp(
 
 
 def _smtp_client() -> smtplib.SMTP:
-    """Open an SMTP connection: implicit SSL (465) or STARTTLS (587)."""
+    """Open an SMTP connection: implicit SSL (465) or STARTTLS (587).
+
+    The timeout is not optional: without it smtplib blocks forever on a host
+    that never replies, and the two pool threads that carry every booking and
+    cancellation email would never come back.
+    """
+    timeout = settings.SMTP_TIMEOUT_SECONDS
     if settings.SMTP_USE_SSL:
-        return smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT)
-    client = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
+        return smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout)
+    client = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout)
     if settings.SMTP_USE_TLS:
         client.starttls()
     return client

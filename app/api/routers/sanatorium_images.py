@@ -43,7 +43,7 @@ async def upload_image(
 ) -> SanatoriumImageRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
 
     content, mime = await read_image_upload_as_webp(file)
@@ -56,9 +56,9 @@ async def upload_image(
         is_primary=is_primary,
         is_360=is_360,
         category=category,
-        caption_i18n=json_form(caption_i18n, default={}),
-        alt_text=json_form(alt_text, default={}),
-        tags=json_form(tags, default=[]),
+        caption_i18n=json_form(caption_i18n, default={}, field="caption_i18n"),
+        alt_text=json_form(alt_text, default={}, field="alt_text"),
+        tags=json_form(tags, default=[], field="tags"),
         order=order,
     )
     return SanatoriumImageRead.model_validate(image)
@@ -78,10 +78,10 @@ async def update_image(
 ) -> SanatoriumImageRead:
     image = await images.get(image_id)
     if image is None or image.sanatorium_id != sanatorium_id:
-        raise not_found("Image not found")
+        raise not_found("No image found with this id")
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await images.update(
         image,
@@ -117,9 +117,9 @@ async def delete_image(
 ) -> None:
     image = await images.get(image_id)
     if image is None or image.sanatorium_id != sanatorium_id:
-        raise not_found("Image not found")
+        raise not_found("No image found with this id")
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
-        raise not_found("Sanatorium not found")
+        raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     await images.delete(image, storage)

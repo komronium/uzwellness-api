@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import Depends, HTTPException, Request, status
@@ -44,6 +44,8 @@ from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.user import User, UserRole
+from app.core.errors import missing_exchange_rate
+from app.services.booking_visibility import admin_owns_booking_sanatorium
 from app.models.uzum_checkout_event import UzumCheckoutCallbackKind, UzumCheckoutEvent
 from app.schemas.uzum_checkout import (
     AcquiringCallback,
@@ -94,7 +96,11 @@ class UzumCheckoutService:
         if not settings.uzum_checkout_enabled:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Uzum Checkout is not configured",
+                detail=(
+                    "Card payment is not available right now. "
+                    "Please pay at the property or contact "
+                    "support@uzwellness.com."
+                ),
             )
 
         booking = await self.db.scalar(
@@ -102,9 +108,10 @@ class UzumCheckoutService:
         )
         if booking is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No booking found with this id under your account",
             )
-        self._assert_may_pay(booking, user)
+        await self._assert_may_pay(booking, user)
         await self._assert_unpaid(booking)
 
         # An earlier attempt may still be open on Uzum's side; reuse its form
@@ -118,7 +125,10 @@ class UzumCheckoutService:
         if amount_tiyin <= 0:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Booking total must be positive to pay online",
+                detail=(
+                    "This booking has nothing left to pay online. "
+                    "Please contact support@uzwellness.com if that looks wrong."
+                ),
             )
 
         payment_id = uuid7()
@@ -142,9 +152,16 @@ class UzumCheckoutService:
             logger.warning(
                 "Uzum Checkout register failed for booking %s: %s", booking.code, exc
             )
+            # exc.message is Uzum's own Russian/English operator text; the
+            # guest gets a sentence they can act on and the code for support.
+            reference = f" (Uzum code {exc.code})" if exc.code is not None else ""
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Uzum Checkout rejected the payment: {exc.message}"[:500],
+                detail=(
+                    "Uzum Bank could not open the payment form for this "
+                    f"booking{reference}. Please try again in a minute, or pay "
+                    "at the property."
+                ),
             ) from exc
 
         order_id = pick_order_id(result)
@@ -153,7 +170,10 @@ class UzumCheckoutService:
             logger.error("Uzum Checkout register returned %s", result)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Uzum Checkout did not return a payment URL",
+                detail=(
+                    "Uzum Bank did not return a payment page for this booking. "
+                    "Please try again in a minute, or pay at the property."
+                ),
             )
 
         payment = Payment(
@@ -209,11 +229,12 @@ class UzumCheckoutService:
         payment = await self.db.get(Payment, payment_id)
         if payment is None or payment.method != PaymentMethod.UZUM_CHECKOUT:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No payment found with this id",
             )
         booking = await self.db.get(Booking, payment.booking_id)
         if booking is not None:
-            self._assert_may_pay(booking, user)
+            await self._assert_may_pay(booking, user)
         if not payment.provider_payment_id:
             return payment, ""
         try:
@@ -243,8 +264,22 @@ class UzumCheckoutService:
         booking = await self.db.get(Booking, payment.booking_id)
 
         confirmed = False
-        if order_status == ORDER_COMPLETED:
-            self._check_amount(payment, result)
+        if order_status == ORDER_COMPLETED and not self._amount_matches(
+            payment, result
+        ):
+            # Uzum settled a different sum than the one we registered, so we
+            # do not know what this booking is owed. Leaving the payment where
+            # it is (pending) keeps the stay unconfirmed and keeps the row in
+            # every "needs attention" list, which is the honest answer; marking
+            # it paid would tell the property money arrived that may not have.
+            logger.error(
+                "Uzum Checkout order %s settled an unexpected amount; payment "
+                "%s left %s for manual review",
+                payment.provider_payment_id,
+                payment.id,
+                payment.status,
+            )
+        elif order_status == ORDER_COMPLETED:
             if booking is not None and booking.status == BookingStatus.CANCELLED:
                 # The form stays open after a cancellation and Uzum has no way
                 # to withdraw an order, so the guest can still pay for a stay
@@ -288,26 +323,32 @@ class UzumCheckoutService:
             await send_booking_confirmed_email(self.db, booking)
 
     @staticmethod
-    def _check_amount(payment: Payment, result: dict) -> None:
-        """Warn when Uzum settled a different sum than the one we registered.
+    def _amount_matches(payment: Payment, result: dict) -> bool:
+        """Whether Uzum settled exactly the sum we registered.
 
-        ``completedAmount`` is what actually left the card, in tiyin. It should
-        equal the payment's own amount; a gap means a partial refund happened
-        outside this flow, or the order does not belong to this payment.
+        ``completedAmount`` is what actually left the card, in tiyin. A gap
+        means a partial refund happened outside this flow, or the order does
+        not belong to this payment — either way the booking must not be
+        treated as paid on it.
+
+        Uzum does not always send the field; when it is absent there is
+        nothing to disagree with, so the order is taken at its word.
         """
 
         completed = result.get("completedAmount")
         if not isinstance(completed, int):
-            return
+            return True
         expected = int((payment.amount * _TIYIN).to_integral_value(ROUND_HALF_UP))
-        if completed != expected:
-            logger.error(
-                "Uzum Checkout order %s settled %s tiyin, expected %s (payment %s)",
-                payment.provider_payment_id,
-                completed,
-                expected,
-                payment.id,
-            )
+        if completed == expected:
+            return True
+        logger.error(
+            "Uzum Checkout order %s settled %s tiyin, expected %s (payment %s)",
+            payment.provider_payment_id,
+            completed,
+            expected,
+            payment.id,
+        )
+        return False
 
     # --- inbound: callbacks --------------------------------------------------
 
@@ -413,19 +454,34 @@ class UzumCheckoutService:
 
     # --- helpers -------------------------------------------------------------
 
-    @staticmethod
-    def _assert_may_pay(booking: Booking, user: User) -> None:
-        if user.role == UserRole.CUSTOMER and booking.user_id != user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not allowed to pay for this booking",
-            )
+    async def _assert_may_pay(self, booking: Booking, user: User) -> None:
+        """Only the guest who booked, their property's admin, or the platform.
+
+        Checking the customer role alone left agents and the transfer operator
+        able to open a Checkout form against any booking id.
+        """
+
+        if user.role == UserRole.SUPER_ADMIN:
+            return
+        if user.role == UserRole.ADMIN and await admin_owns_booking_sanatorium(
+            self.db, booking, user.id
+        ):
+            return
+        if booking.user_id is not None and booking.user_id == user.id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This booking belongs to another account.",
+        )
 
     async def _assert_unpaid(self, booking: Booking) -> None:
         if booking.status == BookingStatus.CANCELLED:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot pay for a cancelled booking",
+                detail=(
+                    "This booking was cancelled, so it cannot be paid. "
+                    "Please make a new booking."
+                ),
             )
         settled = await self.db.scalar(
             select(Payment).where(
@@ -435,7 +491,41 @@ class UzumCheckoutService:
         )
         if settled is not None:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Booking is already paid"
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This booking has already been paid in full.",
+            )
+        await self._assert_no_merchant_transaction(booking)
+
+    async def _assert_no_merchant_transaction(self, booking: Booking) -> None:
+        """Refuse a card form while the guest is mid-payment in the Uzum app.
+
+        Checkout and the Merchant API are separate Uzum products that settle
+        independently, so a guest holding an open transaction in one and a
+        form in the other can be charged twice for the same stay. Only a
+        *live* transaction blocks: Uzum abandons an unconfirmed one after
+        ``UZUM_TRANSACTION_TIMEOUT_MINUTES``, and a stale row must not lock
+        the booking out of paying at all.
+        """
+
+        cutoff = datetime.now(UTC) - timedelta(
+            minutes=settings.UZUM_TRANSACTION_TIMEOUT_MINUTES
+        )
+        in_flight = await self.db.scalar(
+            select(Payment).where(
+                Payment.booking_id == booking.id,
+                Payment.method == PaymentMethod.UZUM,
+                Payment.status == PaymentStatus.PENDING,
+                Payment.created_at >= cutoff,
+            )
+        )
+        if in_flight is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A payment for this booking is already open in the Uzum "
+                    "Bank app. Finish it there, or wait a few minutes and try "
+                    "again."
+                ),
             )
 
     async def _reusable_session(self, booking: Booking) -> CheckoutSessionRead | None:
@@ -477,7 +567,7 @@ class UzumCheckoutService:
             if payment.status == PaymentStatus.PAID:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Booking is already paid",
+                    detail="This booking has already been paid in full.",
                 )
             if order_status == ORDER_REGISTERED:
                 return CheckoutSessionRead(
@@ -517,10 +607,7 @@ class UzumCheckoutService:
                 booking.currency,
                 booking.code,
             )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Missing {booking.currency}_UZS exchange rate",
-            )
+            raise missing_exchange_rate(booking.currency, CHECKOUT_CURRENCY)
         return amount
 
     async def _payment_details(self, booking: Booking, locale: str | None) -> str:

@@ -11,6 +11,10 @@ from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.models.user import User, UserRole
+from app.services.booking_visibility import (
+    admin_owns_booking_sanatorium,
+    booking_visibility_clauses,
+)
 from app.services.email_service import BookingEmailContext, send_booking_confirmed
 
 logger = logging.getLogger(__name__)
@@ -65,20 +69,25 @@ class PaymentService:
                 ),
             )
 
-        booking = await self.db.get(Booking, booking_id)
+        # The same visibility rule as GET /bookings/{id}. Checking only the
+        # customer role would let an agent or the transfer operator open a
+        # payment against any booking id they can guess.
+        stmt = select(Booking).where(Booking.id == booking_id)
+        for clause in booking_visibility_clauses(user):
+            stmt = stmt.where(clause)
+        booking = await self.db.scalar(stmt)
         if booking is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-            )
-        if user.role == UserRole.CUSTOMER and booking.user_id != user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not allowed to pay for this booking",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No booking found with this id under your account",
             )
         if booking.status == BookingStatus.CANCELLED:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot pay for a cancelled booking",
+                detail=(
+                    "This booking was cancelled, so it cannot be paid. "
+                    "Please make a new booking."
+                ),
             )
         already_paid = await self.db.scalar(
             select(Payment).where(
@@ -89,7 +98,7 @@ class PaymentService:
         if already_paid is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Booking is already paid",
+                detail="This booking has already been paid in full.",
             )
 
         payment = Payment(
@@ -101,9 +110,9 @@ class PaymentService:
             merchant_trans_id=booking.reservation_number,
         )
         # Cash is collected on arrival, so the stay stays unpaid until an admin
-        # confirms it.
-        if booking.status != BookingStatus.COMPLETED:
-            booking.status = BookingStatus.PENDING
+        # confirms it — which is already the status a new booking carries, so
+        # there is nothing to move here. Forcing PENDING would have undone a
+        # confirmation that some other payment had legitimately made.
         self.db.add(payment)
         await self.db.commit()
         await self.db.refresh(payment)
@@ -113,17 +122,25 @@ class PaymentService:
         if user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admin/super_admin can confirm cash payments",
+                detail=(
+                    "Only a property administrator or a platform administrator "
+                    "can confirm a cash payment."
+                ),
             )
         payment = await self.db.get(Payment, payment_id)
         if payment is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No payment found with this id",
             )
         if payment.method != PaymentMethod.CASH:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only cash payments can be confirmed here",
+                detail=(
+                    f"This is a {payment.method} payment. Only cash payments "
+                    "are confirmed here; card payments settle through the "
+                    "payment provider."
+                ),
             )
         if payment.status == PaymentStatus.PAID:
             return payment
@@ -132,14 +149,29 @@ class PaymentService:
         if payment.status != PaymentStatus.PENDING:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Payment is {payment.status}, only pending cash can be confirmed",
+                detail=(
+                    f"This payment is {payment.status}; only a pending cash "
+                    "payment can be confirmed."
+                ),
             )
 
         booking = await self.db.get(Booking, payment.booking_id)
+        # A property admin may only settle money for their own property.
+        if (
+            booking is not None
+            and user.role == UserRole.ADMIN
+            and not await admin_owns_booking_sanatorium(self.db, booking, user.id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This payment belongs to a booking at another property.",
+            )
         if booking is not None and booking.status == BookingStatus.CANCELLED:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot confirm payment for a cancelled booking",
+                detail=(
+                    "This booking was cancelled, so its payment cannot be confirmed."
+                ),
             )
 
         payment.status = PaymentStatus.PAID

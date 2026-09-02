@@ -16,7 +16,10 @@ from app.models.availability import RoomAvailability
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 
-ROOM_UNAVAILABLE_DETAIL = "Selected room is no longer available"
+ROOM_UNAVAILABLE_DETAIL = (
+    "This room is no longer available for the dates you selected. "
+    "Please pick different dates or another room."
+)
 
 
 async def approved_sanatorium(db: AsyncSession, sanatorium_id) -> Sanatorium:
@@ -46,7 +49,9 @@ async def reserve_units(
     db: AsyncSession, room: Room, *, dates: list, rooms_count: int
 ) -> None:
     if room.inventory_count < 1:
-        raise conflict("Room has no inventory")
+        raise conflict(
+            "This room type has no units left to sell. Please choose another room."
+        )
     existing = {
         row.date: row
         for row in await db.scalars(
@@ -71,8 +76,11 @@ async def reserve_units(
             )
             continue
         if row.units_blocked + row.units_booked + rooms_count > room.inventory_count:
-            free = room.inventory_count - row.units_blocked - row.units_booked
+            free = max(room.inventory_count - row.units_blocked - row.units_booked, 0)
+            night = target.strftime("%d %b %Y")
             raise conflict(
-                f"Only {max(free, 0)} unit(s) free on {target}, need {rooms_count}"
+                f"Your party needs {rooms_count} room(s) of this type, but only "
+                f"{free} are free on {night}. Please pick different dates, "
+                "fewer guests, or another room."
             )
         row.units_booked += rooms_count

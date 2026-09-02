@@ -66,7 +66,7 @@ async def get_program(
 ) -> TreatmentProgramRead | TreatmentProgramAdminRead:
     program = await programs.get_by_id(program_id)
     if program is None:
-        raise not_found("Program not found")
+        raise not_found("No programme found with this id")
     if include_translations:
         return TreatmentProgramAdminRead.model_validate(program)
     return TreatmentProgramRead.from_obj(program, locale, converter)
@@ -100,7 +100,7 @@ async def update_program(
 ) -> TreatmentProgramAdminRead:
     program = await programs.get_by_id(program_id)
     if program is None:
-        raise not_found("Program not found")
+        raise not_found("No programme found with this id")
     updated = await programs.update(program, payload, current_user)
     return TreatmentProgramAdminRead.model_validate(updated)
 
@@ -117,5 +117,5 @@ async def delete_program(
 ) -> None:
     program = await programs.get_by_id(program_id)
     if program is None:
-        raise not_found("Program not found")
+        raise not_found("No programme found with this id")
     await programs.delete(program, current_user)

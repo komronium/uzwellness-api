@@ -8,7 +8,13 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import create_token, decode_token, hash_password, verify_password
+from app.core.errors import ACCOUNT_DISABLED, SESSION_EXPIRED, SESSION_INVALID
+from app.core.security import (
+    create_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.auth import Token
@@ -25,7 +31,10 @@ class AuthService:
         if await self.users.get_by_email(payload.email) is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered",
+                detail=(
+                    "An account with this email already exists. "
+                    "Sign in instead, or use a different email address."
+                ),
             )
         return await self.users.create(payload)
 
@@ -34,7 +43,9 @@ class AuthService:
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
+                # Deliberately the same answer for an unknown email and a wrong
+                # password, so the response cannot be used to enumerate accounts.
+                detail="Email or password is incorrect. Please try again.",
             )
         return await self._issue_token_pair(user.id)
 
@@ -44,7 +55,11 @@ class AuthService:
         if not email or not userinfo.get("email_verified"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Google account email is not verified",
+                detail=(
+                    "Your Google account has no verified email address, so we "
+                    "cannot sign you in with it. Verify it with Google, or "
+                    "register with an email and password instead."
+                ),
             )
         user = await self.users.get_by_email(email)
         if user is None:
@@ -61,7 +76,7 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is disabled",
+                detail=ACCOUNT_DISABLED,
             )
         return await self._issue_token_pair(user.id)
 
@@ -71,7 +86,7 @@ class AuthService:
         if record is None or record.user_id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token revoked or invalid",
+                detail=SESSION_INVALID,
             )
         if record.revoked:
             # Replay attempt: someone presented a token that's already been
@@ -81,19 +96,22 @@ class AuthService:
             await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token revoked or invalid",
+                detail=SESSION_INVALID,
             )
         if record.expires_at < datetime.now(UTC):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token expired",
+                detail=SESSION_EXPIRED,
             )
 
         user = await self.users.get_by_id(user_id)
         if user is None or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive",
+                detail=(
+                    "This account is no longer active. "
+                    "Please contact support@uzwellness.com."
+                ),
             )
 
         record.revoked = True
@@ -116,7 +134,7 @@ class AuthService:
         if not verify_password(current_password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Current password is incorrect",
+                detail="The current password you entered is incorrect.",
             )
         user.password_hash = hash_password(new_password)
         await self._revoke_all_for_user(user.id)
@@ -152,13 +170,14 @@ class AuthService:
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token",
+                detail=SESSION_INVALID,
             ) from exc
 
         if claims.get("type") != "refresh":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Wrong token type",
+                # An access token sent to /auth/refresh.
+                detail=SESSION_INVALID,
             )
 
         try:
@@ -167,7 +186,7 @@ class AuthService:
         except (KeyError, ValueError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token subject",
+                detail=SESSION_INVALID,
             ) from exc
         return user_id, jti
 

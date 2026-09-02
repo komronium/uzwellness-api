@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.db_utils import lock_rows
 from app.core.permissions import assert_sanatorium_access
 from app.core.utils import date_range
 from app.models.availability import RoomAvailability
@@ -81,6 +82,7 @@ class RoomAvailabilityService:
             self.db, room.sanatorium_id, user, action="manage this room's availability"
         )
         all_dates = date_range(payload.date_from, payload.date_to)
+        await lock_rows(self.db, Room, [room.id])
         existing = await self._locked_rows(room, all_dates)
         self._assert_units_within_inventory(payload.units_blocked, room)
 
@@ -103,6 +105,7 @@ class RoomAvailabilityService:
             self.db, room.sanatorium_id, user, action="manage this room's availability"
         )
         self._assert_units_within_inventory(units_blocked, room)
+        await lock_rows(self.db, Room, [room.id])
         row = await self.db.scalar(
             select(RoomAvailability)
             .where(
@@ -124,12 +127,13 @@ class RoomAvailabilityService:
         if payload.date_from > payload.date_to:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="date_from must be on or before date_to",
+                detail="date_from must be the same day as, or before, date_to.",
             )
         await assert_sanatorium_access(
             self.db, room.sanatorium_id, user, action="manage this room's availability"
         )
         dates = date_range(payload.date_from, payload.date_to + timedelta(days=1))
+        await lock_rows(self.db, Room, [room.id])
         existing = await self._locked_rows(room, dates)
         result = [
             self._set_available(existing.get(d), room, d, payload.units_available)
@@ -143,7 +147,7 @@ class RoomAvailabilityService:
         if payload.date_from >= payload.date_to:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="date_from must be before date_to",
+                detail="date_to must be at least one day after date_from.",
             )
 
     async def _locked_rows(
@@ -165,8 +169,9 @@ class RoomAvailabilityService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"units_blocked ({units_blocked}) exceeds inventory_count "
-                    f"({room.inventory_count})"
+                    f"You cannot block {units_blocked} units: this room type "
+                    f"only has {room.inventory_count}. Raise inventory_count "
+                    "first, or block fewer."
                 ),
             )
 
@@ -210,8 +215,9 @@ class RoomAvailabilityService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"units_available ({units_available}) exceeds remaining "
-                    f"inventory ({max_available}) on {target}"
+                    f"Only {max_available} of {room.inventory_count} units "
+                    f"are free on {target}; the rest are already booked, so "
+                    f"{units_available} cannot be opened for sale."
                 ),
             )
         units_blocked = room.inventory_count - booked - units_available
@@ -225,8 +231,9 @@ class RoomAvailabilityService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"units_blocked ({units_blocked}) + booked ({booked}) "
-                    f"exceeds inventory_count ({room.inventory_count}) on {target}"
+                    f"Blocking {units_blocked} units on {target} on top of "
+                    f"{booked} already booked exceeds the "
+                    f"{room.inventory_count} units this room type has."
                 ),
             )
 

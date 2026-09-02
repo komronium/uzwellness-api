@@ -50,7 +50,7 @@ async def list_reviews(
     if sanatorium_id is None and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="sanatorium_id is required",
+            detail="Pass sanatorium_id to list the reviews of a property.",
         )
     items, total = await reviews.list_reviews(
         sanatorium_id=sanatorium_id,
@@ -116,7 +116,7 @@ async def update_review_visibility(
 ) -> ReviewRead:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise not_found("Review not found")
+        raise not_found("No review found with this id")
     updated = await reviews.update_visibility(review, payload, current_user)
     return ReviewRead.model_validate(updated)
 
@@ -134,7 +134,7 @@ async def reply_to_review(
 ) -> ReviewRead:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise not_found("Review not found")
+        raise not_found("No review found with this id")
     updated = await reviews.reply(review, payload, current_user)
     return ReviewRead.model_validate(updated)
 
@@ -152,7 +152,7 @@ async def appeal_review(
 ) -> ReviewRead:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise not_found("Review not found")
+        raise not_found("No review found with this id")
     updated = await reviews.appeal(review, payload, current_user)
     return ReviewRead.model_validate(updated)
 
@@ -165,5 +165,5 @@ async def delete_review(
 ) -> None:
     review = await reviews.get_by_id(review_id)
     if review is None:
-        raise not_found("Review not found")
+        raise not_found("No review found with this id")
     await reviews.delete(review, current_user)

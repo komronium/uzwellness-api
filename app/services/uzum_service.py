@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import Depends
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -375,19 +375,32 @@ class UzumService:
             raise UzumError(
                 UzumErrorCode.ALREADY_PAID, f"booking {booking.code} is already paid"
             )
-        # A pending *cash* intent is not a payment, but a live Uzum transaction
-        # is — opening a second one risks charging the guest twice.
+        # A pending *cash* intent is not a payment, but a live Uzum one is —
+        # opening a second one risks charging the guest twice. Both Uzum
+        # products count: Checkout settles on its own, so an open card form on
+        # our site is just as much a payment in progress as a transaction in
+        # the app. A Checkout form that has already timed out is not, or an
+        # abandoned form would lock the booking out of ever being paid.
+        checkout_cutoff = datetime.now(UTC) - timedelta(
+            seconds=settings.UZUM_CHECKOUT_SESSION_TIMEOUT_SECS
+        )
         in_flight = await self.db.scalar(
             select(Payment).where(
                 Payment.booking_id == booking.id,
-                Payment.method == PaymentMethod.UZUM,
                 Payment.status == PaymentStatus.PENDING,
+                or_(
+                    Payment.method == PaymentMethod.UZUM,
+                    and_(
+                        Payment.method == PaymentMethod.UZUM_CHECKOUT,
+                        Payment.created_at >= checkout_cutoff,
+                    ),
+                ),
             )
         )
         if in_flight is not None:
             raise UzumError(
                 UzumErrorCode.ALREADY_PAID,
-                f"booking {booking.code} has transaction "
+                f"booking {booking.code} has a {in_flight.method} payment "
                 f"{in_flight.provider_payment_id} in progress",
             )
 

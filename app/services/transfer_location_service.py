@@ -44,7 +44,10 @@ class TransferLocationService:
         if location is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"{label} is not a known transfer location",
+                detail=(
+                    f"{label} does not match any transfer location. "
+                    "List the available ones with GET /transfer-locations."
+                ),
             )
         return location
 

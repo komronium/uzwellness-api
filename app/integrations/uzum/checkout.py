@@ -14,7 +14,8 @@ code is turned into :class:`UzumCheckoutApiError` here and never leaks upwards
 as a "successful" empty result.
 
 Auth is two headers, issued by Uzum per environment: ``X-Terminal-Id`` and
-``X-API-Key``.
+``X-API-Key``. Uzum hands over the production base URL together with the
+production terminal at go-live; it is not published in the spec.
 
 Docs: https://developer.uzumbank.uz/en/checkout/
 """
@@ -185,9 +186,24 @@ class UzumCheckoutClient:
                 )
                 response.raise_for_status()
                 payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            # Checkout answers 200 even for business failures, so a real HTTP
+            # status is an infrastructure problem — a wrong base URL, a proxy
+            # in front of it, an outage. The body names which, so log it; the
+            # guest only ever sees the sentence the service builds.
+            logger.warning(
+                "Uzum Checkout %s → HTTP %s: %s",
+                path,
+                exc.response.status_code,
+                exc.response.text[:500],
+            )
+            raise UzumCheckoutApiError(
+                f"Uzum Checkout refused the request with HTTP "
+                f"{exc.response.status_code}"
+            ) from exc
         except httpx.HTTPError as exc:
-            logger.warning("Uzum Checkout %s failed: %s", path, exc)
-            raise UzumCheckoutApiError(f"Uzum Checkout is unreachable: {exc}") from exc
+            logger.warning("Uzum Checkout %s failed: %r", path, exc)
+            raise UzumCheckoutApiError("Uzum Checkout is unreachable") from exc
         except ValueError as exc:
             logger.warning("Uzum Checkout %s returned non-JSON body", path)
             raise UzumCheckoutApiError(

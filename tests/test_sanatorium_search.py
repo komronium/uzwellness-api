@@ -203,7 +203,9 @@ async def test_sanatorium_search_rejects_invalid_date_range(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "check_out must be after check_in"
+    assert resp.json()["detail"] == (
+        "Check-out must be at least one night after check-in."
+    )
 
 
 async def test_sanatorium_search_filters_by_property_type(

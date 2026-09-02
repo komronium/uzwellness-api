@@ -449,9 +449,15 @@ class TestPaymentAfterCancellation:
         assert payment.paid_at is not None
         assert booking.status == BookingStatus.CANCELLED
 
-    async def test_settled_amount_mismatch_is_logged(
+    async def test_settled_amount_mismatch_does_not_confirm_the_stay(
         self, db: AsyncSession, caplog: pytest.LogCaptureFixture
     ):
+        """A sum we did not register leaves the payment for a human to read.
+
+        Calling it paid would tell the property money arrived that may never
+        have, and confirm a stay on it.
+        """
+
         owner = await make_user(db, email="late-2@test.com")
         booking = await _booking(db, owner)
         stub = StubCheckout()
@@ -466,4 +472,7 @@ class TestPaymentAfterCancellation:
         assert "settled 1 tiyin" in caplog.text
         payment = await db.get(Payment, session.payment_id)
         assert payment is not None
-        assert payment.status == PaymentStatus.PAID
+        assert payment.status == PaymentStatus.PENDING
+        assert payment.paid_at is None
+        await db.refresh(booking)
+        assert booking.status == BookingStatus.PENDING

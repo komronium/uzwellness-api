@@ -145,7 +145,7 @@ class TestSessionBookingValidation:
             headers=headers,
         )
         assert resp.status_code == 400
-        assert "not bookable" in resp.json()["detail"].lower()
+        assert "no price yet" in resp.json()["detail"].lower()
 
     async def test_inactive_program_returns_404(
         self, client: AsyncClient, db: AsyncSession

@@ -133,6 +133,9 @@ class BookingRead(BaseModel):
     free_cancellation_days: int | None = None
     cancellation_penalty_percent: Decimal | None = None
     cancellation_penalty_amount: Decimal | None = None
+    # What the property kept out of the money already paid when this booking
+    # was cancelled, under the terms above; null while it is live.
+    cancellation_penalty_snapshot: Decimal | None = None
     # Latest active cancellation request status (code_sent / awaiting_approval);
     # null when there is no pending cancellation. Admins use this to find
     # bookings awaiting approval.

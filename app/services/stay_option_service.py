@@ -72,7 +72,11 @@ class StayOptionService:
             if key in seen:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Duplicate stay option price",
+                    detail=(
+                        "The same combination of guest type, board and "
+                        "treatment appears twice in this list. Each "
+                        "combination may be priced only once."
+                    ),
                 )
             seen.add(key)
 

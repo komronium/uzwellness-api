@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # Implicit SSL (port 465). TimeWeb domain mailboxes use this; when true the
     # client connects over SSL directly instead of upgrading via STARTTLS.
     SMTP_USE_SSL: bool = False
+    # Every send runs on a two-thread pool, so a mail host that accepts the TCP
+    # connection and then stops answering would park both threads forever and
+    # silently stop all booking and cancellation email. Never leave this unset.
+    SMTP_TIMEOUT_SECONDS: float = 20.0
     RESEND_API_KEY: str | None = None
 
     # Booking voucher PDF
@@ -114,7 +118,11 @@ class Settings(BaseSettings):
     EXCHANGE_RATE_SYNC_CURRENCIES: list[str] = ["USD", "EUR", "RUB", "KZT"]
 
     RATE_LIMIT_ENABLED: bool = True
-    TRUSTED_PROXY_IPS: list[str] = []
+    # Peers whose X-Forwarded-For header may be believed. In production the app
+    # listens on 127.0.0.1 and only nginx can reach it, so without this every
+    # request looks like it comes from the proxy and the whole site shares one
+    # rate-limit bucket — ten failed logins would lock out every guest at once.
+    TRUSTED_PROXY_IPS: list[str] = ["127.0.0.1", "::1"]
 
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
@@ -202,6 +210,26 @@ class Settings(BaseSettings):
             )
         if self.EMAIL_BACKEND == "resend" and not self.RESEND_API_KEY:
             errors.append("RESEND_API_KEY is required when EMAIL_BACKEND=resend")
+        if self.EMAIL_BACKEND == "log":
+            # The default backend only writes to the log. In production that
+            # means booking confirmations and cancellation codes are never
+            # sent and nobody notices — every guest just waits for an email
+            # that will not arrive.
+            errors.append(
+                "EMAIL_BACKEND must be 'smtp' or 'resend' in production; "
+                "'log' silently discards every booking and cancellation email"
+            )
+        if "*" in self.CORS_ORIGINS:
+            # With allow_credentials=True a wildcard origin is both rejected by
+            # browsers and a session-theft risk if it ever were honoured.
+            errors.append("CORS_ORIGINS must list exact origins, never '*'")
+        insecure_origins = [
+            origin for origin in self.CORS_ORIGINS if origin.startswith("http://")
+        ]
+        if insecure_origins:
+            errors.append(
+                f"CORS_ORIGINS must be https in production: {', '.join(insecure_origins)}"
+            )
         if errors:
             raise ValueError("; ".join(errors))
         return self

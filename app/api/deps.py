@@ -2,15 +2,21 @@ import uuid
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, Header, HTTPException, Query, status
+from fastapi import Depends, Header, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.errors import (  # re-exported: routers and services import these
+    ACCOUNT_DISABLED,
+    SESSION_EXPIRED,
+    SESSION_INVALID,
+    SIGN_IN_REQUIRED,
+)
 from app.core.currency import (
     DEFAULT_DISPLAY_CURRENCY,
     CurrencyConverter,
     supported_display_currencies,
 )
-from app.core.security import decode_token
+from app.core.security import TokenExpiredError, decode_token
 from app.models.user import User, UserRole
 from app.services.exchange_rate_service import (
     ExchangeRateService,
@@ -23,26 +29,55 @@ DEFAULT_LOCALE = "en"
 
 Locale = Literal["uz", "ru", "en"]
 
-bearer_scheme = HTTPBearer(auto_error=True)
-optional_bearer_scheme = HTTPBearer(auto_error=False)
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+class _Bearer(HTTPBearer):
+    """HTTPBearer whose "no token" message reads like the rest of the API.
+
+    FastAPI's own wording is the bare "Not authenticated", and the frontend
+    prints ``detail`` to the guest unchanged.
+    """
+
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+        try:
+            return await super().__call__(request)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+                raise _unauthorized(SIGN_IN_REQUIRED) from exc
+            raise
+
+
+bearer_scheme = _Bearer(auto_error=True)
+optional_bearer_scheme = _Bearer(auto_error=False)
 
 
 def _resolve_user_id(credentials: HTTPAuthorizationCredentials) -> uuid.UUID:
-    error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    """The user id inside an access token, or 401 explaining what to do next.
+
+    An expired token is called out separately: it is the one case where the
+    guest did nothing wrong and signing in again fixes it.
+    """
+
     try:
         claims = decode_token(credentials.credentials)
+    except TokenExpiredError as exc:
+        raise _unauthorized(SESSION_EXPIRED) from exc
     except ValueError as exc:
-        raise error from exc
+        raise _unauthorized(SESSION_INVALID) from exc
     if claims.get("type") != "access":
-        raise error
+        # A refresh token sent where an access token belongs.
+        raise _unauthorized(SESSION_INVALID)
     try:
         return uuid.UUID(claims["sub"])
     except (KeyError, ValueError) as exc:
-        raise error from exc
+        raise _unauthorized(SESSION_INVALID) from exc
 
 
 async def get_current_user(
@@ -51,12 +86,10 @@ async def get_current_user(
 ) -> User:
     user_id = _resolve_user_id(credentials)
     user = await users.get_by_id(user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if user is None:
+        raise _unauthorized(SESSION_INVALID)
+    if not user.is_active:
+        raise _unauthorized(ACCOUNT_DISABLED)
     return user
 
 
@@ -70,12 +103,10 @@ async def get_optional_user(
         return None
     user_id = _resolve_user_id(credentials)
     user = await users.get_by_id(user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if user is None:
+        raise _unauthorized(SESSION_INVALID)
+    if not user.is_active:
+        raise _unauthorized(ACCOUNT_DISABLED)
     return user
 
 
@@ -190,17 +221,49 @@ def not_found(detail: str = "Not found") -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
+# What each role is called in a sentence a guest or a hotel manager can read.
+ROLE_LABELS: dict[UserRole, str] = {
+    UserRole.SUPER_ADMIN: "a platform administrator",
+    UserRole.ADMIN: "a property administrator",
+    UserRole.AGENT: "a B2B agent",
+    UserRole.TRANSFER_ADMIN: "the transfer operator",
+    UserRole.CUSTOMER: "a customer",
+}
+
+
+def describe_roles(roles: set[UserRole]) -> str:
+    """``{ADMIN, SUPER_ADMIN}`` → "a property administrator or a platform administrator"."""
+
+    labels = [ROLE_LABELS[role] for role in UserRole if role in roles]
+    if not labels:
+        return "another account type"
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])} or {labels[-1]}"
+
+
 def require_roles(
     *roles: UserRole,
-    detail: str = "Insufficient permissions",
+    detail: str | None = None,
 ) -> Callable[[User], Coroutine[Any, Any, User]]:
+    """Gate an endpoint on the caller's role.
+
+    The default 403 names the role that would work, because the frontend shows
+    ``detail`` verbatim and "Insufficient permissions" leaves the operator
+    guessing which of their logins to use.
+    """
+
     allowed = set(roles)
+    message = detail or (
+        f"This action is only available to {describe_roles(allowed)}. "
+        "Sign in with an account that has that role."
+    )
 
     async def _checker(user: CurrentUser) -> User:
         if user.role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=detail,
+                detail=message,
             )
         return user
 

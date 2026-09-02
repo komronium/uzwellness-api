@@ -742,12 +742,14 @@ class TestOrderInfo:
         assert Decimal(body["amount"]) == Decimal("1250000.00")
         assert body["currency"] == "UZS"
 
-    async def test_other_customer_is_forbidden(
+    async def test_other_customer_gets_not_found(
         self, client: AsyncClient, db: AsyncSession, customer_headers
     ):
+        """404, not 403 — the reply must not confirm that the booking exists."""
+
         booking = await make_booking(db, email="someone-else@test.com")
         resp = await client.get(f"{BASE}/order/{booking.id}", headers=customer_headers)
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     async def test_anonymous_is_unauthorized(
         self, client: AsyncClient, db: AsyncSession

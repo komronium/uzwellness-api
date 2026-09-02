@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, or_, select, update
@@ -28,6 +29,7 @@ from app.services.booking_flows import (
     SessionBookingFlow,
 )
 from app.services.booking_pricing_policy import BookingPricingPolicy
+from app.services.cancellation_policy import refund_for
 from app.services.booking_visibility import (
     admin_owns_booking_sanatorium,
     booking_visibility_clauses,
@@ -58,14 +60,18 @@ class BookingService:
         if payload.check_in < today_tashkent():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="check_in must be today or in the future",
+                detail=(
+                    "Check-in cannot be in the past. Please pick today or a later date."
+                ),
             )
         for flow in self.flows:
             if flow.matches(payload):
                 return await flow.create(payload, user, locale=locale)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One of room_id, program_id, or package_id is required",
+            detail=(
+                "A booking needs exactly one of room_id, program_id or package_id."
+            ),
         )
 
     async def list_for_user(
@@ -163,14 +169,18 @@ class BookingService:
         if user.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only sanatorium staff can process reservations",
+                detail=(
+                    "Only the property's own administrator or a platform "
+                    "administrator can mark a reservation as processed."
+                ),
             )
         locked = await self.db.scalar(
             select(Booking).where(Booking.id == booking.id).with_for_update()
         )
         if locked is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No booking found with this id under your account",
             )
         locked.is_processed = True
         locked.processed_at = datetime.now(UTC)
@@ -184,7 +194,8 @@ class BookingService:
         )
         if locked is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No booking found with this id under your account",
             )
         await self._assert_can_cancel(locked, user)
 
@@ -207,7 +218,7 @@ class BookingService:
                 row.units_booked = max(row.units_booked - locked.rooms_count, 0)
 
         locked.status = BookingStatus.CANCELLED
-        await self._mark_payments_for_refund(locked.id)
+        await self._mark_payments_for_refund(locked)
         # `included` transfers ride the booking's refund path; `unpaid` ones
         # simply stop being owed.
         await cancel_transfers_for_booking(self.db, locked.id)
@@ -239,16 +250,42 @@ class BookingService:
         )
         raise HTTPException(status_code=status_code, detail=reason)
 
-    async def _mark_payments_for_refund(self, booking_id: uuid.UUID) -> None:
+    async def _mark_payments_for_refund(self, booking: Booking) -> None:
+        """Queue the refund the booking's cancellation terms actually allow.
+
+        Everything settled is refunded unless the rate plan says otherwise, so
+        the terms are consulted rather than assumed: a non-refundable rate
+        refunds nothing, a fee outside the free window is withheld, and what
+        the property keeps is written to the booking so an admin can see why
+        the guest got less than they paid.
+        """
+
         payments = (
             await self.db.scalars(
-                select(Payment).where(Payment.booking_id == booking_id)
+                select(Payment).where(Payment.booking_id == booking.id)
             )
         ).all()
-        for p in payments:
-            if p.status == PaymentStatus.PAID:
+        settled = [p for p in payments if p.status == PaymentStatus.PAID]
+        paid_total = sum((p.amount for p in settled), Decimal("0"))
+        breakdown = refund_for(booking, paid_total, today=today_tashkent())
+        booking.cancellation_penalty_snapshot = breakdown.penalty_amount
+
+        # Spread the refund over the settled payments oldest-first, so a
+        # withheld fee comes off the most recent one and each row still says
+        # exactly what is owed back on it.
+        remaining = breakdown.refund_amount
+        for p in sorted(settled, key=lambda row: row.created_at or datetime.min):
+            owed = min(p.amount, remaining)
+            remaining -= owed
+            p.refund_amount = owed
+            if owed > 0:
                 p.status = PaymentStatus.REFUND_PENDING
-            elif p.status == PaymentStatus.PENDING:
+            # A payment with nothing to give back stays PAID: the money was
+            # kept as the cancellation fee, and calling it refund_pending
+            # would put a refund nobody owes on the finance report.
+
+        for p in payments:
+            if p.status == PaymentStatus.PENDING:
                 p.status = PaymentStatus.CANCELLED
 
     async def _load(self, booking_id: uuid.UUID) -> Booking | None:

@@ -28,7 +28,7 @@ async def get_room_availability(
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     rows = await availability.get_availability(room, date_from, date_to)
     return [_availability_read(row) for row in rows]
 
@@ -48,7 +48,7 @@ async def block_availability_range(
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     rows = await availability.block_range(room, payload, current_user)
     return [_availability_read(row) for row in rows]
 
@@ -67,7 +67,7 @@ async def set_available_allotment(
 ) -> list[AvailabilityRead]:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     rows = await availability.set_available_allotment(room, payload, current_user)
     return [_availability_read(row) for row in rows]
 
@@ -87,7 +87,7 @@ async def upsert_room_availability(
 ) -> AvailabilityRead:
     room = await rooms.get_by_id(room_id)
     if room is None:
-        raise not_found("Room not found")
+        raise not_found("No room found with this id")
     row = await availability.set_blocked_for_date(
         room, target_date, payload.units_blocked, current_user
     )

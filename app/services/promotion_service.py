@@ -173,17 +173,25 @@ class PromotionService:
                 )
             ).all()
         )
-        if len({rate_plan.id for rate_plan in rate_plans}) != len(set(rate_plan_ids)):
+        missing = sorted(
+            str(plan_id)
+            for plan_id in set(rate_plan_ids)
+            - {rate_plan.id for rate_plan in rate_plans}
+        )
+        if missing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more rate_plan IDs not found",
+                detail=f"No rate plan found with id: {', '.join(missing)}",
             )
         if any(
             rate_plan.room.sanatorium_id != sanatorium_id for rate_plan in rate_plans
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="rate_plan_ids must belong to the selected sanatorium",
+                detail=(
+                    "Every rate plan in rate_plan_ids must belong to the "
+                    "property this promotion is for."
+                ),
             )
         return rate_plans
 
@@ -191,7 +199,8 @@ class PromotionService:
         promotion = await self.get_by_id(promotion_id)
         if promotion is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Promotion not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No promotion found with this id",
             )
         return promotion
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.db_utils import lock_rows
 from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import calculate_rate_plan_night_price
 from app.core.utils import date_range
@@ -45,7 +46,7 @@ class BulkAvailabilityService:
             self.db, payload.sanatorium_id, user, action="bulk edit availability"
         )
         dates = _scope_dates(payload.date_ranges, payload.weekdays)
-        rooms = {rate_plan.room for rate_plan in rate_plans}
+        rooms = sorted({rate_plan.room for rate_plan in rate_plans}, key=lambda r: r.id)
         updated = 0
         for room in rooms:
             existing = await self._availability(room.id, dates)
@@ -58,7 +59,12 @@ class BulkAvailabilityService:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail=(
-                            f"units_available exceeds remaining inventory on {target}"
+                            f"On {target} only "
+                            f"{room.inventory_count - booked} of "
+                            f"{room.inventory_count} units are free after "
+                            f"existing bookings, so {payload.units_available} "
+                            "cannot be opened for sale. Tick "
+                            "allow_overbooking if that is intended."
                         ),
                     )
                 units_blocked = max(
@@ -281,13 +287,19 @@ class BulkAvailabilityService:
         if len({row.id for row in rows}) != len(set(rate_plan_ids)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="rate_plan_ids must belong to the selected sanatorium",
+                detail=(
+                    "Every rate plan in rate_plan_ids must belong to the "
+                    "property you are editing."
+                ),
             )
         return rows
 
     async def _rules(
         self, rate_plan_ids: list[uuid.UUID], dates: list[date]
     ) -> dict[tuple[uuid.UUID, date], RatePlanDateRule]:
+        # Missing rules are inserted below; lock the parent so two editors
+        # cannot both insert the same (rate_plan, date).
+        await lock_rows(self.db, RatePlan, rate_plan_ids)
         rows = list(
             (
                 await self.db.scalars(
@@ -305,6 +317,8 @@ class BulkAvailabilityService:
     async def _availability(
         self, room_id: uuid.UUID, dates: list[date]
     ) -> dict[date, RoomAvailability]:
+        # Same reason as _rules, and the same lock a booking takes first.
+        await lock_rows(self.db, Room, [room_id])
         rows = await self.db.scalars(
             select(RoomAvailability)
             .where(
@@ -440,7 +454,10 @@ def _source_date(
     if not source_dates:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="source date range has no dates after weekday filtering",
+            detail=(
+                "The source date range contains none of the weekdays you "
+                "selected, so there is nothing to copy."
+            ),
         )
     if alignment == CopyRateAlignment.DAY_OF_WEEK:
         matches = [d for d in source_dates if d.weekday() == target.weekday()]

@@ -75,7 +75,7 @@ async def get_promotion(
 ) -> PromotionRead:
     promotion = await promotions.get_by_id(promotion_id)
     if promotion is None:
-        raise not_found("Promotion not found")
+        raise not_found("No promotion found with this id")
     await promotions.list_for_sanatorium(
         promotion.sanatorium_id,
         current_user,
@@ -127,7 +127,7 @@ async def update_promotion(
 ) -> PromotionRead:
     promotion = await promotions.get_by_id(promotion_id)
     if promotion is None:
-        raise not_found("Promotion not found")
+        raise not_found("No promotion found with this id")
     updated = await promotions.update(promotion, payload, current_user)
     return PromotionRead.from_obj(
         updated,
@@ -210,7 +210,7 @@ async def duplicate_promotion(
 ) -> PromotionRead:
     promotion = await promotions.get_by_id(promotion_id)
     if promotion is None:
-        raise not_found("Promotion not found")
+        raise not_found("No promotion found with this id")
     copy = await promotions.duplicate(promotion, current_user)
     return PromotionRead.from_obj(copy, locale=locale, stats=promotions.stats_for(copy))
 
@@ -224,7 +224,7 @@ async def _set_status(
 ) -> PromotionRead:
     promotion = await promotions.get_by_id(promotion_id)
     if promotion is None:
-        raise not_found("Promotion not found")
+        raise not_found("No promotion found with this id")
     updated = await promotions.set_status(promotion, status_value, current_user)
     return PromotionRead.from_obj(
         updated,

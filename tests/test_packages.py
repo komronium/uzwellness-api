@@ -206,7 +206,7 @@ async def test_inactive_room_rejected_on_create(
         headers=admin_headers,
     )
     assert resp.status_code == 400
-    assert "inactive" in resp.json()["detail"].lower()
+    assert "not active" in resp.json()["detail"].lower()
 
 
 async def test_create_requires_all_three_locales(
@@ -713,7 +713,7 @@ async def test_admin_cannot_feature_own_package(
         headers=admin_headers,
     )
     assert resp.status_code == 403
-    assert "super_admin" in resp.json()["detail"]
+    assert "platform administrator" in resp.json()["detail"]
     assert "is_featured" in resp.json()["detail"]
 
 
@@ -730,7 +730,11 @@ async def test_admin_cannot_set_display_order(
 
 
 async def test_super_admin_can_feature_package(
-    client: AsyncClient, package_sanatorium, usd_room, admin_headers, super_admin_headers
+    client: AsyncClient,
+    package_sanatorium,
+    usd_room,
+    admin_headers,
+    super_admin_headers,
 ) -> None:
     pid = await _make_package(client, package_sanatorium.id, usd_room.id, admin_headers)
     resp = await client.patch(

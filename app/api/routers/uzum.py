@@ -20,12 +20,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser
 from app.core.config import settings
 from app.integrations.uzum import UzumError, UzumErrorCode, verify_basic_auth
 from app.models.booking import Booking
-from app.models.user import UserRole
 from app.schemas.payment import UzumOrderInfo
 from app.schemas.uzum import (
     UzumCheckRequest,
@@ -40,6 +40,7 @@ from app.schemas.uzum import (
     UzumStatusRequest,
     UzumStatusResponse,
 )
+from app.services.booking_visibility import booking_visibility_clauses
 from app.services.uzum_service import (
     UZUM_CURRENCY,
     UzumService,
@@ -283,21 +284,33 @@ async def uzum_order_info(
     current_user: CurrentUser,
     service: UzumService = Depends(get_uzum_service),
 ) -> UzumOrderInfo:
-    booking = await service.db.get(Booking, booking_id)
+    # Same visibility rule as GET /bookings/{id}: a guest sees their own, an
+    # admin sees their property's, and everyone else sees a 404 rather than
+    # learning that the reservation number exists.
+    stmt = select(Booking).where(Booking.id == booking_id)
+    for clause in booking_visibility_clauses(current_user):
+        stmt = stmt.where(clause)
+    booking = await service.db.scalar(stmt)
     if booking is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
-        )
-    if current_user.role == UserRole.CUSTOMER and booking.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to view this booking",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No booking found with this id under your account",
         )
     try:
         amount = await service.expected_amount_uzs(booking)
     except UzumError as exc:
+        # exc.detail names our internal rate pair; the guest gets a sentence
+        # they can act on and support finds the specifics in the log.
+        logger.error(
+            "Cannot price booking %s for Uzum: %s", booking.reservation_number, exc
+        )
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.detail
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Online payment is temporarily unavailable for this booking "
+                "because today's exchange rate is missing. Please try again "
+                "shortly or pay at the property."
+            ),
         ) from exc
     return UzumOrderInfo(
         booking_id=booking.id,

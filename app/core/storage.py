@@ -27,11 +27,13 @@ def url_to_key(url: str) -> str:
 def _validate_key(key: str) -> None:
     if not key:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid storage key"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This file reference is not valid and cannot be used",
         )
     if ".." in Path(key).parts or key.startswith("/") or "\x00" in key or "\\" in key:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid storage key"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This file reference is not valid and cannot be used",
         )
 
 
@@ -49,7 +51,7 @@ class LocalStorage:
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid storage key",
+                detail="This file reference is not valid and cannot be used",
             ) from exc
         return target
 

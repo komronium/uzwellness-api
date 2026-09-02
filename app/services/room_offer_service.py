@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import Depends, HTTPException, status
@@ -43,6 +43,7 @@ from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
 )
+from app.services.rate_plan_rules import advance_window_violation
 from app.services.room_offer_guests import (
     GuestKey,
     GuestStayChoice,
@@ -102,7 +103,7 @@ class RoomOfferService:
         if sanatorium is None or sanatorium.status != SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sanatorium not found",
+                detail="No property found with this id",
             )
 
         context = await self._context(
@@ -318,10 +319,21 @@ class RoomOfferService:
             ):
                 return False
         arrival_rule = rules.get(context.dates[0]) if context.dates else None
+        if arrival_rule is None:
+            return True
+        if (
+            arrival_rule.min_stay_arrival_nights is not None
+            and context.nights < arrival_rule.min_stay_arrival_nights
+        ):
+            return False
+        # The booking path refuses a rate outside its advance-booking window,
+        # so the search must not offer one — otherwise the guest picks it and
+        # is turned away at the last step.
         return (
-            arrival_rule is None
-            or arrival_rule.min_stay_arrival_nights is None
-            or context.nights >= arrival_rule.min_stay_arrival_nights
+            advance_window_violation(
+                arrival_rule, context.dates[0], datetime.now(timezone.utc)
+            )
+            is None
         )
 
     @staticmethod

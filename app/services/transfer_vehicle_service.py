@@ -87,7 +87,10 @@ class TransferVehicleService:
         if await self.db.scalar(stmt.limit(1)) is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A vehicle with this plate already exists",
+                detail=(
+                    "A vehicle with this plate number is already registered. "
+                    "Reactivate it instead of adding a duplicate."
+                ),
             )
 
 

@@ -36,6 +36,10 @@ class BookingPaymentSummary(BaseModel):
     method: PaymentMethod
     status: PaymentStatus
     amount: Decimal
+    # How much of `amount` is owed back after a cancellation; 0 while the
+    # booking is live, and also on a cancelled booking whose rate withheld the
+    # whole sum as a cancellation fee.
+    refund_amount: Decimal = Decimal("0")
     currency: str
     created_at: datetime
     paid_at: datetime | None

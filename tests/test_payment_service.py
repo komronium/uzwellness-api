@@ -14,8 +14,12 @@ from app.services.payment_service import PaymentService
 from tests.factories import make_room, make_sanatorium, make_user
 
 
-async def _booking(db: AsyncSession, owner: User) -> Booking:
-    sanatorium = await make_sanatorium(db)
+async def _booking(
+    db: AsyncSession, owner: User, *, admin: User | None = None
+) -> Booking:
+    sanatorium = await make_sanatorium(
+        db, **({"admin_user_id": admin.id} if admin is not None else {})
+    )
     room = await make_room(db, sanatorium=sanatorium)
     booking = Booking(
         user_id=owner.id,
@@ -24,7 +28,7 @@ async def _booking(db: AsyncSession, owner: User) -> Booking:
         check_in=date.today() + timedelta(days=10),
         check_out=date.today() + timedelta(days=12),
         guests=1,
-        status=BookingStatus.CONFIRMED,
+        status=BookingStatus.PENDING,
         final_price=Decimal("100.00"),
         currency="USD",
     )
@@ -74,10 +78,12 @@ async def test_initiate_rejected_when_already_paid(db: AsyncSession):
         await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, owner)
 
     assert exc.value.status_code == 409
-    assert "already paid" in exc.value.detail.lower()
+    assert "already been paid" in exc.value.detail.lower()
 
 
 async def test_initiate_rejected_for_other_users_booking(db: AsyncSession):
+    """404, not 403 — the reply must not confirm that the booking exists."""
+
     owner = await make_user(db, email="owner3@test.com")
     intruder = await make_user(db, email="intruder@test.com")
     booking = await _booking(db, owner)
@@ -85,13 +91,26 @@ async def test_initiate_rejected_for_other_users_booking(db: AsyncSession):
     with pytest.raises(HTTPException) as exc:
         await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, intruder)
 
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 404
+
+
+async def test_initiate_rejected_for_an_agent_who_did_not_book(db: AsyncSession):
+    """An agent is not a customer, so the customer-only check used to miss it."""
+
+    owner = await make_user(db, email="owner4@test.com")
+    agent = await make_user(db, email="agent@test.com", role=UserRole.AGENT)
+    booking = await _booking(db, owner)
+
+    with pytest.raises(HTTPException) as exc:
+        await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, agent)
+
+    assert exc.value.status_code == 404
 
 
 async def test_confirm_cash_marks_paid_and_confirms_booking(db: AsyncSession):
     owner = await make_user(db, email="cash-owner@test.com")
     admin = await make_user(db, email="cash-admin@test.com", role=UserRole.ADMIN)
-    booking = await _booking(db, owner)
+    booking = await _booking(db, owner, admin=admin)
     payment = await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, owner)
 
     confirmed = await PaymentService(db).confirm_cash(payment.id, admin)
@@ -111,3 +130,19 @@ async def test_confirm_cash_requires_staff(db: AsyncSession):
         await PaymentService(db).confirm_cash(payment.id, owner)
 
     assert exc.value.status_code == 403
+
+
+async def test_confirm_cash_rejects_an_admin_from_another_property(db: AsyncSession):
+    """Settling money is per-property: one hotel cannot mark another's stay paid."""
+
+    owner = await make_user(db, email="cash-owner3@test.com")
+    own_admin = await make_user(db, email="own-admin@test.com", role=UserRole.ADMIN)
+    other_admin = await make_user(db, email="other-admin@test.com", role=UserRole.ADMIN)
+    booking = await _booking(db, owner, admin=own_admin)
+    payment = await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, owner)
+
+    with pytest.raises(HTTPException) as exc:
+        await PaymentService(db).confirm_cash(payment.id, other_admin)
+
+    assert exc.value.status_code == 403
+    assert "another property" in exc.value.detail

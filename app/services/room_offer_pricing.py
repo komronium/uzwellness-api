@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from fastapi import HTTPException, status
 
 from app.core.currency import CurrencyConverter
+from app.core.errors import missing_exchange_rate
 from app.core.pricing import (
     calculate_rate_plan_night_price,
     calculate_stay_total,
@@ -78,9 +79,17 @@ def stay_option_price(
     )
     price = prices.get((guest_type, option.board, option.treatment_included))
     if price is None or not price.is_available:
+        board = option.board.value.replace("_", " ")
+        treatment = (
+            "with treatment" if option.treatment_included else "without treatment"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Selected stay option is not available",
+            detail=(
+                f'This property does not sell "{board} {treatment}" for a '
+                f"{guest_type.value}. Please choose a different meal or "
+                "treatment option."
+            ),
         )
     return price
 
@@ -103,10 +112,7 @@ def stay_option_total(
             price = stay_option_price(prices, guest, option)
             converted = converter.convert(price.price_delta, price.currency, currency)
             if converted is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Exchange rate is required for stay option pricing",
-                )
+                raise missing_exchange_rate(price.currency, currency)
             total += converted * nights
     return total.quantize(CENTS, ROUND_HALF_UP)
 

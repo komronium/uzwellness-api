@@ -64,7 +64,7 @@ async def get_extra_bed(
 ) -> ExtraBedConfigRead | ExtraBedConfigAdminRead:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise not_found("Extra bed config not found")
+        raise not_found("No extra bed configuration found with this id")
     if include_translations:
         return ExtraBedConfigAdminRead.model_validate(config)
     return ExtraBedConfigRead.from_obj(config, locale, converter)
@@ -98,7 +98,7 @@ async def update_extra_bed(
 ) -> ExtraBedConfigAdminRead:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise not_found("Extra bed config not found")
+        raise not_found("No extra bed configuration found with this id")
     updated = await extra_beds.update(config, payload, current_user)
     return ExtraBedConfigAdminRead.model_validate(updated)
 
@@ -115,5 +115,5 @@ async def delete_extra_bed(
 ) -> None:
     config = await extra_beds.get_by_id(config_id)
     if config is None:
-        raise not_found("Extra bed config not found")
+        raise not_found("No extra bed configuration found with this id")
     await extra_beds.delete(config, current_user)

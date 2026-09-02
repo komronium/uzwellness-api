@@ -44,7 +44,10 @@ class SanatoriumService:
         if not slug_seed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="name must contain at least one locale",
+                detail=(
+                    "Provide a name in at least one language (uz, ru or en), "
+                    "or send an explicit slug."
+                ),
             )
         slug = await resolve_unique_slug(self.db, Sanatorium, _slug(slug_seed))
 
@@ -137,7 +140,7 @@ class SanatoriumService:
         if sanatorium.status == SanatoriumStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Sanatorium already approved",
+                detail="This property is already approved.",
             )
         sanatorium.status = SanatoriumStatus.APPROVED
         await self.db.commit()
@@ -147,7 +150,7 @@ class SanatoriumService:
         if sanatorium.status == SanatoriumStatus.REJECTED:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Sanatorium already rejected",
+                detail="This property is already rejected.",
             )
         sanatorium.status = SanatoriumStatus.REJECTED
         await self.db.commit()

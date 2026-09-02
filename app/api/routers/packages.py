@@ -118,10 +118,10 @@ async def get_package(
     if package is None:
         package = await packages.get_by_slug(package_id_or_slug)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     super_admin = is_super_admin(current_user)
     if not package.is_active and not super_admin:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     if include_translations and super_admin:
         return PackageAdminRead.model_validate(package)
     return PackageRead.from_obj(package, locale, converter)
@@ -154,7 +154,7 @@ async def update_package(
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     return PackageAdminRead.model_validate(
         await packages.update(package, payload, current_user)
     )
@@ -174,7 +174,7 @@ async def upload_package_hero_image(
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     content, mime = await read_image_upload_as_webp(file)
     updated = await packages.update_hero_image(
         package,
@@ -199,7 +199,7 @@ async def delete_package_hero_image(
 ) -> PackageAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     updated = await packages.delete_hero_image(package, storage, current_user)
     return PackageAdminRead.model_validate(updated)
 
@@ -215,7 +215,7 @@ async def delete_package(
 ) -> None:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     await packages.delete(package)
 
 
@@ -233,7 +233,7 @@ async def add_package_item(
 ) -> PackageItemAdminRead:
     package = await packages.get_by_id(package_id)
     if package is None:
-        raise not_found("Package not found")
+        raise not_found("No package found with this id")
     return PackageItemAdminRead.model_validate(
         await packages.add_item(package, payload, current_user)
     )
@@ -253,7 +253,7 @@ async def update_package_item(
 ) -> PackageItemAdminRead:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
-        raise not_found("Package item not found")
+        raise not_found("No package item found with this id")
     return PackageItemAdminRead.model_validate(
         await packages.update_item(item, payload, current_user)
     )
@@ -272,5 +272,5 @@ async def delete_package_item(
 ) -> None:
     item = await packages.get_item(item_id)
     if item is None or item.package_id != package_id:
-        raise not_found("Package item not found")
+        raise not_found("No package item found with this id")
     await packages.delete_item(item, current_user)

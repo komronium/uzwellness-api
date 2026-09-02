@@ -563,7 +563,7 @@ async def test_room_offer_search_rejects_unavailable_stay_option(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "Selected stay option is not available"
+    assert "does not sell" in resp.json()["detail"]
 
 
 async def test_room_offer_search_respects_explicit_room_distribution(
@@ -774,7 +774,7 @@ async def test_room_offer_booking_rejects_stale_offer(
     )
 
     assert resp.status_code == 409
-    assert "no longer available" in resp.json()["detail"]
+    assert "no longer offered" in resp.json()["detail"]
 
 
 async def test_room_offer_booking_rejects_guest_incompatible_treatment(
@@ -827,9 +827,7 @@ async def test_room_offer_booking_rejects_guest_incompatible_treatment(
     )
 
     assert resp.status_code == 400
-    assert (
-        resp.json()["detail"] == "Treatment selection is not available for this guest"
-    )
+    assert "is not offered for that guest" in resp.json()["detail"]
 
 
 # ── B2B agent pricing (handoff #1) ───────────────────────────────────────────

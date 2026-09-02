@@ -29,7 +29,7 @@ async def resolve_owner_for_booking(
     if booking is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Booking not found",
+            detail="No booking found with this id under your account",
         )
 
     if actor.role in (UserRole.SUPER_ADMIN, UserRole.TRANSFER_ADMIN):

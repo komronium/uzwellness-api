@@ -23,6 +23,8 @@ from app.models.user import User, UserRole
 from app.schemas.booking import BookingCreate
 from app.services.booking_flows.base import BookingFlowBase, rooms_count_for_guests
 from app.services.booking_pricing_policy import BookingPricing
+from app.services.rate_plan_rules import advance_window_violation
+from app.core.errors import missing_exchange_rate
 
 _CENTS = Decimal("0.01")
 
@@ -81,7 +83,7 @@ class RoomBookingFlow(BookingFlowBase):
         if payload.check_out is None or payload.check_out <= payload.check_in:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="check_out must be after check_in",
+                detail="Check-out must be at least one night after check-in.",
             )
 
         nights = (payload.check_out - payload.check_in).days
@@ -192,7 +194,11 @@ class RoomBookingFlow(BookingFlowBase):
             check_out=payload.check_out,
             guests=payload.guests,
             rooms_count=context.rooms_count,
-            status=BookingStatus.CONFIRMED,
+            # A booking is not confirmed until its money is: the payment
+            # paths (Uzum Merchant confirm, Checkout COMPLETED, admin cash
+            # confirm) are what move it to CONFIRMED. Creating it confirmed
+            # told the property a stay was settled that nobody had paid for.
+            status=BookingStatus.PENDING,
             final_price=pricing.final_price,
             original_price=quote.original_price,
             promo_percent_snapshot=(
@@ -244,7 +250,10 @@ class RoomBookingFlow(BookingFlowBase):
         if rate_plan is None or not rate_plan.is_active or rate_plan.room_id != room.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Rate plan not found for this room",
+                detail=(
+                    "This rate is no longer offered for this room. "
+                    "Please search again and pick a current rate."
+                ),
             )
         if rate_plan.min_nights is not None and nights < rate_plan.min_nights:
             raise HTTPException(
@@ -282,34 +291,25 @@ class RoomBookingFlow(BookingFlowBase):
             if rule.is_closed is True:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Rate plan is closed on {target}",
+                    detail=(
+                        f"This rate is closed for {target:%d %b %Y}. "
+                        "Please choose different dates or another rate."
+                    ),
                 )
             if rule.min_stay_nights is not None and nights < rule.min_stay_nights:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Minimum stay is {rule.min_stay_nights} night(s)",
+                    detail=(
+                        "This rate requires a stay of at least "
+                        f"{rule.min_stay_nights} night(s) on the dates you "
+                        "chose."
+                    ),
                 )
         if arrival_rule is None:
             return
-        hours_until_arrival = (
-            datetime.combine(dates[0], datetime.min.time(), tzinfo=timezone.utc) - now
-        ).total_seconds() / 3600
-        if (
-            arrival_rule.min_advance_hours is not None
-            and hours_until_arrival < arrival_rule.min_advance_hours
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Booking is too close to arrival for this rate plan",
-            )
-        if (
-            arrival_rule.max_advance_hours is not None
-            and hours_until_arrival > arrival_rule.max_advance_hours
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Booking is too far in advance for this rate plan",
-            )
+        window = advance_window_violation(arrival_rule, dates[0], now)
+        if window is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=window)
         if (
             arrival_rule.min_stay_arrival_nights is not None
             and nights < arrival_rule.min_stay_arrival_nights
@@ -340,7 +340,9 @@ class RoomBookingFlow(BookingFlowBase):
         if nights < room.min_nights:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Minimum stay is {room.min_nights} night(s)",
+                detail=(
+                    f"This room requires a stay of at least {room.min_nights} night(s)."
+                ),
             )
         return rooms_count_for_guests(room, payload.guests)
 
@@ -390,17 +392,27 @@ class RoomBookingFlow(BookingFlowBase):
         if config is None or not config.is_active:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Extra bed config {item.config_id} not found",
+                detail=(
+                    "One of the extra beds you selected is no longer offered. "
+                    "Please review the extra beds and try again."
+                ),
             )
         if config.sanatorium_id != sanatorium_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Extra bed config does not belong to this sanatorium",
+                detail=(
+                    "One of the extra beds you selected belongs to a "
+                    "different property. Please pick from this property's "
+                    "extra beds."
+                ),
             )
         if item.count > config.max_count:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Maximum {config.max_count} of this bed type allowed",
+                detail=(
+                    f"At most {config.max_count} of this extra bed can be "
+                    "added to a room."
+                ),
             )
 
     async def _extra_bed_price(
@@ -420,11 +432,5 @@ class RoomBookingFlow(BookingFlowBase):
             config.price_per_night, config.currency, room_currency
         )
         if converted is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Exchange rate is not configured; cannot convert extra "
-                    f"bed from {config.currency} to {room_currency}"
-                ),
-            )
+            raise missing_exchange_rate(config.currency, room_currency)
         return converted, converter

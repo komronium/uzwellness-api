@@ -11,6 +11,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
+from app.core.utils import TASHKENT_TZ
 from app.models.user import User, UserRole
 
 CENTS = Decimal("0.01")
@@ -25,7 +26,10 @@ def assert_finance_role(actor: User) -> None:
     if actor.role not in {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.AGENT}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Finance access required",
+            detail=(
+                "Financial reports are only available to property "
+                "administrators, platform administrators and B2B agents."
+            ),
         )
 
 
@@ -69,32 +73,50 @@ def finance_filters(
 
 
 def payment_rollup_subquery():
+    """Per-booking payment totals, in the booking's own currency.
+
+    ``payments.amount`` is denominated in the payment's currency, not the
+    booking's: Uzum only settles in UZS, so a USD stay paid by card stores a
+    six-figure UZS amount. Summing those next to a USD ``final_price`` produced
+    totals that were arithmetically meaningless and made a partly paid
+    non-UZS booking impossible to spot. Only same-currency payments are added
+    up here; the rest are counted, so a booking settled in another currency
+    shows as "0 paid, 1 foreign payment" instead of silently inflating a total.
+    """
+
+    same_currency = Payment.currency == Booking.currency
     return (
         select(
             Payment.booking_id.label("booking_id"),
+            func.count(Payment.id)
+            .filter(~same_currency, Payment.status == PaymentStatus.PAID)
+            .label("foreign_payment_count"),
             func.coalesce(
-                func.sum(Payment.amount).filter(Payment.status == PaymentStatus.PAID),
+                func.sum(Payment.amount).filter(
+                    same_currency, Payment.status == PaymentStatus.PAID
+                ),
                 0,
             ).label("paid_amount"),
             func.coalesce(
                 func.sum(Payment.amount).filter(
-                    Payment.status == PaymentStatus.PENDING
+                    same_currency, Payment.status == PaymentStatus.PENDING
                 ),
                 0,
             ).label("pending_amount"),
             func.coalesce(
                 func.sum(Payment.amount).filter(
-                    Payment.status == PaymentStatus.REFUND_PENDING
+                    same_currency, Payment.status == PaymentStatus.REFUND_PENDING
                 ),
                 0,
             ).label("refund_pending_amount"),
             func.coalesce(
                 func.sum(Payment.amount).filter(
-                    Payment.status == PaymentStatus.REFUNDED
+                    same_currency, Payment.status == PaymentStatus.REFUNDED
                 ),
                 0,
             ).label("refunded_amount"),
         )
+        .join(Booking, Payment.booking_id == Booking.id)
         .group_by(Payment.booking_id)
         .subquery()
     )
@@ -190,8 +212,15 @@ def booking_belongs_to_admin(admin_id: uuid.UUID):
 
 
 def _start_of_day(value: date) -> datetime:
-    return datetime.combine(value, time.min, tzinfo=UTC)
+    """Midnight in Tashkent, as UTC — the same day boundary the API uses.
+
+    ``created_at`` is stored in UTC, so a UTC midnight put five hours of the
+    previous Tashkent day into every report and left the same filter on
+    ``/bookings`` and ``/finance/orders`` answering with different rows.
+    """
+
+    return datetime.combine(value, time.min, tzinfo=TASHKENT_TZ).astimezone(UTC)
 
 
 def _next_day(value: date) -> datetime:
-    return datetime.combine(value + timedelta(days=1), time.min, tzinfo=UTC)
+    return _start_of_day(value + timedelta(days=1))

@@ -46,7 +46,7 @@ uv run python -m scripts.seed
 HTTP → Router (yupqa) → Service (biznes mantiq) → ORM Model → PostgreSQL
 ```
 
-- **Routers** (`app/api/v1/routers/`) — faqat HTTP: parametrlarni qabul qilish, javob qaytarish
+- **Routers** (`app/api/routers/`) — faqat HTTP: parametrlarni qabul qilish, javob qaytarish
 - **Services** (`app/services/`) — barcha biznes mantiq shu yerda
 - **Models** (`app/models/`) — SQLAlchemy ORM, jadval strukturasi
 - **Schemas** (`app/schemas/`) — Pydantic: HTTP kirish/chiqish validatsiyasi
@@ -119,7 +119,12 @@ class XyzList(BaseModel):
 7. `calculate_stay_total()` — har kunning narxini yig'ish (Juma/Shanba = weekend narx)
 8. Extra o'rinlarni tekshir va narxga qo'sh
 9. `final_price` snapshot (markup/chegirma keyinchalik o'zgarsa ham bron narxi o'zgarmaydi)
-10. `booking_type = ROOM`, `COMMIT`
+10. `booking_type = ROOM`, `status = PENDING`, `COMMIT`
+
+**Bron holati to'lovga bog'liq.** Yangi bron doim `pending` — joy band
+qilinadi, lekin stay to'lanmagan. `confirmed` ga faqat pul o'tkazadi: Uzum
+Merchant `/confirm`, Checkout `COMPLETED`, yoki admin `confirm-cash`.
+Shuning uchun sanatoriya adminsi uchun `confirmed` = "puli kelgan".
 
 ### Session booking
 
@@ -132,6 +137,26 @@ class XyzList(BaseModel):
 6. `booking_type = SESSION`, room_category_id = NULL, `COMMIT`
 
 Cancel: room booking sanalardagi `units_available` ni qaytaradi; session booking faqat statusni `cancelled` qiladi.
+
+### Bekor qilishda pul qaytishi
+
+`app/services/cancellation_policy.py::refund_for()` — yagona joy. Shartlar
+bronning o'zidan o'qiladi (`refundable`, `free_cancellation_days`,
+`cancellation_penalty_percent|amount`), rate plan'dan emas: tarifni keyin
+tahrirlash mavjud bronga ta'sir qilmaydi.
+
+| Holat | Natija |
+|---|---|
+| `refundable = false` | Hech narsa qaytmaydi, hammasi jarima |
+| `check_in − free_cancellation_days` gacha | To'liq qaytadi |
+| Undan keyin | `cancellation_penalty_amount`, u yo'q bo'lsa `final_price × percent` ushlanadi |
+| Shart umuman yo'q (rate plan'siz bron) | To'liq qaytadi |
+
+Jarima to'langan summadan oshmaydi. Natija: `payments.refund_amount` (nechasi
+qaytishi kerak) va `bookings.cancellation_penalty_snapshot` (nechasi
+ushlab qolindi). Qaytariladigan puli bo'lgan payment `refund_pending` bo'ladi;
+qaytariladigan puli yo'q payment `paid` bo'lib qoladi — sanatoriya uni saqlab
+qoladi va moliya hisobotida qaytarim ko'rinmaydi.
 
 ## To'lov — Uzum Bank Merchant API
 
@@ -480,6 +505,47 @@ POST      /transfers/{id}/cancel
 GET       /transfer-finance/summary|orders   ?date_from&date_to&currency
 ```
 
+## Xatolar shartnomasi
+
+Frontend `detail` ni **o'zgartirmasdan** mehmonga ko'rsatadi. Shuning uchun har
+bir xabar to'liq gap bo'lishi va nima qilish kerakligini aytishi shart —
+"Invalid" emas, "This rate must be booked at least 2 days before arrival".
+
+Barcha javob shakli bir xil: `{"detail": "..."}` (422 da esa FastAPI'ning
+`loc`/`msg` massivi).
+
+| Holat | Qachon |
+|---|---|
+| `400` | So'rov mantiqan noto'g'ri (sana, narx, scope, FK topilmadi) |
+| `401` | Token yo'q/eskirgan |
+| `403` | Rol yoki egalik yetmaydi |
+| `404` | Resurs yo'q **yoki** ko'rishga huquq yo'q (bron ro'yxati filtri) |
+| `409` | Holat to'qnashuvi: band, allaqachon to'langan, dublikat |
+| `422` | Pydantic validatsiyasi (`loc` bilan aniq maydon) |
+| `429` | Rate limit |
+| `502` | Uzum javob bermadi / rad etdi |
+| `503` | Kurs yo'q, Checkout sozlanmagan, DB yo'q |
+
+`app/api/error_handlers.py` — oxirgi himoya qatlami:
+
+- **Har qanday tutilmagan xato** → `500` JSON + `reference <hex>`; log'da shu
+  reference bilan traceback (`uzwellness.errors`). Plain-text 500 chiqmaydi.
+- **`IntegrityError`** → sqlstate'ga qarab `409`/`400` + tushunarli xabar
+  (`This code is already in use`). Ustun **qiymati** hech qachon javobga
+  chiqmaydi, faqat log'da.
+- **`OperationalError`** (DB yiqilgan) → `503`, retry taklifi bilan.
+- **`RequestValidationError`** → javob o'zgarmaydi, lekin `uzwellness.validation`
+  log'iga qaysi maydon yiqilgani yoziladi (qiymatsiz).
+
+`UnhandledErrorMiddleware` **CORS'dan oldin** register qilinadi — aks holda
+500 javobda `Access-Control-Allow-Origin` bo'lmaydi va brauzer xabarni
+umuman ko'rsatmaydi.
+
+Qulflash qoidasi: `room_availability` va `rate_plan_date_rules` qatorlari
+birinchi yozuvda yaratiladi, shuning uchun ularga tegishdan oldin ota-qator
+qulflanadi (`lock_rows(db, Room, [room_id])`) — bo'lmasa ikki barobar "Save"
+bosilganda unique constraint buziladi.
+
 ## Test infratuzilmasi
 
 ```python
@@ -518,8 +584,8 @@ Yangi entity uchun (masalan `Payment`):
 2. `app/models/__init__.py` — export qo'sh
 3. `app/schemas/payment.py` — Pydantic schemas
 4. `app/services/payment_service.py` — biznes mantiq
-5. `app/api/v1/routers/payments.py` — HTTP endpoints
-6. `app/api/v1/__init__.py` — router ni include qil
+5. `app/api/routers/payments.py` — HTTP endpoints
+6. `app/api/__init__.py` — router ni include qil
 7. `uv run alembic revision --autogenerate -m "create payments table"`
 
 ## Env sozlamalar
@@ -542,36 +608,55 @@ customer:    ali@gmail.com / User123!
 
 API docs: `http://localhost:8080/docs`
 
-## Deploy (VPS — shared postgres/redis)
+## Deploy (VPS — systemd + unix socket + nginx)
 
-VPS da postgres va redis allaqachon ishlaydi, faqat app konteyner kerak.
+Prodda app **Docker'da emas**: systemd service uvicorn'ni unix socket'da
+ishga tushiradi, nginx esa o'sha socket'ga proxy qiladi. Postgres va redis
+host'da allaqachon ishlaydi. (`docker-compose.yml` faqat lokal dev uchun.)
 
 ```bash
-# 1. Serverga kirish va reponi olish
-git clone https://github.com/komronium/uzwellness-api /srv/uzwellness-api
-cd /srv/uzwellness-api
-cp .env.example .env   # kerakli qiymatlarni to'ldir
-
-# 2. App konteyner ishga tushirish
-docker compose -f docker-compose.prod.yml up -d --build
-
-# 3. Nginx config joylashtirish
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/uzwellness-api
-sudo ln -s /etc/nginx/sites-available/uzwellness-api /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-# 4. SSL (certbot)
-sudo certbot --nginx -d api.uzwellness.com
-
-# Yangilash
-git pull && docker compose -f docker-compose.prod.yml up -d --build
-
-# Loglar
-docker logs uzwellness-api -f
+git pull
+uv sync --frozen
+uv run alembic upgrade head
+sudo systemctl restart uzwellness-api
+journalctl -u uzwellness-api -f
 ```
 
-**network_mode: host** ishlatiladi — konteyner host'dagi `localhost:5432` (postgres) va
-`localhost:6379` (redis) ga to'g'ridan ulanadi. `.env` dagi `DATABASE_URL` da
-`localhost` bo'lishi kerak (Docker service nomi emas).
+### Rate limiting uchun majburiy nginx sozlamasi
 
-App `127.0.0.1:8001` da tinglaydi → nginx `api.uzwellness.com` dan proxy qiladi.
+Unix socket'da peer manzili **yo'q** — `request.client` `None` bo'ladi, ya'ni
+`TRUSTED_PROXY_IPS` hech qachon mos kelmaydi. Shuning uchun mehmonning
+manzili faqat nginx qo'yadigan header'dan olinadi:
+
+```nginx
+proxy_set_header X-Real-IP $remote_addr;
+```
+
+Busiz `_client_ip()` hammani bitta `"unknown"` bucket'iga soladi va o'nta
+noto'g'ri parol butun saytning login'ini 10 daqiqaga bloklaydi.
+`X-Forwarded-For` ham o'qiladi (o'ngdan chapga, `TRUSTED_PROXY_IPS` dagi
+hop'lardan o'tib), lekin `X-Real-IP` aniqroq — uni mijoz to'ldira olmaydi.
+
+`--forwarded-allow-ips=*` **ishlatilmasin**: u uvicorn'ga har qanday
+`X-Forwarded-For` ga ishonishni aytadi va `request.client` ni o'sha
+header'dan yozadi, ya'ni rate limit bucket'ini hujumchi o'zi tanlaydi.
+
+### Uzum Checkout callback'lari
+
+`/api/payments/uzum-checkout/{callback,event,receipt}` imzolanmagan (Uzum
+spetsifikatsiyasida signature yo'q) va har chaqiruv bizni Uzumga qayta
+so'rov yuborishga majbur qiladi. App tarafida IP bo'yicha rate limit bor,
+lekin nginx darajasida Uzum manzillari uchun `allow`/`deny` qo'yish kerak.
+
+### SSL
+
+```bash
+sudo certbot --nginx -d api.uzwellness.com
+```
+
+### Kunlik cron
+
+```
+# tugagan bronlarni COMPLETED ga o'tkazadi
+0 3 * * * cd /srv/uzwellness-api && uv run python -m scripts.complete_bookings
+```
