@@ -1,18 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
-from app.core.redis_client import get_redis
+from app.core.redis_client import close_redis, get_redis
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 _memory_counts: dict[str, tuple[int, float]] = {}
 _memory_lock = asyncio.Lock()
 _CLEANUP_INTERVAL = 300
 _last_cleanup: float = 0.0
+
+# Redis is down/unreachable: rate limits fall back to a per-worker-process
+# in-memory counter, which is a real degradation (each uvicorn worker gets
+# its own count, so the effective limit multiplies by worker count). Log it,
+# but rate-limited — this path can be hit on every single request during an
+# outage, and a log line per request would flood the logs exactly when they
+# are most needed.
+_FALLBACK_LOG_INTERVAL = 30
+_last_fallback_log: float = 0.0
 
 
 def _client_ip(request: Request) -> str:
@@ -132,14 +144,33 @@ class RateLimiter:
     async def _increment(self, key: str) -> int:
         client = await get_redis()
         if client is None:
+            _log_redis_fallback("no client")
             return await _incr_memory(key, self.window_seconds)
         try:
             count = await client.incr(key)
             if count == 1:
                 await client.expire(key, self.window_seconds)
             return int(count)
-        except Exception:
+        except Exception as exc:
+            _log_redis_fallback(exc)
+            # The cached client just failed mid-life (as opposed to never
+            # having connected) — drop it so the next request re-establishes
+            # and ping-validates a fresh connection instead of retrying the
+            # same broken client forever.
+            await close_redis()
             return await _incr_memory(key, self.window_seconds)
+
+
+def _log_redis_fallback(reason: object) -> None:
+    global _last_fallback_log
+    now = time.monotonic()
+    if now - _last_fallback_log > _FALLBACK_LOG_INTERVAL:
+        logger.warning(
+            "Rate limiter falling back to in-process memory (Redis: %s). "
+            "Limits are per-worker-process until Redis recovers.",
+            reason,
+        )
+        _last_fallback_log = now
 
 
 __all__ = ["RateLimiter"]
