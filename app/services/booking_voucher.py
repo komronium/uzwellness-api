@@ -1288,7 +1288,6 @@ def _payment_methods(ctx) -> str:
     return ", ".join(methods)
 
 
-
 def _localize_line(item: dict, labels, ctx) -> str:
     desc = str(item.get("description") or "")
     if desc.startswith("Extra bed"):
