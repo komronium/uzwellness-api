@@ -70,7 +70,7 @@ class Payment(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
     booking_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("bookings.id", ondelete="CASCADE"),
+        ForeignKey("bookings.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

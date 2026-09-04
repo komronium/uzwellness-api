@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.availability import RoomAvailability
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.package import Package
+from app.models.payment import Payment, PaymentMethod
 from app.models.program import TreatmentProgram
 from app.models.rate_plan import RatePlan
 from app.models.review import SanatoriumReview
@@ -155,6 +156,38 @@ async def test_treatment_program_rejects_invalid_night_range(
         )
     )
 
+    await _commit_fails(db)
+
+
+async def test_booking_with_payment_cannot_be_deleted(
+    db: AsyncSession, customer_user: User
+) -> None:
+    sanatorium = await make_sanatorium(db, slug="constraint-payment-restrict")
+    room = await make_room(db, sanatorium=sanatorium)
+    booking = Booking(
+        user_id=customer_user.id,
+        room_id=room.id,
+        booking_type=BookingType.ROOM,
+        check_in=date(2027, 1, 2),
+        check_out=date(2027, 1, 5),
+        guests=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=Decimal("300.00"),
+        currency="USD",
+    )
+    db.add(booking)
+    await db.flush()
+    db.add(
+        Payment(
+            booking_id=booking.id,
+            method=PaymentMethod.CASH,
+            amount=Decimal("300.00"),
+            currency="USD",
+        )
+    )
+    await db.commit()
+
+    await db.delete(booking)
     await _commit_fails(db)
 
 
