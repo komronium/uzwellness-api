@@ -622,6 +622,24 @@ sudo systemctl restart uzwellness-api
 journalctl -u uzwellness-api -f
 ```
 
+### Infra config (nginx/systemd) — repo bilan sinxronlash
+
+nginx va systemd fayllari VPS'da yashaydi, lekin git'dagi nusxasi
+(`deploy/nginx/api.uzwellness.com`, `deploy/systemd/uzwellness-api.service`)
+haqiqiy manba hisoblanadi. **VPS'dagi faylni to'g'ridan-to'g'ri
+tahrirlama** — avval shu repo'da o'zgartir, keyin serverga nusxala va
+reload qil:
+
+```bash
+scp deploy/nginx/api.uzwellness.com root@vps:/etc/nginx/sites-available/
+scp deploy/systemd/uzwellness-api.service root@vps:/etc/systemd/system/
+ssh root@vps "nginx -t && systemctl reload nginx && systemctl daemon-reload && systemctl restart uzwellness-api"
+```
+
+Certbot'ning "managed by Certbot" izohli qatorlarini `certbot renew`
+o'zi yangilab turadi — ularga qo'l tegizma, faqat faylning qolgan qismini
+sinxron tut.
+
 ### Rate limiting uchun majburiy nginx sozlamasi
 
 Unix socket'da peer manzili **yo'q** — `request.client` `None` bo'ladi, ya'ni
@@ -658,5 +676,5 @@ sudo certbot --nginx -d api.uzwellness.com
 
 ```
 # tugagan bronlarni COMPLETED ga o'tkazadi
-0 3 * * * cd /srv/uzwellness-api && uv run python -m scripts.complete_bookings
+0 3 * * * cd /var/www/uzwellness-api && uv run python -m scripts.complete_bookings
 ```
