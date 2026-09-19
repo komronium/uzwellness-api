@@ -1,5 +1,11 @@
 from httpx import AsyncClient
 
+from app.core.auth_cookies import REFRESH_COOKIE_NAME
+
+
+def _refresh_cookie(client: AsyncClient) -> str | None:
+    return client.cookies.get(REFRESH_COOKIE_NAME)
+
 
 async def test_register_creates_customer(client: AsyncClient) -> None:
     resp = await client.post(
@@ -44,7 +50,9 @@ async def test_register_invalid_email_returns_422(client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-async def test_login_returns_token_pair(client: AsyncClient, customer_user) -> None:
+async def test_login_returns_access_token_and_refresh_cookie(
+    client: AsyncClient, customer_user
+) -> None:
     resp = await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
@@ -53,8 +61,10 @@ async def test_login_returns_token_pair(client: AsyncClient, customer_user) -> N
     body = resp.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"]
-    assert body["refresh_token"]
-    assert body["access_token"] != body["refresh_token"]
+    assert "refresh_token" not in body
+    cookie = _refresh_cookie(client)
+    assert cookie
+    assert cookie != body["access_token"]
 
 
 async def test_login_wrong_password_returns_401(
@@ -76,18 +86,25 @@ async def test_login_unknown_user_returns_401(client: AsyncClient) -> None:
 
 
 async def test_refresh_returns_new_pair(client: AsyncClient, customer_user) -> None:
-    login = await client.post(
+    await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
-    refresh_token = login.json()["refresh_token"]
+    old_refresh = _refresh_cookie(client)
+    assert old_refresh
 
-    resp = await client.post(
-        "/api/auth/refresh",
-        json={"refresh_token": refresh_token},
-    )
+    resp = await client.post("/api/auth/refresh")
     assert resp.status_code == 200
     assert resp.json()["access_token"]
+    assert "refresh_token" not in resp.json()
+    new_refresh = _refresh_cookie(client)
+    assert new_refresh
+    assert new_refresh != old_refresh
+
+
+async def test_refresh_without_cookie_returns_401(client: AsyncClient) -> None:
+    resp = await client.post("/api/auth/refresh")
+    assert resp.status_code == 401
 
 
 async def test_refresh_with_access_token_returns_401(
@@ -98,19 +115,15 @@ async def test_refresh_with_access_token_returns_401(
         json={"email": customer_user.email, "password": "customerpass123"},
     )
     access_token = login.json()["access_token"]
+    client.cookies.set(REFRESH_COOKIE_NAME, access_token, path="/api/auth")
 
-    resp = await client.post(
-        "/api/auth/refresh",
-        json={"refresh_token": access_token},
-    )
+    resp = await client.post("/api/auth/refresh")
     assert resp.status_code == 401
 
 
 async def test_refresh_with_garbage_returns_401(client: AsyncClient) -> None:
-    resp = await client.post(
-        "/api/auth/refresh",
-        json={"refresh_token": "not-a-real-token"},
-    )
+    client.cookies.set(REFRESH_COOKIE_NAME, "not-a-real-token", path="/api/auth")
+    resp = await client.post("/api/auth/refresh")
     assert resp.status_code == 401
 
 
@@ -118,36 +131,43 @@ async def test_refresh_with_garbage_returns_401(client: AsyncClient) -> None:
 
 
 async def test_logout_revokes_refresh_token(client: AsyncClient, customer_user) -> None:
-    login = await client.post(
+    await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
-    refresh_token = login.json()["refresh_token"]
-    resp = await client.post("/api/auth/logout", json={"refresh_token": refresh_token})
+    revoked = _refresh_cookie(client)
+    assert revoked
+    resp = await client.post("/api/auth/logout")
     assert resp.status_code == 204
-    # Using the now-revoked token must fail
-    second = await client.post(
-        "/api/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    assert _refresh_cookie(client) is None
+    # Re-attach the revoked token — refresh must fail
+    client.cookies.set(REFRESH_COOKIE_NAME, revoked, path="/api/auth")
+    second = await client.post("/api/auth/refresh")
     assert second.status_code == 401
 
 
 async def test_logout_all_revokes_every_session(
     client: AsyncClient, customer_user, customer_headers
 ) -> None:
-    a = await client.post(
+    await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
-    b = await client.post(
+    rt_a = _refresh_cookie(client)
+    await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
+    rt_b = _refresh_cookie(client)
+    assert rt_a and rt_b and rt_a != rt_b
+
     resp = await client.post("/api/auth/logout-all", headers=customer_headers)
     assert resp.status_code == 204
-    for r in (a, b):
-        rt = r.json()["refresh_token"]
-        refr = await client.post("/api/auth/refresh", json={"refresh_token": rt})
+    assert _refresh_cookie(client) is None
+
+    for rt in (rt_a, rt_b):
+        client.cookies.set(REFRESH_COOKIE_NAME, rt, path="/api/auth")
+        refr = await client.post("/api/auth/refresh")
         assert refr.status_code == 401
 
 
@@ -244,12 +264,12 @@ async def test_change_password_short_returns_422(
 async def test_change_password_revokes_other_sessions(
     client: AsyncClient, customer_user, customer_headers
 ) -> None:
-    # Login twice to have a stale refresh token
-    other = await client.post(
+    await client.post(
         "/api/auth/login",
         json={"email": customer_user.email, "password": "customerpass123"},
     )
-    other_refresh = other.json()["refresh_token"]
+    other_refresh = _refresh_cookie(client)
+    assert other_refresh
 
     change = await client.post(
         "/api/auth/change-password",
@@ -262,8 +282,8 @@ async def test_change_password_revokes_other_sessions(
     )
     assert change.status_code == 204
 
-    # The other session's refresh token should now be invalid
-    refr = await client.post("/api/auth/refresh", json={"refresh_token": other_refresh})
+    client.cookies.set(REFRESH_COOKIE_NAME, other_refresh, path="/api/auth")
+    refr = await client.post("/api/auth/refresh")
     assert refr.status_code == 401
 
 

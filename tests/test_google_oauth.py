@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_cookies import REFRESH_COOKIE_NAME
 from app.core.config import settings
 from app.models.user import User, UserRole
 from app.services import google_oauth
@@ -80,7 +81,8 @@ async def test_google_flow_creates_customer(
     assert location.startswith("http://front/auth/callback#")
     fragment = parse_qs(urlparse(location).fragment)
     assert fragment["access_token"][0]
-    assert fragment["refresh_token"][0]
+    assert "refresh_token" not in fragment
+    assert client.cookies.get(REFRESH_COOKIE_NAME)
 
     user = (
         await db.execute(select(User).where(User.email == "gulnora@gmail.com"))

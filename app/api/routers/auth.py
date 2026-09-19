@@ -1,16 +1,21 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import CurrentUser
 from app.api.rate_limits import login_rate_limit, register_rate_limit
+from app.core.auth_cookies import (
+    REFRESH_COOKIE_NAME,
+    clear_refresh_cookie,
+    set_refresh_cookie,
+)
 from app.core.config import settings
+from app.core.errors import SIGN_IN_REQUIRED
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
-    RefreshRequest,
     Token,
 )
 from app.schemas.user import UserCreate, UserRead
@@ -20,6 +25,11 @@ from app.services.auth_service import AuthService, get_auth_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Identity"])
+
+
+def _token_response(response: Response, access_token: str, refresh_token: str) -> Token:
+    set_refresh_cookie(response, refresh_token)
+    return Token(access_token=access_token)
 
 
 @router.post(
@@ -43,9 +53,11 @@ async def register(
 )
 async def login(
     payload: LoginRequest,
+    response: Response,
     auth: AuthService = Depends(get_auth_service),
 ) -> Token:
-    return await auth.login(payload.email, payload.password)
+    issued = await auth.login(payload.email, payload.password)
+    return _token_response(response, issued.access_token, issued.refresh_token)
 
 
 @router.get("/google", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
@@ -88,7 +100,11 @@ async def google_callback(
     state_cookie: str | None = Cookie(default=None, alias=google_oauth.STATE_COOKIE),
     auth: AuthService = Depends(get_auth_service),
 ) -> RedirectResponse:
-    """Exchange Google's code and hand tokens to the frontend via fragment."""
+    """Exchange Google's code and hand the access token to the frontend.
+
+    The refresh token is set as an HttpOnly cookie on this response — it never
+    appears in the URL fragment (which JavaScript can read).
+    """
     if not google_oauth.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -113,44 +129,60 @@ async def google_callback(
         logger.exception("Google OAuth code exchange failed")
         return _frontend_redirect("error=google_auth_failed")
     try:
-        token = await auth.login_with_google(userinfo)
+        issued = await auth.login_with_google(userinfo)
     except HTTPException:
         return _frontend_redirect("error=google_account_rejected")
-    return _frontend_redirect(
-        f"access_token={token.access_token}&refresh_token={token.refresh_token}"
-    )
+    response = _frontend_redirect(f"access_token={issued.access_token}")
+    set_refresh_cookie(response, issued.refresh_token)
+    return response
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh(
-    payload: RefreshRequest,
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
     auth: AuthService = Depends(get_auth_service),
 ) -> Token:
-    return await auth.refresh(payload.refresh_token)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=SIGN_IN_REQUIRED,
+        )
+    issued = await auth.refresh(refresh_token)
+    return _token_response(response, issued.access_token, issued.refresh_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    payload: RefreshRequest,
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
     auth: AuthService = Depends(get_auth_service),
 ) -> None:
-    await auth.logout(payload.refresh_token)
+    if refresh_token:
+        await auth.logout(refresh_token)
+    clear_refresh_cookie(response)
 
 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_all(
+    response: Response,
     current_user: CurrentUser,
     auth: AuthService = Depends(get_auth_service),
 ) -> None:
     await auth.logout_all(current_user)
+    clear_refresh_cookie(response)
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     payload: ChangePasswordRequest,
+    response: Response,
     current_user: CurrentUser,
     auth: AuthService = Depends(get_auth_service),
 ) -> None:
     await auth.change_password(
         current_user, payload.current_password, payload.new_password
     )
+    # All refresh tokens were revoked — drop the browser cookie so the next
+    # /auth/refresh does not present a dead session.
+    clear_refresh_cookie(response)

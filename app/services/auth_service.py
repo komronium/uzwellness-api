@@ -17,7 +17,7 @@ from app.core.security import (
 )
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.auth import Token
+from app.schemas.auth import IssuedTokens
 from app.schemas.user import UserCreate
 from app.services.user_service import UserService, get_user_service
 
@@ -38,7 +38,7 @@ class AuthService:
             )
         return await self.users.create(payload)
 
-    async def login(self, email: str, password: str) -> Token:
+    async def login(self, email: str, password: str) -> IssuedTokens:
         user = await self.users.authenticate(email, password)
         if user is None:
             raise HTTPException(
@@ -49,7 +49,7 @@ class AuthService:
             )
         return await self._issue_token_pair(user.id)
 
-    async def login_with_google(self, userinfo: dict[str, Any]) -> Token:
+    async def login_with_google(self, userinfo: dict[str, Any]) -> IssuedTokens:
         """Log in (or sign up) a user from a verified Google profile."""
         email = (userinfo.get("email") or "").strip().lower()
         if not email or not userinfo.get("email_verified"):
@@ -80,7 +80,7 @@ class AuthService:
             )
         return await self._issue_token_pair(user.id)
 
-    async def refresh(self, refresh_token: str) -> Token:
+    async def refresh(self, refresh_token: str) -> IssuedTokens:
         user_id, jti = self._parse_refresh_token(refresh_token)
         record = await self.db.get(RefreshToken, jti)
         if record is None or record.user_id != user_id:
@@ -149,7 +149,7 @@ class AuthService:
 
     async def _issue_token_pair(
         self, user_id: uuid.UUID, *, commit: bool = True
-    ) -> Token:
+    ) -> IssuedTokens:
         subject = str(user_id)
         access_token, _ = create_token(subject, "access")
         refresh_jti = uuid.uuid4()
@@ -161,7 +161,7 @@ class AuthService:
         )
         if commit:
             await self.db.commit()
-        return Token(access_token=access_token, refresh_token=refresh_token)
+        return IssuedTokens(access_token=access_token, refresh_token=refresh_token)
 
     @staticmethod
     def _parse_refresh_token(token: str) -> tuple[uuid.UUID, uuid.UUID]:

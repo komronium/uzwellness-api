@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # Callback registered in Google Cloud Console, e.g.
     # https://api.uzwellness.com/api/auth/google/callback
     GOOGLE_REDIRECT_URI: str = ""
-    # Frontend page that receives tokens in the URL fragment after login
+    # Frontend page that receives the access token in the URL fragment after login
     OAUTH_FRONTEND_REDIRECT_URL: str = "https://uzwellness.com/auth/callback"
 
     # EMAIL_BACKEND: "log" (print only), "smtp", or "resend" (HTTPS API on 443 —

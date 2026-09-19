@@ -1,13 +1,11 @@
+from dataclasses import dataclass
+
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -25,6 +23,15 @@ class ChangePasswordRequest(BaseModel):
 
 
 class Token(BaseModel):
+    """Public login/refresh response — refresh lives in an HttpOnly cookie."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedTokens:
+    """Access + refresh pair produced by AuthService before the cookie is set."""
+
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"

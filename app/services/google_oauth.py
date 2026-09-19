@@ -3,8 +3,9 @@
 The frontend sends the browser to ``GET /auth/google``; we redirect to
 Google's consent screen with a signed ``state`` (also pinned in a short-lived
 cookie). Google calls ``GET /auth/google/callback``, we exchange the code,
-read the verified profile and hand our own JWT pair back to the frontend via
-the URL fragment (fragments never reach server logs).
+read the verified profile, set the refresh token as an HttpOnly cookie, and
+hand only the access token back to the frontend via the URL fragment
+(fragments never reach server logs).
 """
 
 import uuid
