@@ -35,7 +35,7 @@ def _ensure_can_patch_user(
             detail=(
                 f"You cannot change {', '.join(sorted(blocked))} on your own "
                 "account. Only your name, email and phone are editable — "
-                "contact support@uzwellness.com for anything else."
+                "contact info@uzwellness.com for anything else."
             ),
         )
 

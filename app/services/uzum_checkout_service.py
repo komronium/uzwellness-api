@@ -99,7 +99,7 @@ class UzumCheckoutService:
                 detail=(
                     "Card payment is not available right now. "
                     "Please pay at the property or contact "
-                    "support@uzwellness.com."
+                    "info@uzwellness.com."
                 ),
             )
 
@@ -127,7 +127,7 @@ class UzumCheckoutService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "This booking has nothing left to pay online. "
-                    "Please contact support@uzwellness.com if that looks wrong."
+                    "Please contact info@uzwellness.com if that looks wrong."
                 ),
             )
 

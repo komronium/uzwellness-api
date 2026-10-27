@@ -110,7 +110,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=(
                     "This account is no longer active. "
-                    "Please contact support@uzwellness.com."
+                    "Please contact info@uzwellness.com."
                 ),
             )
 

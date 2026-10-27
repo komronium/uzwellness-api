@@ -90,7 +90,7 @@ class CancellationService:
                 detail=(
                     "This booking has no email address, so we cannot send a "
                     "cancellation code. Please contact "
-                    "support@uzwellness.com to cancel it."
+                    "info@uzwellness.com to cancel it."
                 ),
             )
 
@@ -230,7 +230,7 @@ class CancellationService:
                 detail=(
                     "Only the guest who made this booking can cancel it. "
                     "Sign in with that account, or contact "
-                    "support@uzwellness.com."
+                    "info@uzwellness.com."
                 ),
             )
 

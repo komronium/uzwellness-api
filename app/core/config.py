@@ -115,7 +115,7 @@ class Settings(BaseSettings):
 
     # Printed on the voucher as the platform contact (the property's own phone
     # and email are printed next to it).
-    SUPPORT_EMAIL: str = "support@uzwellness.com"
+    SUPPORT_EMAIL: str = "info@uzwellness.com"
     SUPPORT_PHONE: str = ""
 
     EXCHANGE_RATE_SYNC_ENABLED: bool = True

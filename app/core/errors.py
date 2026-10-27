@@ -17,9 +17,7 @@ from app.core.utils import today_tashkent
 SIGN_IN_REQUIRED = "You must be signed in to do this. Please log in and try again."
 SESSION_EXPIRED = "Your session has expired. Please sign in again."
 SESSION_INVALID = "Your session is no longer valid. Please sign in again."
-ACCOUNT_DISABLED = (
-    "This account has been disabled. Please contact support@uzwellness.com."
-)
+ACCOUNT_DISABLED = "This account has been disabled. Please contact info@uzwellness.com."
 
 
 PAST_CHECK_IN = "Check-in cannot be in the past. Please pick today or a later date."
