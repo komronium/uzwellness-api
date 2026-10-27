@@ -14,6 +14,14 @@ server {
 
     client_max_body_size 100M;
 
+    server_tokens off;
+    # `always` so error responses (4xx/5xx) carry them too. A location that
+    # adds its own add_header must repeat these — nginx does not merge them.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     location / {
         proxy_pass http://unix:/run/uzwellness/uvicorn.sock;
 

@@ -1,0 +1,20 @@
+# Marks confirmed stays whose check-out has passed as COMPLETED (reviews and
+# finance reports key off that status). Triggered by the .timer of the same
+# name; install both into /etc/systemd/system and `systemctl enable --now
+# uzwellness-complete-bookings.timer`.
+
+[Unit]
+Description=UzWellness: complete past bookings
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=uzwellness
+Group=www-data
+WorkingDirectory=/var/www/uzwellness-api
+EnvironmentFile=/var/www/uzwellness-api/.env
+ExecStart=/var/www/uzwellness-api/.venv/bin/python -m scripts.complete_bookings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

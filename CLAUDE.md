@@ -618,27 +618,30 @@ host'da allaqachon ishlaydi. (`docker-compose.yml` faqat lokal dev uchun.)
 git pull
 uv sync --frozen
 uv run alembic upgrade head
-sudo systemctl restart uzwellness-api
-journalctl -u uzwellness-api -f
+sudo systemctl restart uzwellness   # unit nomi: uzwellness.service
+journalctl -u uzwellness -f
 ```
 
 ### Infra config (nginx/systemd) — repo bilan sinxronlash
 
 nginx va systemd fayllari VPS'da yashaydi, lekin git'dagi nusxasi
-(`deploy/nginx/api.uzwellness.com`, `deploy/systemd/uzwellness-api.service`)
+(`deploy/nginx/api.uzwellness.com`, `deploy/systemd/*.service|*.timer`)
 haqiqiy manba hisoblanadi. **VPS'dagi faylni to'g'ridan-to'g'ri
 tahrirlama** — avval shu repo'da o'zgartir, keyin serverga nusxala va
 reload qil:
 
 ```bash
 scp deploy/nginx/api.uzwellness.com root@vps:/etc/nginx/sites-available/
-scp deploy/systemd/uzwellness-api.service root@vps:/etc/systemd/system/
-ssh root@vps "nginx -t && systemctl reload nginx && systemctl daemon-reload && systemctl restart uzwellness-api"
+scp deploy/systemd/uzwellness*.service deploy/systemd/uzwellness*.timer root@vps:/etc/systemd/system/
+ssh root@vps "nginx -t && systemctl reload nginx && systemctl daemon-reload && systemctl restart uzwellness"
 ```
 
 Certbot'ning "managed by Certbot" izohli qatorlarini `certbot renew`
 o'zi yangilab turadi — ularga qo'l tegizma, faqat faylning qolgan qismini
 sinxron tut.
+
+`tests/test_deployment_config.py` bu fayllarning invariantlarini tekshiradi
+(unit nomi, socket yo'li, least-privilege, security header'lar).
 
 ### Rate limiting uchun majburiy nginx sozlamasi
 
@@ -672,9 +675,14 @@ lekin nginx darajasida Uzum manzillari uchun `allow`/`deny` qo'yish kerak.
 sudo certbot --nginx -d api.uzwellness.com
 ```
 
-### Kunlik cron
+### Kunlik job (systemd timer)
 
-```
-# tugagan bronlarni COMPLETED ga o'tkazadi
-0 3 * * * cd /var/www/uzwellness-api && uv run python -m scripts.complete_bookings
+Tugagan `confirmed` bronlarni `completed` ga o'tkazish cron emas, systemd
+timer: `deploy/systemd/uzwellness-complete-bookings.{service,timer}`
+(har kuni 03:00 Toshkent, `Persistent=true` — server o'chiq bo'lsa keyin
+yetkazib oladi).
+
+```bash
+systemctl enable --now uzwellness-complete-bookings.timer
+systemctl list-timers | grep uzwellness
 ```

@@ -1,0 +1,44 @@
+# Source-controlled mirror of /etc/systemd/system/uzwellness.service on the
+# VPS (the live unit name — `systemctl restart uzwellness`). Edit here first,
+# then copy to the host; tests/test_deployment_config.py guards the invariants.
+#
+# Before the first install of this hardened version the host needs:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin uzwellness
+#   chown -R uzwellness:www-data /var/www/uzwellness-api/uploads
+# The .env stays root:root 0600: systemd reads it as root before dropping
+# privileges, so the app process itself cannot read the file.
+
+[Unit]
+Description=UzWellness API
+After=network.target postgresql.service redis-server.service
+
+[Service]
+User=uzwellness
+# nginx (www-data) reaches the socket through the group, nobody else can.
+Group=www-data
+UMask=0007
+
+WorkingDirectory=/var/www/uzwellness-api
+EnvironmentFile=/var/www/uzwellness-api/.env
+
+RuntimeDirectory=uzwellness
+RuntimeDirectoryMode=0750
+
+ExecStart=/var/www/uzwellness-api/.venv/bin/uvicorn app.main:app \
+    --uds /run/uzwellness/uvicorn.sock
+# Uvicorn chmods its unix socket to 0666 after binding; tighten it once it
+# exists (systemd runs this after the main process has started).
+ExecStartPost=/bin/sh -c 'for i in $(seq 50); do [ -S /run/uzwellness/uvicorn.sock ] && break; sleep 0.1; done'
+ExecStartPost=/usr/bin/chmod 0660 /run/uzwellness/uvicorn.sock
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/www/uzwellness-api/uploads
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
