@@ -32,6 +32,7 @@ MERGES: dict[str, tuple[str, str]] = {
     "pool_access": ("wellness", "Pool"),
     "sauna": ("wellness", "Sauna"),
     "parking": ("transport", "Parking"),
+    "wifi": ("connectivity", "Wi-Fi"),
 }
 
 # Seed rows with no twin: only their uz/ru text was missing.
@@ -67,7 +68,10 @@ async def merge(db: AsyncSession) -> None:
     for code, (category, name_en) in MERGES.items():
         source = (
             await db.execute(
-                text("SELECT id, display_order FROM amenities WHERE code = :code"),
+                text(
+                    "SELECT id, display_order, name->>'en' AS name_en, category "
+                    "FROM amenities WHERE code = :code"
+                ),
                 {"code": code},
             )
         ).first()
@@ -80,7 +84,7 @@ async def merge(db: AsyncSession) -> None:
                 {"category": category, "name": name_en},
             )
         ).all()
-        if source is None:
+        if source is None or (source.category, source.name_en) == (category, name_en):
             print(f"{code}: already merged, skipping")
             continue
         if len(targets) != 1:
