@@ -73,5 +73,11 @@ jobs:
       - name: Alembic single head
         run: test "$(uv run alembic heads | wc -l)" = "1"
 
+      # Migrations must build exactly the schema the models describe; the
+      # test suite itself uses create_all and would not notice drift. Runs
+      # against the service DB before the tests reset its schema.
+      - name: Migrations match models
+        run: uv run alembic upgrade head && uv run alembic check
+
       - name: Tests
         run: uv run pytest
