@@ -12,10 +12,17 @@ from app.models.booking import Booking
 from app.models.sanatorium import SanatoriumStatus
 from app.models.transfer_request import TransferRequest
 from app.models.user import User, UserRole
-from tests.factories import make_exchange_rate, make_room, make_sanatorium, make_user
+from tests.factories import (
+    future_date,
+    make_exchange_rate,
+    make_room,
+    make_sanatorium,
+    make_user,
+)
 
-_CHECK_IN = "2027-05-10"
-_CHECK_OUT = "2027-05-13"
+_CHECK_IN_DATE = future_date(0, min_days=180)  # a Monday
+_CHECK_IN = _CHECK_IN_DATE.isoformat()
+_CHECK_OUT = (_CHECK_IN_DATE + timedelta(days=3)).isoformat()
 _FLIGHT_TIME = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 _RETURN_TIME = (datetime.now(timezone.utc) + timedelta(days=34)).isoformat()
 

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 import uuid
 
@@ -21,24 +21,14 @@ from app.schemas.room_offer import RoomOfferSearchRequest
 from app.core.currency import CurrencyConverter
 from app.services.room_offer_guests import guest_options
 from app.services.room_offer_service import RoomOfferService, _OfferContext
-from tests.factories import make_exchange_rate, make_room, make_sanatorium
-
-
-def _next_weekday(weekday: int, *, min_days: int = 30) -> date:
-    """A date at least `min_days` out that falls on `weekday` (Mon=0).
-
-    Offers are priced per weekday (Fri/Sat are weekend nights), so the stay
-    keeps the weekday the expected prices were written against.
-    """
-    start = date.today() + timedelta(days=min_days)
-    return start + timedelta(days=(weekday - start.weekday()) % 7)
+from tests.factories import future_date, make_exchange_rate, make_room, make_sanatorium
 
 
 # Friday arrival, two nights (Fri + Sat), as the expected prices assume.
-CHECK_IN = _next_weekday(4)
+CHECK_IN = future_date(4)
 CHECK_OUT = CHECK_IN + timedelta(days=2)
 # Monday arrival, two weekday nights.
-WEEKDAY_CHECK_IN = _next_weekday(0)
+WEEKDAY_CHECK_IN = future_date(0)
 WEEKDAY_CHECK_OUT = WEEKDAY_CHECK_IN + timedelta(days=2)
 
 

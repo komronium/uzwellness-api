@@ -5,7 +5,11 @@ same condition cannot drift between endpoints (e.g. unavailable room being
 404 in one flow and 409 in another).
 """
 
+from datetime import date
+
 from fastapi import HTTPException, status
+
+from app.core.utils import today_tashkent
 
 # Session wording lives here so the token check in app/api/deps.py and the
 # refresh endpoint in auth_service answer with the same sentence — a guest who
@@ -16,6 +20,9 @@ SESSION_INVALID = "Your session is no longer valid. Please sign in again."
 ACCOUNT_DISABLED = (
     "This account has been disabled. Please contact support@uzwellness.com."
 )
+
+
+PAST_CHECK_IN = "Check-in cannot be in the past. Please pick today or a later date."
 
 
 def bad_request(detail: str) -> HTTPException:
@@ -37,6 +44,16 @@ def sanatorium_not_bookable() -> HTTPException:
         "This property is not open for online booking yet. "
         "Please choose another property or contact us to book by phone."
     )
+
+
+def ensure_check_in_not_past(check_in: date) -> None:
+    """Searches and bookings share this cutoff (Tashkent "today").
+
+    A search that priced a past stay would show offers the guest can never book.
+    """
+
+    if check_in < today_tashkent():
+        raise bad_request(PAST_CHECK_IN)
 
 
 def room_unavailable(

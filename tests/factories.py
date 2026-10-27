@@ -1,7 +1,7 @@
 import struct
 import uuid
 import zlib
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,17 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
+
+
+def future_date(weekday: int, *, min_days: int = 30) -> date:
+    """A date at least `min_days` from today that falls on `weekday` (Mon=0).
+
+    Bookings reject past check-ins, so tests must not hard-code calendar dates:
+    they start failing once the date passes. Keeping the weekday keeps weekday
+    vs Fri/Sat weekend pricing stable.
+    """
+    start = date.today() + timedelta(days=min_days)
+    return start + timedelta(days=(weekday - start.weekday()) % 7)
 
 
 def make_png(width: int = 1, height: int = 1) -> bytes:

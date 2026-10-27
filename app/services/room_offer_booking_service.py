@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import ensure_check_in_not_past
 from app.core.database import get_db
-from app.core.utils import date_range, pick_locale, today_tashkent
+from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
 from app.models.rate_plan import RatePlan
@@ -44,11 +45,7 @@ class RoomOfferBookingService:
     async def create(
         self, payload: RoomOfferBookingCreate, user: User, *, locale: str
     ) -> Booking:
-        if payload.check_in < today_tashkent():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Check-in cannot be in the past. Please pick today or a later date.",
-            )
+        ensure_check_in_not_past(payload.check_in)
         sanatorium = await approved_sanatorium(self.db, payload.sanatorium_id)
         response = await self.offers.search(
             sanatorium_id=payload.sanatorium_id,

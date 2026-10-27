@@ -1,11 +1,14 @@
+from datetime import timedelta
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sanatorium import SanatoriumStatus
-from tests.factories import make_room, make_sanatorium
+from tests.factories import future_date, make_room, make_sanatorium
 
-_CHECK_IN = "2027-03-10"
-_CHECK_OUT = "2027-03-14"
+_CHECK_IN_DATE = future_date(2, min_days=120)  # a Wednesday
+_CHECK_IN = _CHECK_IN_DATE.isoformat()
+_CHECK_OUT = (_CHECK_IN_DATE + timedelta(days=4)).isoformat()
 
 
 async def test_admin_reservation_dashboard_filters_and_process(

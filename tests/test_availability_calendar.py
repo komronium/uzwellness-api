@@ -1,10 +1,19 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sanatorium import SanatoriumStatus
-from tests.factories import make_room, make_sanatorium
+from tests.factories import future_date, make_room, make_sanatorium
+
+# Day 0 is a Tuesday far enough out that the booking made below is never in
+# the past.
+_DAY0 = future_date(1, min_days=60)
+
+
+def _day(offset: int) -> str:
+    return (_DAY0 + timedelta(days=offset)).isoformat()
 
 
 async def test_admin_availability_calendar_returns_rooms_rate_plans_and_days(
@@ -49,8 +58,8 @@ async def test_admin_availability_calendar_returns_rooms_rate_plans_and_days(
         headers=admin_headers,
         params={
             "sanatorium_id": str(sanatorium.id),
-            "from": "2027-06-01",
-            "to": "2027-06-04",
+            "from": _day(0),
+            "to": _day(3),
             "rate_plan_ids": rate_plan_id,
         },
     )
@@ -82,15 +91,15 @@ async def test_admin_sets_available_allotment_for_inclusive_date_range(
         f"/api/rooms/{room.id}/availability/allotment",
         headers=admin_headers,
         json={
-            "date_from": "2027-06-01",
-            "date_to": "2027-06-02",
+            "date_from": _day(0),
+            "date_to": _day(1),
             "units_available": 2,
         },
     )
 
     assert update.status_code == 200, update.text
     rows = update.json()
-    assert [row["date"] for row in rows] == ["2027-06-01", "2027-06-02"]
+    assert [row["date"] for row in rows] == [_day(0), _day(1)]
     assert all(row["units_available"] == 2 for row in rows)
     assert all(row["units_blocked"] == 2 for row in rows)
 
@@ -99,8 +108,8 @@ async def test_admin_sets_available_allotment_for_inclusive_date_range(
         headers=admin_headers,
         params={
             "sanatorium_id": str(sanatorium.id),
-            "from": "2027-06-01",
-            "to": "2027-06-03",
+            "from": _day(0),
+            "to": _day(2),
         },
     )
     assert calendar.status_code == 200, calendar.text
@@ -135,7 +144,7 @@ async def test_bulk_rates_and_status_update_rate_plan_calendar(
         headers=admin_headers,
         json={
             "sanatorium_id": str(sanatorium.id),
-            "date_ranges": [{"date_from": "2027-06-01", "date_to": "2027-06-03"}],
+            "date_ranges": [{"date_from": _day(0), "date_to": _day(2)}],
             "weekdays": [0, 1, 2, 3, 4, 5, 6],
             "rate_plan_ids": [rate_plan_id],
             "selling_rate": "900.00",
@@ -150,7 +159,7 @@ async def test_bulk_rates_and_status_update_rate_plan_calendar(
         headers=admin_headers,
         json={
             "sanatorium_id": str(sanatorium.id),
-            "date_ranges": [{"date_from": "2027-06-02", "date_to": "2027-06-02"}],
+            "date_ranges": [{"date_from": _day(1), "date_to": _day(1)}],
             "rate_plan_ids": [rate_plan_id],
             "is_closed": True,
         },
@@ -162,8 +171,8 @@ async def test_bulk_rates_and_status_update_rate_plan_calendar(
         headers=admin_headers,
         params={
             "sanatorium_id": str(sanatorium.id),
-            "from": "2027-06-01",
-            "to": "2027-06-04",
+            "from": _day(0),
+            "to": _day(3),
             "rate_plan_ids": rate_plan_id,
         },
     )
@@ -186,8 +195,8 @@ async def test_bulk_rates_and_status_update_rate_plan_calendar(
     assert logs.json()["total"] == 1
     log = logs.json()["items"][0]
     assert log["action"] == "bulk_rates"
-    assert log["check_in_from"] == "2027-06-01"
-    assert log["check_in_to"] == "2027-06-03"
+    assert log["check_in_from"] == _day(0)
+    assert log["check_in_to"] == _day(2)
     assert log["after"]["selling_rate"] == "900.00"
 
 
@@ -218,7 +227,7 @@ async def test_bulk_restrictions_are_enforced_on_booking(
         headers=admin_headers,
         json={
             "sanatorium_id": str(sanatorium.id),
-            "date_ranges": [{"date_from": "2027-06-01", "date_to": "2027-06-01"}],
+            "date_ranges": [{"date_from": _day(0), "date_to": _day(0)}],
             "rate_plan_ids": [rate_plan_id],
             "min_stay_arrival_nights": 3,
         },
@@ -231,8 +240,8 @@ async def test_bulk_restrictions_are_enforced_on_booking(
         json={
             "room_id": str(room.id),
             "rate_plan_id": rate_plan_id,
-            "check_in": "2027-06-01",
-            "check_out": "2027-06-03",
+            "check_in": _day(0),
+            "check_out": _day(2),
             "guests": 1,
         },
     )
@@ -264,7 +273,7 @@ async def test_bulk_copy_rates_uses_existing_rate_values(
         headers=admin_headers,
         json={
             "sanatorium_id": str(sanatorium.id),
-            "date_ranges": [{"date_from": "2027-06-01", "date_to": "2027-06-01"}],
+            "date_ranges": [{"date_from": _day(0), "date_to": _day(0)}],
             "rate_plan_ids": [rate_plan_id],
             "selling_rate": "777.00",
         },
@@ -275,10 +284,10 @@ async def test_bulk_copy_rates_uses_existing_rate_values(
         headers=admin_headers,
         json={
             "sanatorium_id": str(sanatorium.id),
-            "source_date_from": "2027-06-01",
-            "source_date_to": "2027-06-01",
-            "target_date_from": "2027-06-08",
-            "target_date_to": "2027-06-08",
+            "source_date_from": _day(0),
+            "source_date_to": _day(0),
+            "target_date_from": _day(7),
+            "target_date_to": _day(7),
             "rate_plan_ids": [rate_plan_id],
             "alignment": "date_order",
             "overwrite_existing": True,
@@ -292,8 +301,8 @@ async def test_bulk_copy_rates_uses_existing_rate_values(
         headers=admin_headers,
         params={
             "sanatorium_id": str(sanatorium.id),
-            "from": "2027-06-08",
-            "to": "2027-06-09",
+            "from": _day(7),
+            "to": _day(8),
             "rate_plan_ids": rate_plan_id,
         },
     )

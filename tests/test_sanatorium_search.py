@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import timedelta
 from decimal import Decimal
 
 from httpx import AsyncClient
@@ -12,7 +12,11 @@ from app.models.sanatorium import (
     SanatoriumImage,
     SanatoriumStatus,
 )
-from tests.factories import make_room
+from tests.factories import future_date, make_room
+
+# A Friday-to-Monday window far enough out to never be a past check-in.
+_FRI_DATE = future_date(4, min_days=30)
+_FRI, _SAT, _SUN, _MON = ((_FRI_DATE + timedelta(days=n)).isoformat() for n in range(4))
 
 
 async def _make_region(db: AsyncSession, *, slug: str, name_en: str) -> Region:
@@ -86,8 +90,8 @@ async def test_sanatorium_search_matches_location_and_returns_cheapest_room(
         "/api/sanatoriums/search",
         params={
             "location": "Boysun",
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": _FRI,
+            "check_out": _SUN,
             "adults": 2,
         },
     )
@@ -127,8 +131,8 @@ async def test_sanatorium_search_filters_by_treatment_focus(
     resp = await client.get(
         "/api/sanatoriums/search",
         params={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-05",
+            "check_in": _FRI,
+            "check_out": _MON,
             "treatment_focus": "cardiology",
         },
     )
@@ -148,7 +152,7 @@ async def test_sanatorium_search_excludes_unavailable_rooms(
     db.add(
         RoomAvailability(
             room_id=room.id,
-            date=date(2026, 10, 3),
+            date=_FRI_DATE + timedelta(days=1),
             units_blocked=1,
             units_booked=0,
         )
@@ -158,8 +162,8 @@ async def test_sanatorium_search_excludes_unavailable_rooms(
     resp = await client.get(
         "/api/sanatoriums/search",
         params={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-05",
+            "check_in": _FRI,
+            "check_out": _MON,
             "adults": 2,
         },
     )
@@ -177,8 +181,8 @@ async def test_sanatorium_search_counts_children_as_guests(
     resp = await client.get(
         "/api/sanatoriums/search",
         params={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-05",
+            "check_in": _FRI,
+            "check_out": _MON,
             "adults": 2,
             "children": 1,
         },
@@ -197,8 +201,8 @@ async def test_sanatorium_search_rejects_invalid_date_range(
     resp = await client.get(
         "/api/sanatoriums/search",
         params={
-            "check_in": "2026-10-05",
-            "check_out": "2026-10-02",
+            "check_in": _MON,
+            "check_out": _FRI,
         },
     )
 
@@ -223,7 +227,7 @@ async def test_sanatorium_search_filters_by_property_type(
     await make_room(db, sanatorium=sanatorium, name="Standard", base_price="100.00")
     await make_room(db, sanatorium=wellness, name="Studio", base_price="80.00")
 
-    base_params = {"check_in": "2026-10-02", "check_out": "2026-10-04", "adults": 2}
+    base_params = {"check_in": _FRI, "check_out": _SUN, "adults": 2}
 
     resp = await client.get(
         "/api/sanatoriums/search",

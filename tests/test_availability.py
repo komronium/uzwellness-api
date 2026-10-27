@@ -1,5 +1,7 @@
 """Integration tests for rooms, availability, exchange rates, and room search."""
 
+from datetime import timedelta
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import update
@@ -9,7 +11,11 @@ from app.models.amenity import Amenity, AmenityScope
 from app.models.sanatorium import SanatoriumStatus
 from app.schemas.room import RoomCreate, RoomUpdate
 from app.models.user import User, UserRole
-from tests.factories import make_room, make_sanatorium, make_user
+from tests.factories import future_date, make_room, make_sanatorium, make_user
+
+# A Friday-to-Monday window far enough out to never be a past check-in.
+_FRI_DATE = future_date(4, min_days=30)
+_FRI, _SAT, _SUN, _MON = ((_FRI_DATE + timedelta(days=n)).isoformat() for n in range(4))
 
 
 # ── Room CRUD ──────────────────────────────────────────────────────────────
@@ -542,7 +548,7 @@ class TestRoomSearch:
             db, sanatorium=san, capacity=2, min_nights=1, inventory_count=3
         )
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
+            f"/api/rooms/search?check_in={_FRI}&check_out={_MON}&guests=2"
         )
         assert resp.status_code == 200
         ids = [r["id"] for r in resp.json()]
@@ -556,7 +562,7 @@ class TestRoomSearch:
         await make_room(db, sanatorium=san, capacity=2, inventory_count=5)
         resp = await client.get(
             f"/api/rooms/search?sanatorium_id={san.id}"
-            "&check_in=2026-10-02&check_out=2026-10-05&guests=3"
+            f"&check_in={_FRI}&check_out={_MON}&guests=3"
         )
         rows = resp.json()
         assert len(rows) == 1
@@ -574,7 +580,7 @@ class TestRoomSearch:
         # 5 guests → need 3 rooms, only 1 exists → exceeds_inventory
         resp = await client.get(
             f"/api/rooms/search?sanatorium_id={san.id}"
-            "&check_in=2026-10-02&check_out=2026-10-05&guests=5"
+            f"&check_in={_FRI}&check_out={_MON}&guests=5"
         )
         rows = resp.json()
         assert len(rows) == 1
@@ -605,7 +611,7 @@ class TestRoomSearch:
 
         resp = await client.get(
             f"/api/rooms/search?sanatorium_id={sanatorium_id}"
-            "&check_in=2026-10-02&check_out=2026-10-05&guests=2"
+            f"&check_in={_FRI}&check_out={_MON}&guests=2"
         )
 
         assert resp.status_code == 200, resp.text
@@ -625,14 +631,14 @@ class TestRoomSearch:
         await client.post(
             f"/api/rooms/{room.id}/availability/block",
             json={
-                "date_from": "2026-10-03",
-                "date_to": "2026-10-04",
+                "date_from": _SAT,
+                "date_to": _SUN,
                 "units_blocked": 1,
             },
             headers=admin_headers,
         )
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
+            f"/api/rooms/search?check_in={_FRI}&check_out={_MON}&guests=2"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
@@ -646,14 +652,14 @@ class TestRoomSearch:
         room.inventory_count = 0
         await db.commit()
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-02&check_out=2026-10-05&guests=2"
+            f"/api/rooms/search?check_in={_FRI}&check_out={_MON}&guests=2"
         )
         ids = [r["id"] for r in resp.json()]
         assert str(room.id) not in ids
 
     async def test_check_out_must_be_after_check_in(self, client, db):
         resp = await client.get(
-            "/api/rooms/search?check_in=2026-10-05&check_out=2026-10-02&guests=1"
+            f"/api/rooms/search?check_in={_MON}&check_out={_FRI}&guests=1"
         )
         assert resp.status_code == 400
 

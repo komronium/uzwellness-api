@@ -1,13 +1,16 @@
 """Email-code-verified cancellation with admin approval (task 4)."""
 
+from datetime import timedelta
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sanatorium import SanatoriumStatus
-from tests.factories import make_room, make_sanatorium
+from tests.factories import future_date, make_room, make_sanatorium
 
-_CHECK_IN = "2027-05-10"
-_CHECK_OUT = "2027-05-13"
+_CHECK_IN_DATE = future_date(0, min_days=180)  # a Monday
+_CHECK_IN = _CHECK_IN_DATE.isoformat()
+_CHECK_OUT = (_CHECK_IN_DATE + timedelta(days=3)).isoformat()
 
 
 async def _book(client: AsyncClient, db: AsyncSession, admin_user, customer_headers):

@@ -3,6 +3,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.errors import ensure_check_in_not_past
 from app.api.deps import CurrencyDep, LocaleDep
 from app.core.pagination import Pagination
 from app.models.sanatorium import PropertyType
@@ -32,6 +33,7 @@ async def search_sanatorium_stays(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Check-out must be at least one night after check-in.",
         )
+    ensure_check_in_not_past(check_in)
     items, total = await search.search_stays(
         locale=locale,
         display_currency=display_currency,

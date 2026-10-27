@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ensure_check_in_not_past
 from app.api.deps import CurrencyDep, LocaleDep, OptionalUser
 from app.core.database import get_db
 from app.models.sanatorium import Sanatorium
@@ -32,6 +33,7 @@ async def search_sanatorium_room_offers(
     pricing: BookingPricingPolicy = Depends(get_booking_pricing_policy),
     db: AsyncSession = Depends(get_db),
 ) -> RoomOfferSearchResponse:
+    ensure_check_in_not_past(payload.check_in)
     # Agents see their B2B tier price; customers/anonymous see retail.
     sanatorium = await db.get(Sanatorium, sanatorium_id)
     agent_discount_percent = await pricing.agent_discount_for(current_user, sanatorium)

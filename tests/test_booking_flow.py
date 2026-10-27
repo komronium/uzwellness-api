@@ -1,21 +1,21 @@
 """Integration + concurrency tests for the booking flow (v0.4)."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import timedelta
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sanatorium import SanatoriumStatus
 from app.models.user import UserRole
-from tests.factories import make_room, make_sanatorium, make_user
+from tests.factories import future_date, make_room, make_sanatorium, make_user
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
-_CHECK_IN = "2027-03-10"
-_CHECK_OUT = "2027-03-14"  # 4 nights
-_DATES_START = date(2027, 3, 10)
-_DATES_END = date(2027, 3, 14)
+_DATES_START = future_date(2, min_days=120)  # a Wednesday
+_DATES_END = _DATES_START + timedelta(days=4)  # 4 nights
+_CHECK_IN = _DATES_START.isoformat()
+_CHECK_OUT = _DATES_END.isoformat()
 
 
 async def _setup_room_with_availability(

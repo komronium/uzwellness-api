@@ -9,6 +9,7 @@ from fastapi import (
     status,
 )
 
+from app.core.errors import ensure_check_in_not_past
 from app.api.deps import (
     ConverterDep,
     CurrentUser,
@@ -112,6 +113,7 @@ async def search_rooms(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Check-out must be at least one night after check-in.",
         )
+    ensure_check_in_not_past(check_in)
     hits = await rooms.search(
         converter=converter,
         check_in=check_in,
