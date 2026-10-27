@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.deps import require_roles
+from app.api.deps import public_cache, require_roles
 from app.models.user import UserRole
 from app.schemas.admin import AdminStats
 from app.schemas.app_config import AdminConfig, HomepageConfig
@@ -51,7 +51,11 @@ async def put_admin_config(
     return await configs.put_admin_config(payload)
 
 
-@router.get("/homepage-config", response_model=HomepageConfig)
+@router.get(
+    "/homepage-config",
+    response_model=HomepageConfig,
+    dependencies=[Depends(public_cache)],
+)
 async def get_homepage_config(
     configs: AppConfigService = Depends(get_app_config_service),
 ) -> HomepageConfig:

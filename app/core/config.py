@@ -40,8 +40,11 @@ class Settings(BaseSettings):
     UPLOAD_URL_PREFIX: str = "/uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
     IMAGE_MAX_PIXELS: int = 64_000_000
-    IMAGE_MAX_DIMENSION: int = 1920
-    IMAGE_WEBP_QUALITY: int = 85
+    # Uploads are re-encoded to WebP at most this many px on the long side. The
+    # frontend resizes through Vercel anyway; a small original makes the first
+    # (uncached) load fast and saves Vercel image quota.
+    IMAGE_MAX_DIMENSION: int = 1600
+    IMAGE_WEBP_QUALITY: int = 80
 
     # Uzum Bank Merchant API. The customer pays inside the Uzum Bank app and
     # Uzum calls our /payments/uzum/* webhooks, authenticated with Basic auth.

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.deps import ConverterDep, LocaleDep
+from app.api.deps import ConverterDep, LocaleDep, public_cache
 from app.core.pagination import Pagination
 from app.schemas.sanatorium_featured import (
     FeaturedSanatoriumCard,
@@ -14,7 +14,11 @@ from app.services.sanatorium_query_service import (
 router = APIRouter(prefix="/sanatoriums", tags=["Sanatoriums"])
 
 
-@router.get("/featured", response_model=FeaturedSanatoriumList)
+@router.get(
+    "/featured",
+    response_model=FeaturedSanatoriumList,
+    dependencies=[Depends(public_cache)],
+)
 async def list_featured_sanatoriums(
     locale: LocaleDep,
     converter: ConverterDep,

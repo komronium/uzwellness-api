@@ -88,3 +88,28 @@ def test_compose_publishes_ports_on_loopback_only() -> None:
     assert port_mappings
     for mapping in port_mappings:
         assert mapping.startswith("127.0.0.1:"), mapping
+
+
+def _location(text: str, path: str) -> str:
+    match = re.search(rf"location {re.escape(path)} \{{(.*?)\n    \}}", text, re.S)
+    assert match, f"no location {path}"
+    return match.group(1)
+
+
+def test_nginx_serves_uploads_with_long_immutable_cache() -> None:
+    # Upload file names are fresh UUIDs and never rewritten, so browsers and
+    # the CDN may keep them for a year without revalidating.
+    block = _location(NGINX.read_text(), "/uploads/")
+    assert "alias /var/www/uzwellness-api/uploads/;" in block
+    assert (
+        'add_header Cache-Control "public, max-age=31536000, immutable" always;'
+        in block
+    )
+    # add_header inside a location replaces the server-level ones entirely.
+    for header in (
+        "Strict-Transport-Security",
+        "X-Content-Type-Options",
+        "X-Frame-Options",
+        "Referrer-Policy",
+    ):
+        assert f"add_header {header} " in block, header

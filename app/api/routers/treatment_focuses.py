@@ -18,6 +18,7 @@ from app.api.deps import (
     LocaleDep,
     not_found,
     OptionalUser,
+    public_cache,
     require_roles,
 )
 from app.core.pagination import LargePagination
@@ -74,7 +75,11 @@ async def list_treatment_focuses(
     )
 
 
-@router.get("/tiles", response_model=TreatmentFocusTileList)
+@router.get(
+    "/tiles",
+    response_model=TreatmentFocusTileList,
+    dependencies=[Depends(public_cache)],
+)
 async def list_treatment_focus_tiles(
     locale: LocaleDep,
     focuses: TreatmentFocusService = Depends(get_treatment_focus_service),

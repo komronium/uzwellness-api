@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, Header, HTTPException, Query, Request, status
+from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.errors import (  # re-exported: routers and services import these
@@ -209,6 +209,21 @@ async def get_currency_converter(
     rates: Annotated[ExchangeRateService, Depends(get_exchange_rate_service)],
 ) -> CurrencyConverter:
     return await rates.get_converter(currency)
+
+
+# Shared, anonymous responses that change only when an admin edits content: a
+# few minutes of CDN/browser caching takes them off the homepage's critical path.
+PUBLIC_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=600"
+
+
+def public_cache(response: Response) -> None:
+    """Mark a GET as cacheable by anyone. Never use it on per-user data.
+
+    The body depends on the request language and display currency, which also
+    arrive as headers, so caches must key on those too.
+    """
+    response.headers["Cache-Control"] = PUBLIC_CACHE_CONTROL
+    response.headers["Vary"] = "Accept-Language, X-Currency"
 
 
 LocaleDep = Annotated[Locale, Depends(get_locale)]

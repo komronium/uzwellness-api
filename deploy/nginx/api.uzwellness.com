@@ -22,6 +22,20 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
+    # Uploaded images are served straight from disk. Their names are fresh
+    # UUIDs that are never rewritten, so they can be cached for a year without
+    # revalidation. add_header here replaces the server-level headers, hence
+    # the security headers are repeated.
+    location /uploads/ {
+        alias /var/www/uzwellness-api/uploads/;
+        access_log off;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
     location / {
         proxy_pass http://unix:/run/uzwellness/uvicorn.sock;
 
