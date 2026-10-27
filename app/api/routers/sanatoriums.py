@@ -113,10 +113,19 @@ async def list_sanatoriums(
     )
     if include_translations:
         return sanatorium_admin_list(
-            items, total=total, limit=page.limit, offset=page.offset
+            items,
+            total=total,
+            limit=page.limit,
+            offset=page.offset,
+            viewer=current_user,
         )
     return sanatorium_list(
-        items, total=total, limit=page.limit, offset=page.offset, locale=locale
+        items,
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+        locale=locale,
+        viewer=current_user,
     )
 
 
@@ -132,8 +141,8 @@ async def get_sanatorium_by_slug(
     if sanatorium is None:
         raise not_found("No property found with this id")
     if include_translations:
-        return sanatorium_admin_read(sanatorium)
-    return sanatorium_public_read(sanatorium, locale=locale)
+        return sanatorium_admin_read(sanatorium, viewer=current_user)
+    return sanatorium_public_read(sanatorium, locale=locale, viewer=current_user)
 
 
 @router.get(
@@ -242,8 +251,8 @@ async def get_sanatorium(
     if sanatorium is None:
         raise not_found("No property found with this id")
     if include_translations:
-        return sanatorium_admin_read(sanatorium)
-    return sanatorium_public_read(sanatorium, locale=locale)
+        return sanatorium_admin_read(sanatorium, viewer=current_user)
+    return sanatorium_public_read(sanatorium, locale=locale, viewer=current_user)
 
 
 @router.post(
@@ -261,7 +270,7 @@ async def create_sanatorium(
     if current_user.role == UserRole.ADMIN:
         payload = payload.model_copy(update={"admin_user_id": current_user.id})
     sanatorium = await sanatoriums.create(payload)
-    return sanatorium_admin_read(sanatorium)
+    return sanatorium_admin_read(sanatorium, viewer=current_user)
 
 
 @router.patch("/{sanatorium_id}", response_model=SanatoriumAdminRead)
@@ -276,7 +285,7 @@ async def update_sanatorium(
         raise not_found("No property found with this id")
     ensure_can_edit_sanatorium(sanatorium, current_user)
     updated = await sanatoriums.update(sanatorium, payload, actor=current_user)
-    return sanatorium_admin_read(updated)
+    return sanatorium_admin_read(updated, viewer=current_user)
 
 
 @router.get(
@@ -316,30 +325,30 @@ async def update_reservation_settings(
 @router.post(
     "/{sanatorium_id}/approve",
     response_model=SanatoriumAdminRead,
-    dependencies=[Depends(require_super_admin)],
 )
 async def approve_sanatorium(
     sanatorium_id: uuid.UUID,
+    current_user: User = Depends(require_super_admin),
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("No property found with this id")
     approved = await sanatoriums.approve(sanatorium)
-    return sanatorium_admin_read(approved)
+    return sanatorium_admin_read(approved, viewer=current_user)
 
 
 @router.post(
     "/{sanatorium_id}/reject",
     response_model=SanatoriumAdminRead,
-    dependencies=[Depends(require_super_admin)],
 )
 async def reject_sanatorium(
     sanatorium_id: uuid.UUID,
+    current_user: User = Depends(require_super_admin),
     sanatoriums: SanatoriumService = Depends(get_sanatorium_service),
 ) -> SanatoriumAdminRead:
     sanatorium = await sanatoriums.get_by_id(sanatorium_id)
     if sanatorium is None:
         raise not_found("No property found with this id")
     rejected = await sanatoriums.reject(sanatorium)
-    return sanatorium_admin_read(rejected)
+    return sanatorium_admin_read(rejected, viewer=current_user)

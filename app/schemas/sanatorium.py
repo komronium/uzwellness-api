@@ -202,9 +202,11 @@ class _SanatoriumReadCommon(BaseModel):
     avg_rating: Decimal | None
     review_count: int
     rating_breakdown: RatingBreakdown = Field(default_factory=RatingBreakdown)
+    # Commercial terms: null / [] unless the viewer may see them — see
+    # app/api/sanatorium_mapping.py.
     admin_user_id: uuid.UUID | None
-    platform_commission_percent: Decimal
-    b2b_commission_percent: Decimal
+    platform_commission_percent: Decimal | None
+    b2b_commission_percent: Decimal | None
     agent_discount_tiers: list[AgentDiscountTier] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
