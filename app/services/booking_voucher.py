@@ -1,55 +1,60 @@
-"""Render a downloadable booking-confirmation voucher as a PDF.
+"""Render the booking voucher PDF (download + email attachment).
 
-Locale-aware (uz/ru/en, defaults to en). Modelled closely on a Booking.com print
-voucher: a header band (brand + confirmation number), a bordered top block with
-the property photo, address, GPS and a check-in / check-out / rooms / nights
-grid, the price breakdown, what's included (board + treatment program), a map,
-the room block with amenities and cancellation policy, and a "need help" footer.
+One A4 page, uz/ru/en. Read top to bottom it answers, in order, what a guest
+asks at the door: is this booking valid (status banner), which booking
+(reservation number), where (property, address, map link), when (dates and
+times), what (room/package, meals, guests), how much and is it paid, what if
+plans change (the cancellation terms the money logic actually applies), and
+whom to call.
 
-External assets (property photo, static map) are fetched best-effort and skipped
-on any failure, so the voucher always renders.
+Everything printed is derived from the booking itself: the status from
+`booking.status` (pending means unpaid — never print "confirmed" for it), the
+cancellation wording from the same snapshot fields `cancellation_policy`
+uses to compute refunds.
+
+The property photo is embedded best-effort (downscaled JPEG) and skipped on any
+failure, so the voucher always renders.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import math
 import os
 import threading
 from dataclasses import dataclass, field
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 
 import httpx
 from fastapi import HTTPException, status
 from PIL import Image as PILImage
-from PIL import ImageDraw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.storage import url_to_key
-from app.core.utils import pick_locale
-from app.models.booking import Booking
+from app.core.utils import TASHKENT_TZ, pick_locale
+from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.package import Package
 from app.models.program import TreatmentProgram
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium
 from app.services.booking_invoice import build_invoice
+from app.services.cancellation_policy import free_cancellation_deadline
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    HRFlowable,
     Image as RLImage,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -60,27 +65,44 @@ from reportlab.platypus import (
 logger = logging.getLogger("uzwellness.voucher")
 
 _FONT = "VoucherSans"
+_FONT_SEMI = "VoucherSans-SemiBold"
 _FONT_BOLD = "VoucherSans-Bold"
 _FONT_LOCK = threading.Lock()
 _FONTS_READY = False
 
-_ACCENT = colors.HexColor("#003580")  # deep blue
-_BOX_BG = colors.HexColor("#f2f6fc")
-_RULE = colors.HexColor("#dcdcdc")
-_MUTED = colors.HexColor("#555555")
-_RED = colors.HexColor("#cc0000")
+# Site palette (uzwellness.com's deep green), plus neutrals.
+_BRAND = colors.HexColor("#2E5E4E")
+_BRAND_SOFT = colors.HexColor("#EEF4F1")
+_INK = colors.HexColor("#1B1F1D")
+_MUTED = colors.HexColor("#5F6B66")
+_LINE = colors.HexColor("#DCE3DF")
 
-_CONTENT_W = 174 * mm  # A4 width (210) minus 18mm margins each side
+# Status banner: (text colour, background).
+_STATUS_COLORS = {
+    BookingStatus.CONFIRMED: (colors.HexColor("#14532D"), colors.HexColor("#DCFCE7")),
+    BookingStatus.COMPLETED: (colors.HexColor("#14532D"), colors.HexColor("#DCFCE7")),
+    BookingStatus.PENDING: (colors.HexColor("#7C4A03"), colors.HexColor("#FEF3C7")),
+    BookingStatus.CANCELLED: (colors.HexColor("#7F1D1D"), colors.HexColor("#FEE2E2")),
+}
 
-# Prefer the Ubuntu font (modern, clean, Latin+Cyrillic) when present, then
-# DejaVu, then reportlab's bundled Vera as a last resort.
+_PAGE_W, _PAGE_H = A4
+_MARGIN = 16 * mm
+# The frame pads its content by 6pt per side; layout tables use the same width
+# so their edges line up with the paragraphs.
+_CONTENT_W = _PAGE_W - 2 * _MARGIN - 12
+
+_ASSET_FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+# Bundled Noto Sans first so the PDF looks the same on every host; the system
+# fonts are fallbacks for a checkout without the assets.
 _FONT_CANDIDATES = [
     (
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        str(_ASSET_FONTS / "NotoSans-Regular.ttf"),
+        str(_ASSET_FONTS / "NotoSans-SemiBold.ttf"),
+        str(_ASSET_FONTS / "NotoSans-Bold.ttf"),
     ),
     (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ),
 ]
@@ -97,18 +119,22 @@ def _ensure_fonts() -> None:
 
         bundled = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
         override = (
-            [(settings.VOUCHER_FONT_PATH, settings.VOUCHER_FONT_BOLD_PATH)]
+            [
+                (
+                    settings.VOUCHER_FONT_PATH,
+                    settings.VOUCHER_FONT_BOLD_PATH,
+                    settings.VOUCHER_FONT_BOLD_PATH,
+                )
+            ]
             if settings.VOUCHER_FONT_PATH and settings.VOUCHER_FONT_BOLD_PATH
             else []
         )
-        candidates = (
-            override
-            + _FONT_CANDIDATES
-            + [(os.path.join(bundled, "Vera.ttf"), os.path.join(bundled, "VeraBd.ttf"))]
-        )
-        for regular, bold in candidates:
-            if os.path.exists(regular) and os.path.exists(bold):
+        vera = os.path.join(bundled, "Vera.ttf"), os.path.join(bundled, "VeraBd.ttf")
+        candidates = override + _FONT_CANDIDATES + [(vera[0], vera[1], vera[1])]
+        for regular, semi, bold in candidates:
+            if all(os.path.exists(p) for p in (regular, semi, bold)):
                 pdfmetrics.registerFont(TTFont(_FONT, regular))
+                pdfmetrics.registerFont(TTFont(_FONT_SEMI, semi))
                 pdfmetrics.registerFont(TTFont(_FONT_BOLD, bold))
                 pdfmetrics.registerFontFamily(_FONT, normal=_FONT, bold=_FONT_BOLD)
                 _FONTS_READY = True
@@ -125,257 +151,260 @@ def _ensure_fonts() -> None:
 
 
 _LABELS: dict[str, dict[str, str]] = {
-    "en": {
-        "confirmation_heading": "Booking confirmation",
-        "confirmation_number": "Confirmation number",
-        "check_in": "Check-in",
-        "check_out": "Check-out",
-        "rooms": "Rooms",
-        "nights": "Nights",
-        "status": "Status",
-        "booking_date": "Booking date",
-        "guests": "Guests",
-        "guests_heading": "Guests",
-        "guest_no": "#",
-        "guest_name": "Guest name",
-        "passport": "Passport",
-        "no_program": "—",
-        "price": "Price",
-        "description": "Description",
-        "amount": "Amount",
-        "total": "Total price (incl. taxes)",
-        "total_note": "The total shown is the amount you pay the property.",
-        "fees_note": (
-            "Any optional on-site services are paid directly at the property."
-        ),
-        "extra_bed": "Extra bed",
-        "payment": "Payment details",
-        "payment_by": "All payments are handled by the property {name}.",
-        "payment_methods": "Accepted payment methods: {methods}.",
-        "included": "What's included",
-        "accommodation": "Accommodation: {nights} night(s), {board}",
-        "treatment_program": "Treatment program",
-        "amenities": "Room facilities",
-        "board": "Board",
-        "stay_line": "Accommodation — {nights} night(s)",
-        "per_night": "≈ {amount} / night",
-        "cancellation": "Cancellation policy",
-        "prepayment": "Prepayment",
-        "prepayment_not_required": "No prepayment needed.",
-        "non_refundable": "Non-refundable",
-        "free_cancellation": "Free cancellation",
-        "free_cancellation_days": (
-            "Free cancellation up to {days} day(s) before check-in"
-        ),
-        "penalty": "Cancellation fee: {amount}",
-        "see_policy": "See the property's cancellation policy",
-        "address": "Address",
-        "phone": "Phone",
-        "gps": "GPS",
-        "important_info": "Important information",
-        "house_rules": "House rules",
-        "checkin_from": "Check-in from {t}",
-        "checkout_until": "Check-out until {t}",
-        "pets_allowed": "Pets allowed",
-        "pets_not_allowed": "Pets are not allowed",
-        "need_help": "Need help?",
-        "contact_property": (
-            "For anything related to your stay, contact {name} directly."
-        ),
-        "support": "Support",
-        "footer": (
-            "This printout contains the key details of your booking. "
-            "You can present it at check-in."
-        ),
-        "sleeps": "Sleeps {n}",
-    },
-    "ru": {
-        "confirmation_heading": "Подтверждение бронирования",
-        "confirmation_number": "Номер подтверждения",
-        "check_in": "Заезд",
-        "check_out": "Отъезд",
-        "rooms": "Номера",
-        "nights": "Ночи",
-        "status": "Статус",
-        "booking_date": "Дата бронирования",
-        "guests": "Гостей",
-        "guests_heading": "Гости",
-        "guest_no": "№",
-        "guest_name": "Имя гостя",
-        "passport": "Паспорт",
-        "no_program": "—",
-        "price": "Цена",
-        "description": "Описание",
-        "amount": "Сумма",
-        "total": "Итоговая цена (включая налоги)",
-        "total_note": "Указанная итоговая цена — это сумма, которую вы платите объекту.",
-        "fees_note": (
-            "Дополнительные услуги на месте (при наличии) оплачиваются в объекте."
-        ),
-        "extra_bed": "Доп. кровать",
-        "payment": "Сведения об оплате",
-        "payment_by": "Все платежи обрабатывает объект размещения {name}.",
-        "payment_methods": "Доступные способы оплаты: {methods}.",
-        "included": "Что включено",
-        "accommodation": "Проживание: {nights} ноч., {board}",
-        "treatment_program": "Лечебная программа",
-        "amenities": "Удобства номера",
-        "board": "Питание",
-        "stay_line": "Проживание — {nights} ноч.",
-        "per_night": "≈ {amount} / ночь",
-        "cancellation": "Правила отмены",
-        "prepayment": "Предоплата",
-        "prepayment_not_required": "Предоплата не требуется.",
-        "non_refundable": "Без возврата средств",
-        "free_cancellation": "Бесплатная отмена",
-        "free_cancellation_days": (
-            "Бесплатная отмена не позднее чем за {days} дн. до заезда"
-        ),
-        "penalty": "Стоимость отмены: {amount}",
-        "see_policy": "См. правила отмены объекта размещения",
-        "address": "Адрес",
-        "phone": "Телефон",
-        "gps": "Координаты GPS",
-        "important_info": "Важная информация",
-        "house_rules": "Порядок проживания",
-        "checkin_from": "Заезд с {t}",
-        "checkout_until": "Отъезд до {t}",
-        "pets_allowed": "Размещение с питомцами разрешено",
-        "pets_not_allowed": "Размещение с питомцами запрещено",
-        "need_help": "Требуется помощь?",
-        "contact_property": (
-            "По вопросам, связанным с проживанием, свяжитесь с {name} напрямую."
-        ),
-        "support": "Поддержка",
-        "footer": (
-            "В этой версии для печати содержится наиболее важная информация о "
-            "вашем бронировании. Вы можете предъявить её при заезде."
-        ),
-        "sleeps": "Вместимость: {n}",
-    },
     "uz": {
-        "confirmation_heading": "Bron tasdiqlangani",
-        "confirmation_number": "Tasdiqlash raqami",
+        "title": "Bron vaucheri",
+        "issued": "Berilgan sana: {date}",
+        "status_confirmed": "Bron tasdiqlangan",
+        "status_confirmed_note": (
+            "To'lov qabul qilingan. Kelganingizda ushbu vaucherni ko'rsating."
+        ),
+        "status_completed": "Yashash yakunlangan",
+        "status_completed_note": "Bizni tanlaganingiz uchun rahmat.",
+        "status_pending": "To'lov kutilmoqda",
+        "status_pending_note": (
+            "Joy siz uchun band qilingan. Bron to'lovdan keyin tasdiqlanadi."
+        ),
+        "status_cancelled": "Bron bekor qilingan",
+        "status_cancelled_note": "Bu bron endi amal qilmaydi.",
+        "reservation_number": "Bron raqami",
+        "booking_code": "Bron kodi",
         "check_in": "Kelish",
         "check_out": "Ketish",
-        "rooms": "Xonalar",
-        "nights": "Kechalar",
-        "status": "Holati",
-        "booking_date": "Bron sanasi",
-        "guests": "Mehmonlar",
-        "guests_heading": "Mehmonlar",
-        "guest_no": "№",
-        "guest_name": "Mehmon ismi",
-        "passport": "Pasport",
-        "no_program": "—",
-        "price": "Narx",
-        "description": "Tavsif",
-        "amount": "Summa",
-        "total": "Yakuniy narx (soliqlar bilan)",
-        "total_note": "Ko'rsatilgan yakuniy narx — siz obyektga to'laydigan summa.",
-        "fees_note": (
-            "Joyida ko'rsatiladigan qo'shimcha xizmatlar (bo'lsa) obyektda to'lanadi."
-        ),
-        "extra_bed": "Qo'shimcha o'rin",
-        "payment": "To'lov ma'lumotlari",
-        "payment_by": "Barcha to'lovlarni obyekt ({name}) o'zi qabul qiladi.",
-        "payment_methods": "Qabul qilinadigan to'lov turlari: {methods}.",
-        "included": "Nimalar kiritilgan",
-        "accommodation": "Yashash: {nights} kecha, {board}",
-        "treatment_program": "Davolash dasturi",
-        "amenities": "Xona qulayliklari",
+        "nights": "Kecha",
+        "guests": "Mehmon",
+        "from_time": "{t} dan",
+        "until_time": "{t} gacha",
+        "details": "Bron tafsilotlari",
+        "type": "Turi",
+        "type_room": "Xona",
+        "type_package": "Davolash paketi",
+        "type_session": "Dastur",
+        "name": "Nomi",
         "board": "Ovqatlanish",
-        "stay_line": "Yashash — {nights} kecha",
-        "per_night": "≈ {amount} / kecha",
+        "rooms": "Xonalar",
+        "guest_list": "Mehmonlar",
+        "treatment": "Davolash",
+        "passport": "pasport",
+        "payment": "To'lov",
+        "line_stay": "Yashash, {nights} kecha",
+        "extra_bed": "Qo'shimcha o'rin × {n}",
+        "transfer": "Transfer: {route}",
+        "total": "Jami",
+        "paid": "To'langan",
+        "due": "To'lanishi kerak",
+        "pay_how": (
+            "Qanday to'lash mumkin: uzwellness.com saytida karta orqali yoki "
+            "Uzum Bank ilovasida UzWellness xizmatini tanlab, bron raqamini kiriting."
+        ),
+        "pay_done": "To'lov UzWellness orqali qabul qilingan.",
+        "extras_note": (
+            "Obyektdagi qo'shimcha xizmatlar (agar bo'lsa) joyida alohida to'lanadi."
+        ),
         "cancellation": "Bekor qilish shartlari",
-        "prepayment": "Oldindan to'lov",
-        "prepayment_not_required": "Oldindan to'lov talab qilinmaydi.",
-        "non_refundable": "Qaytarilmaydi",
-        "free_cancellation": "Bepul bekor qilish",
-        "free_cancellation_days": "Kelishdan {days} kun oldin bepul bekor qilish",
-        "penalty": "Bekor qilish to'lovi: {amount}",
-        "see_policy": "Obyektning bekor qilish shartlariga qarang",
-        "address": "Manzil",
-        "phone": "Telefon",
-        "gps": "GPS",
-        "important_info": "Muhim ma'lumot",
-        "house_rules": "Yashash tartibi",
-        "checkin_from": "Kelish {t} dan",
-        "checkout_until": "Ketish {t} gacha",
-        "pets_allowed": "Uy hayvonlari bilan ruxsat",
-        "pets_not_allowed": "Uy hayvonlari bilan taqiqlanadi",
-        "need_help": "Yordam kerakmi?",
-        "contact_property": (
-            "Bandingiz bo'yicha savollar bo'lsa, {name} bilan bevosita bog'laning."
+        "non_refundable": (
+            "Bu tarif qaytarilmaydi: bekor qilinsa, to'langan summa qaytarilmaydi."
         ),
-        "support": "Yordam",
+        "free_until": "{date} gacha bepul bekor qilish mumkin.",
+        "penalty_percent_after": "Undan keyin narxning {pct}% ushlab qolinadi.",
+        "penalty_amount_after": "Undan keyin {amount} ushlab qolinadi.",
+        "penalty_percent": "Bekor qilinsa, narxning {pct}% ushlab qolinadi.",
+        "penalty_amount": "Bekor qilinsa, {amount} ushlab qolinadi.",
+        "free": "Bepul bekor qilish mumkin: to'langan summa to'liq qaytariladi.",
+        "arrival": "Joylashish",
+        "checkin_from": "Kirish: {t} dan",
+        "checkout_until": "Chiqish: {t} gacha",
+        "pets_allowed": "Uy hayvonlari bilan kelish mumkin",
+        "pets_not_allowed": "Uy hayvonlari bilan kelish mumkin emas",
+        "property_rules": "Obyekt qoidalari",
+        "contacts": "Aloqa",
+        "property": "Obyekt",
+        "support": "UzWellness yordam xizmati",
+        "open_map": "Xaritada ochish",
         "footer": (
-            "Ushbu chop etilgan nusxada bandingiz haqidagi eng muhim ma'lumotlar bor. "
-            "Uni kelganda ko'rsatishingiz mumkin."
+            "Ushbu vaucherni kelganingizda ko'rsating — telefonda yoki chop "
+            "etilgan holda."
         ),
-        "sleeps": "Sig'imi: {n}",
-    },
-}
-
-_STATUS_LABELS: dict[str, dict[str, str]] = {
-    "en": {
-        "pending": "Pending",
-        "confirmed": "Confirmed",
-        "cancelled": "Cancelled",
-        "completed": "Completed",
     },
     "ru": {
-        "pending": "Ожидает",
-        "confirmed": "Подтверждено",
-        "cancelled": "Отменено",
-        "completed": "Завершено",
+        "title": "Ваучер бронирования",
+        "issued": "Выдан: {date}",
+        "status_confirmed": "Бронирование подтверждено",
+        "status_confirmed_note": "Оплата получена. Покажите этот ваучер при заезде.",
+        "status_completed": "Проживание завершено",
+        "status_completed_note": "Спасибо, что выбрали нас.",
+        "status_pending": "Ожидает оплаты",
+        "status_pending_note": (
+            "Место забронировано за вами. Бронирование подтвердится после оплаты."
+        ),
+        "status_cancelled": "Бронирование отменено",
+        "status_cancelled_note": "Это бронирование больше не действует.",
+        "reservation_number": "Номер брони",
+        "booking_code": "Код брони",
+        "check_in": "Заезд",
+        "check_out": "Выезд",
+        "nights": "Ночей",
+        "guests": "Гостей",
+        "from_time": "с {t}",
+        "until_time": "до {t}",
+        "details": "Детали бронирования",
+        "type": "Тип",
+        "type_room": "Номер",
+        "type_package": "Лечебный пакет",
+        "type_session": "Программа",
+        "name": "Название",
+        "board": "Питание",
+        "rooms": "Номеров",
+        "guest_list": "Гости",
+        "treatment": "Лечение",
+        "passport": "паспорт",
+        "payment": "Оплата",
+        "line_stay": "Проживание, ночей: {nights}",
+        "extra_bed": "Доп. кровать × {n}",
+        "transfer": "Трансфер: {route}",
+        "total": "Итого",
+        "paid": "Оплачено",
+        "due": "К оплате",
+        "pay_how": (
+            "Как оплатить: картой на сайте uzwellness.com или в приложении "
+            "Uzum Bank — выберите сервис UzWellness и введите номер брони."
+        ),
+        "pay_done": "Оплата получена через UzWellness.",
+        "extras_note": (
+            "Дополнительные услуги на месте (если есть) оплачиваются отдельно."
+        ),
+        "cancellation": "Условия отмены",
+        "non_refundable": (
+            "Невозвратный тариф: при отмене оплаченная сумма не возвращается."
+        ),
+        "free_until": "Бесплатная отмена до {date}.",
+        "penalty_percent_after": "После этого удерживается {pct}% стоимости.",
+        "penalty_amount_after": "После этого удерживается {amount}.",
+        "penalty_percent": "При отмене удерживается {pct}% стоимости.",
+        "penalty_amount": "При отмене удерживается {amount}.",
+        "free": "Бесплатная отмена: оплаченная сумма возвращается полностью.",
+        "arrival": "Заселение",
+        "checkin_from": "Заезд: с {t}",
+        "checkout_until": "Выезд: до {t}",
+        "pets_allowed": "Можно с домашними животными",
+        "pets_not_allowed": "Без домашних животных",
+        "property_rules": "Правила объекта",
+        "contacts": "Контакты",
+        "property": "Объект",
+        "support": "Поддержка UzWellness",
+        "open_map": "Открыть на карте",
+        "footer": (
+            "Покажите этот ваучер при заезде — на телефоне или в распечатанном виде."
+        ),
     },
-    "uz": {
-        "pending": "Kutilmoqda",
-        "confirmed": "Tasdiqlangan",
-        "cancelled": "Bekor qilingan",
-        "completed": "Yakunlangan",
+    "en": {
+        "title": "Booking voucher",
+        "issued": "Issued: {date}",
+        "status_confirmed": "Booking confirmed",
+        "status_confirmed_note": "Payment received. Show this voucher at check-in.",
+        "status_completed": "Stay completed",
+        "status_completed_note": "Thank you for staying with us.",
+        "status_pending": "Awaiting payment",
+        "status_pending_note": (
+            "Your place is held. The booking is confirmed once it is paid."
+        ),
+        "status_cancelled": "Booking cancelled",
+        "status_cancelled_note": "This booking is no longer valid.",
+        "reservation_number": "Reservation number",
+        "booking_code": "Booking code",
+        "check_in": "Check-in",
+        "check_out": "Check-out",
+        "nights": "Nights",
+        "guests": "Guests",
+        "from_time": "from {t}",
+        "until_time": "until {t}",
+        "details": "Booking details",
+        "type": "Type",
+        "type_room": "Room",
+        "type_package": "Treatment package",
+        "type_session": "Program",
+        "name": "Name",
+        "board": "Meals",
+        "rooms": "Rooms",
+        "guest_list": "Guests",
+        "treatment": "Treatment",
+        "passport": "passport",
+        "payment": "Payment",
+        "line_stay": "Stay, {nights} night(s)",
+        "extra_bed": "Extra bed × {n}",
+        "transfer": "Transfer: {route}",
+        "total": "Total",
+        "paid": "Paid",
+        "due": "Amount due",
+        "pay_how": (
+            "How to pay: by card on uzwellness.com, or in the Uzum Bank app — "
+            "choose UzWellness and enter your reservation number."
+        ),
+        "pay_done": "Payment received via UzWellness.",
+        "extras_note": (
+            "Optional on-site services, if any, are paid separately at the property."
+        ),
+        "cancellation": "Cancellation policy",
+        "non_refundable": (
+            "Non-refundable rate: if cancelled, the amount paid is not returned."
+        ),
+        "free_until": "Free cancellation until {date}.",
+        "penalty_percent_after": "After that, {pct}% of the price is withheld.",
+        "penalty_amount_after": "After that, {amount} is withheld.",
+        "penalty_percent": "If cancelled, {pct}% of the price is withheld.",
+        "penalty_amount": "If cancelled, {amount} is withheld.",
+        "free": "Free cancellation: the amount paid is refunded in full.",
+        "arrival": "Arrival",
+        "checkin_from": "Check-in: from {t}",
+        "checkout_until": "Check-out: until {t}",
+        "pets_allowed": "Pets allowed",
+        "pets_not_allowed": "No pets",
+        "property_rules": "Property rules",
+        "contacts": "Contacts",
+        "property": "Property",
+        "support": "UzWellness support",
+        "open_map": "Open in maps",
+        "footer": "Show this voucher at check-in — on your phone or printed.",
     },
 }
 
 _BOARD_LABELS: dict[str, dict[str, str]] = {
-    "en": {
-        "room_only": "room only",
-        "breakfast": "breakfast included",
-        "half_board": "half board (2 meals)",
-        "full_board": "full board (3 meals)",
-        "all_inclusive": "all inclusive",
-    },
-    "ru": {
-        "room_only": "без питания",
-        "breakfast": "завтрак включён",
-        "half_board": "полупансион (2 приёма)",
-        "full_board": "полный пансион (3 приёма)",
-        "all_inclusive": "всё включено",
-    },
     "uz": {
         "room_only": "ovqatsiz",
-        "breakfast": "nonushta bilan",
+        "breakfast": "nonushta",
         "half_board": "yarim pansion (2 mahal)",
         "full_board": "to'liq pansion (3 mahal)",
         "all_inclusive": "hammasi kiritilgan",
     },
+    "ru": {
+        "room_only": "без питания",
+        "breakfast": "завтрак",
+        "half_board": "полупансион (2 приёма пищи)",
+        "full_board": "полный пансион (3 приёма пищи)",
+        "all_inclusive": "всё включено",
+    },
+    "en": {
+        "room_only": "room only",
+        "breakfast": "breakfast",
+        "half_board": "half board (2 meals)",
+        "full_board": "full board (3 meals)",
+        "all_inclusive": "all inclusive",
+    },
 }
 
 _MONTHS: dict[str, list[str]] = {
-    "en": [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
+    "uz": [
+        "yanvar",
+        "fevral",
+        "mart",
+        "aprel",
+        "may",
+        "iyun",
+        "iyul",
+        "avgust",
+        "sentyabr",
+        "oktyabr",
+        "noyabr",
+        "dekabr",
     ],
     "ru": [
         "января",
@@ -391,31 +420,31 @@ _MONTHS: dict[str, list[str]] = {
         "ноября",
         "декабря",
     ],
-    "uz": [
-        "Yanvar",
-        "Fevral",
-        "Mart",
-        "Aprel",
+    "en": [
+        "January",
+        "February",
+        "March",
+        "April",
         "May",
-        "Iyun",
-        "Iyul",
-        "Avgust",
-        "Sentabr",
-        "Oktabr",
-        "Noyabr",
-        "Dekabr",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ],
 }
 
 _WEEKDAYS: dict[str, list[str]] = {
-    "en": [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
+    "uz": [
+        "dushanba",
+        "seshanba",
+        "chorshanba",
+        "payshanba",
+        "juma",
+        "shanba",
+        "yakshanba",
     ],
     "ru": [
         "понедельник",
@@ -426,663 +455,477 @@ _WEEKDAYS: dict[str, list[str]] = {
         "суббота",
         "воскресенье",
     ],
-    "uz": [
-        "Dushanba",
-        "Seshanba",
-        "Chorshanba",
-        "Payshanba",
-        "Juma",
-        "Shanba",
-        "Yakshanba",
+    "en": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
     ],
 }
+
+# UZS reads as "11 900 000 so'm" / "11 900 000 сум"; English keeps the ISO code.
+_UZS_SUFFIX = {"uz": "so'm", "ru": "сум"}
 
 
 @dataclass(slots=True)
 class _Ctx:
+    lang: str
+    labels: dict[str, str]
     sanatorium: Sanatorium | None
-    room: Room | None
+    sanatorium_name: str
     invoice: dict
     stay_name: str | None
     photo: bytes | None
-    map_image: bytes | None
-    amenities: list[str] = field(default_factory=list)
+    guests: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 async def build_voucher_pdf(
     db: AsyncSession, booking: Booking, locale: str = "en"
 ) -> bytes:
-    """Render the booking confirmation voucher and return the PDF bytes."""
+    """Render the booking voucher and return the PDF bytes."""
     _ensure_fonts()
     lang = locale if locale in _LABELS else "en"
-    labels = _LABELS[lang]
-
     ctx = await _load_context(db, booking, lang)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
+        leftMargin=_MARGIN,
+        rightMargin=_MARGIN,
         topMargin=14 * mm,
         bottomMargin=14 * mm,
-        title=f"Booking #{booking.reservation_number}",
+        title=f"{ctx.labels['title']} {booking.reservation_number}",
+        author=settings.VOUCHER_BRAND_NAME,
     )
-    styles = _styles()
+    s = _styles()
     story: list = []
-
-    _append_header_band(story, styles, labels, booking)
-    _append_top_box(story, styles, labels, booking, ctx, lang)
-    _append_room_box(story, styles, labels, booking, ctx, lang)
-    _append_guests(story, styles, labels, booking, ctx, lang)
-    _append_price(story, styles, labels, booking, ctx)
-    _append_map(story, ctx)
-    _append_extras(story, styles, labels, ctx, lang)
-    _append_footer(story, styles, labels, ctx)
-
+    story += _header(s, ctx)
+    story += _status_banner(s, ctx, booking)
+    story += _property_block(s, ctx)
+    story += _stay_strip(s, ctx, booking)
+    story += _details(s, ctx, booking)
+    story += _payment(s, ctx, booking)
+    story += _policies(s, ctx, booking)
+    story += _contacts(s, ctx)
     doc.build(story)
     return buffer.getvalue()
 
 
+# ── styles ────────────────────────────────────────────────────────────────────
+
+
 def _styles() -> dict[str, ParagraphStyle]:
     base = ParagraphStyle(
-        "v", fontName=_FONT, fontSize=9.5, leading=13, textColor=colors.black
+        "v", fontName=_FONT, fontSize=9.5, leading=13.5, textColor=_INK
     )
+
+    def style(name: str, **kw) -> ParagraphStyle:
+        return ParagraphStyle(name, parent=base, **kw)
+
     return {
         "base": base,
-        "brand": ParagraphStyle(
-            "brand", parent=base, fontName=_FONT_BOLD, fontSize=22, textColor=_ACCENT
+        "muted": style("muted", fontSize=8.5, leading=12, textColor=_MUTED),
+        "small": style("small", fontSize=8, leading=11, textColor=_MUTED),
+        "brand": style(
+            "brand", fontName=_FONT_BOLD, fontSize=17, leading=20, textColor=_BRAND
         ),
-        "conf_label": ParagraphStyle(
-            "conf_label", parent=base, fontSize=10, alignment=TA_RIGHT
+        "title": style(
+            "title", fontName=_FONT_SEMI, fontSize=11, leading=14, alignment=TA_RIGHT
         ),
-        "conf_head": ParagraphStyle(
-            "conf_head",
-            parent=base,
+        "issued": style(
+            "issued", fontSize=8, leading=11, textColor=_MUTED, alignment=TA_RIGHT
+        ),
+        "status": style("status", fontName=_FONT_BOLD, fontSize=12.5, leading=16),
+        "status_note": style("status_note", fontSize=9, leading=12.5),
+        "label": style("label", fontSize=7.5, leading=10, textColor=_MUTED),
+        "number": style(
+            "number", fontName=_FONT_BOLD, fontSize=15, leading=19, textColor=_BRAND
+        ),
+        "code": style(
+            "code", fontName=_FONT_SEMI, fontSize=11, leading=19, alignment=TA_RIGHT
+        ),
+        "property": style("property", fontName=_FONT_BOLD, fontSize=13, leading=16.5),
+        "link": style(
+            "link", fontName=_FONT_SEMI, fontSize=8.5, leading=12, textColor=_BRAND
+        ),
+        "strip_value": style(
+            "strip_value", fontName=_FONT_BOLD, fontSize=12, leading=15
+        ),
+        "strip_sub": style("strip_sub", fontSize=8, leading=10.5, textColor=_MUTED),
+        "h": style(
+            "h",
+            fontName=_FONT_SEMI,
+            fontSize=10.5,
+            leading=14,
+            textColor=_BRAND,
+            spaceBefore=11,
+            spaceAfter=4,
+        ),
+        "key": style("key", fontSize=9, leading=13, textColor=_MUTED),
+        "value": style("value", fontName=_FONT_SEMI, fontSize=9.5, leading=13),
+        "right": style("right", alignment=TA_RIGHT),
+        "total_label": style(
+            "total_label", fontName=_FONT_BOLD, fontSize=11.5, leading=15
+        ),
+        "total_value": style(
+            "total_value",
             fontName=_FONT_BOLD,
-            fontSize=14,
-            alignment=TA_RIGHT,
-        ),
-        "conf_num": ParagraphStyle(
-            "conf_num",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=12,
-            alignment=TA_RIGHT,
-            textColor=_ACCENT,
-        ),
-        "h2": ParagraphStyle(
-            "h2",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=12.5,
+            fontSize=13,
             leading=16,
-            spaceBefore=12,
-            spaceAfter=5,
-            textColor=_ACCENT,
-        ),
-        "name": ParagraphStyle(
-            "name", parent=base, fontName=_FONT_BOLD, fontSize=13, leading=16
-        ),
-        "muted": ParagraphStyle(
-            "muted", parent=base, fontSize=9, leading=12, textColor=_MUTED
-        ),
-        "right": ParagraphStyle("right", parent=base, alignment=TA_RIGHT),
-        "right_bold": ParagraphStyle(
-            "right_bold", parent=base, fontName=_FONT_BOLD, alignment=TA_RIGHT
-        ),
-        "big_total": ParagraphStyle(
-            "big_total",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=15,
             alignment=TA_RIGHT,
+            textColor=_BRAND,
         ),
-        "total_label": ParagraphStyle(
-            "total_label",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=12,
-            textColor=_ACCENT,
-        ),
-        "total_amount": ParagraphStyle(
-            "total_amount",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=14,
-            leading=18,
-            alignment=TA_RIGHT,
-            textColor=_ACCENT,
-        ),
-        "grid_label": ParagraphStyle(
-            "grid_label",
-            parent=base,
-            fontSize=7.5,
-            leading=9,
-            alignment=TA_CENTER,
-            textColor=_MUTED,
-        ),
-        "grid_day": ParagraphStyle(
-            "grid_day",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=22,
-            leading=24,
-            alignment=TA_CENTER,
-            textColor=_ACCENT,
-        ),
-        "grid_sub": ParagraphStyle(
-            "grid_sub",
-            parent=base,
-            fontSize=7.5,
-            leading=9.5,
-            alignment=TA_CENTER,
-            textColor=_MUTED,
-        ),
-        "th": ParagraphStyle(
-            "th",
-            parent=base,
-            fontName=_FONT_BOLD,
-            fontSize=9,
-            textColor=colors.white,
-        ),
-        "td": ParagraphStyle("td", parent=base, fontSize=9, leading=12),
-        "td_small": ParagraphStyle(
-            "td_small", parent=base, fontSize=7.5, leading=9.5, textColor=_MUTED
-        ),
-        "red": ParagraphStyle("red", parent=base, textColor=_RED),
     }
 
 
-# ── header band ───────────────────────────────────────────────────────────────
+# ── sections ──────────────────────────────────────────────────────────────────
 
 
-def _append_header_band(story, styles, labels, booking) -> None:
-    brand = Paragraph(_esc(settings.VOUCHER_BRAND_NAME), styles["brand"])
-    right = [
-        Paragraph(labels["confirmation_heading"], styles["conf_head"]),
-        Paragraph(
-            f"{labels['confirmation_number']}: {_esc(booking.reservation_number)}",
-            styles["conf_num"],
-        ),
+def _header(s, ctx: _Ctx) -> list:
+    issued = ctx.labels["issued"].format(
+        date=_fmt_date(datetime.now(UTC).astimezone(TASHKENT_TZ).date(), ctx.lang)
+    )
+    table = Table(
+        [
+            [
+                Paragraph(_esc(settings.VOUCHER_BRAND_NAME), s["brand"]),
+                [
+                    Paragraph(ctx.labels["title"], s["title"]),
+                    Paragraph(issued, s["issued"]),
+                ],
+            ]
+        ],
+        colWidths=[_CONTENT_W * 0.5, _CONTENT_W * 0.5],
+    )
+    table.setStyle(_plain([("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+    return [table, Spacer(1, 5), _rule(_BRAND, 1.2), Spacer(1, 9)]
+
+
+def _status_banner(s, ctx: _Ctx, booking: Booking) -> list:
+    key = _status_key(booking)
+    fg, bg = _STATUS_COLORS.get(booking.status, _STATUS_COLORS[BookingStatus.PENDING])
+    title = ParagraphStyle("st", parent=s["status"], textColor=fg)
+    note = ParagraphStyle("stn", parent=s["status_note"], textColor=fg)
+    number = [
+        Paragraph(ctx.labels["reservation_number"], s["label"]),
+        Paragraph(_group_digits(booking.reservation_number), s["number"]),
     ]
-    table = Table([[brand, right]], colWidths=[_CONTENT_W * 0.45, _CONTENT_W * 0.55])
-    table.setStyle(
-        TableStyle(
+    code = [
+        Paragraph(
+            ctx.labels["booking_code"],
+            ParagraphStyle("cl", parent=s["label"], alignment=TA_RIGHT),
+        ),
+        Paragraph(_esc(booking.code), s["code"]),
+    ]
+    banner = Table(
+        [
             [
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                [
+                    Paragraph(ctx.labels[f"status_{key}"], title),
+                    Paragraph(ctx.labels[f"status_{key}_note"], note),
+                ]
             ]
-        )
+        ],
+        colWidths=[_CONTENT_W],
     )
-    story.append(table)
-    story.append(Spacer(1, 8))
-
-
-# ── top box: property + check-in grid ────────────────────────────────────────
-
-
-def _append_top_box(story, styles, labels, booking, ctx, lang) -> None:
-    left_cells: list = []
-    if ctx.photo is not None:
-        img = _rl_image(ctx.photo, 42 * mm, 28 * mm)
-        if img is not None:
-            left_cells.append(img)
-            left_cells.append(Spacer(1, 4))
-    left_cells.append(
-        Paragraph(_esc(ctx.invoice["sanatorium_name"] or ""), styles["name"])
-    )
-    if ctx.sanatorium is not None:
-        address = pick_locale(ctx.sanatorium.address, lang)
-        if address:
-            left_cells.append(
-                Paragraph(
-                    f"<b>{labels['address']}:</b> {_esc(address)}", styles["muted"]
-                )
-            )
-        phones = [str(p) for p in (ctx.sanatorium.phones or []) if p]
-        if phones:
-            left_cells.append(
-                Paragraph(
-                    f"<b>{labels['phone']}:</b> {_esc(', '.join(phones))}",
-                    styles["muted"],
-                )
-            )
-        if ctx.sanatorium.lat is not None and ctx.sanatorium.lng is not None:
-            left_cells.append(
-                Paragraph(
-                    f"<b>{labels['gps']}:</b> "
-                    f"{ctx.sanatorium.lat}, {ctx.sanatorium.lng}",
-                    styles["muted"],
-                )
-            )
-
-    grid = _date_grid(styles, labels, booking, ctx, lang)
-    box = Table([[left_cells, grid]], colWidths=[_CONTENT_W * 0.46, _CONTENT_W * 0.54])
-    box.setStyle(
-        TableStyle(
+    banner.setStyle(
+        _plain(
             [
-                ("BOX", (0, 0), (-1, -1), 0.8, _RULE),
-                ("LINEAFTER", (0, 0), (0, 0), 0.8, _RULE),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BACKGROUND", (0, 0), (-1, -1), bg),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("ROUNDEDCORNERS", [6, 6, 6, 6]),
             ]
         )
     )
-    story.append(box)
+    ids = Table([[number, code]], colWidths=[_CONTENT_W * 0.6, _CONTENT_W * 0.4])
+    ids.setStyle(_plain([("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+    return [banner, Spacer(1, 10), ids, Spacer(1, 10)]
 
 
-def _date_grid(styles, labels, booking, ctx, lang) -> Table:
+def _property_block(s, ctx: _Ctx) -> list:
+    sanatorium = ctx.sanatorium
+    lines: list = [Paragraph(_esc(ctx.sanatorium_name), s["property"])]
+    if sanatorium is not None:
+        address = pick_locale(sanatorium.address, ctx.lang)
+        if address:
+            lines.append(Paragraph(_esc(address), s["muted"]))
+        phones = [str(p) for p in (sanatorium.phones or []) if p]
+        if phones:
+            lines.append(Paragraph(_esc(", ".join(phones)), s["muted"]))
+        if sanatorium.lat is not None and sanatorium.lng is not None:
+            url = f"https://www.google.com/maps?q={sanatorium.lat},{sanatorium.lng}"
+            lines.append(Spacer(1, 2))
+            lines.append(
+                Paragraph(
+                    f'<link href="{url}">{ctx.labels["open_map"]}</link>', s["link"]
+                )
+            )
+
+    photo = _rl_image(ctx.photo, 46 * mm, 30 * mm) if ctx.photo else None
+    if photo is None:
+        return [*lines, Spacer(1, 10)]
+    table = Table([[photo, lines]], colWidths=[50 * mm, _CONTENT_W - 50 * mm])
+    table.setStyle(_plain([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    return [table, Spacer(1, 10)]
+
+
+def _stay_strip(s, ctx: _Ctx, booking: Booking) -> list:
+    labels = ctx.labels
     ci_time = ctx.sanatorium.check_in_time if ctx.sanatorium else None
     co_time = ctx.sanatorium.check_out_time if ctx.sanatorium else None
-    header = [
-        Paragraph(labels["check_in"], styles["grid_label"]),
-        Paragraph(labels["check_out"], styles["grid_label"]),
-        Paragraph(labels["rooms"], styles["grid_label"]),
-        Paragraph(labels["nights"], styles["grid_label"]),
-    ]
-    values = [
-        _date_cell(styles, ctx.invoice["check_in"], ci_time, lang),
-        _date_cell(styles, ctx.invoice["check_out"], co_time, lang),
-        Paragraph(str(booking.rooms_count), styles["grid_day"]),
-        Paragraph(str(ctx.invoice["nights"]), styles["grid_day"]),
-    ]
-    # Date cells need more room (weekday names); rooms/nights are single digits.
-    usable = _CONTENT_W * 0.54 - 20
-    wide = usable * 0.3
-    narrow = usable * 0.2
-    grid = Table([header, values], colWidths=[wide, wide, narrow, narrow])
-    grid.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("LINEAFTER", (0, 0), (-2, -1), 0.5, _RULE),
-                ("TOPPADDING", (0, 0), (-1, 0), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
-                ("TOPPADDING", (0, 1), (-1, 1), 0),
-            ]
-        )
-    )
-    return grid
 
-
-def _date_cell(styles, value: date, t: time | None, lang: str) -> Table:
-    months = _MONTHS.get(lang, _MONTHS["en"])
-    weekdays = _WEEKDAYS.get(lang, _WEEKDAYS["en"])
-    rows = [
-        [Paragraph(str(value.day), styles["grid_day"])],
-        [Paragraph(_esc(months[value.month - 1]), styles["grid_sub"])],
-        [Paragraph(_esc(weekdays[value.weekday()]), styles["grid_sub"])],
-    ]
-    if t is not None:
-        rows.append([Paragraph(t.strftime("%H:%M"), styles["grid_sub"])])
-    cell = Table(rows)
-    cell.setStyle(
-        TableStyle(
-            [
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    return cell
-
-
-# ── guests table (name / passport / treatment) ───────────────────────────────
-
-
-def _append_guests(story, styles, labels, booking, ctx, lang) -> None:
-    rows = _guest_rows(booking, ctx, lang)
-    if not rows:
-        return
-    story.append(Paragraph(labels["guests_heading"], styles["h2"]))
-    header = [
-        Paragraph(labels["guest_no"], styles["th"]),
-        Paragraph(labels["guest_name"], styles["th"]),
-        Paragraph(labels["passport"], styles["th"]),
-        Paragraph(labels["treatment_program"], styles["th"]),
-    ]
-    data = [header]
-    for idx, (name, passport, title, detail) in enumerate(rows, start=1):
-        program_cell: list = [Paragraph(f"<b>{_esc(title)}</b>", styles["td"])]
-        if detail:
-            program_cell.append(Paragraph(_esc(detail), styles["td_small"]))
-        data.append(
-            [
-                Paragraph(str(idx), styles["td"]),
-                Paragraph(_esc(name), styles["td"]),
-                Paragraph(_esc(passport), styles["td"]),
-                program_cell,
-            ]
-        )
-    table = Table(
-        data,
-        colWidths=[
-            10 * mm,
-            _CONTENT_W * 0.30,
-            _CONTENT_W * 0.24,
-            _CONTENT_W - 10 * mm - _CONTENT_W * 0.54,
-        ],
-    )
-    style = [
-        ("BACKGROUND", (0, 0), (-1, 0), _ACCENT),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (0, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("LINEBELOW", (0, 1), (-1, -1), 0.4, _RULE),
-        ("BOX", (0, 0), (-1, -1), 0.6, _RULE),
-    ]
-    for r in range(1, len(data)):
-        if r % 2 == 0:
-            style.append(("BACKGROUND", (0, r), (-1, r), _BOX_BG))
-    table.setStyle(TableStyle(style))
-    story.append(table)
-
-
-def _guest_rows(booking, ctx, lang) -> list[tuple[str, str, str, str]]:
-    """Rows of (name, passport, program_title, program_detail) per guest."""
-    labels = _LABELS[lang]
-    dash = labels["no_program"]
-    treatments = _guest_treatments(booking)
-    fallback = ("", "")
-    if not any(t[0] for t in treatments) and booking.program_id is not None:
-        fallback = (ctx.stay_name or "", "")
-
-    def pick(i: int) -> tuple[str, str]:
-        title, detail = treatments[i] if i < len(treatments) else ("", "")
-        if not title:
-            title, detail = fallback
-        return (title or dash, detail)
-
-    rows: list[tuple[str, str, str, str]] = []
-    details = booking.guest_details or []
-    if details:
-        for i, gd in enumerate(details):
-            name = (gd.get("full_name") if isinstance(gd, dict) else None) or dash
-            passport = (gd.get("passport") if isinstance(gd, dict) else None) or dash
-            title, detail = pick(i)
-            rows.append((name, passport, title, detail))
-    elif ctx.invoice["customer_name"]:
-        title, detail = pick(0)
-        rows.append((ctx.invoice["customer_name"], dash, title, detail))
-    return rows
-
-
-def _guest_treatments(booking) -> list[tuple[str, str]]:
-    """Per-guest (title, detail) treatment from the offer snapshot, in order."""
-    snapshot = booking.offer_snapshot or {}
-    inclusions = snapshot.get("inclusions") or []
-
-    def _key(entry: dict):
-        guest = entry.get("guest") or {}
-        return (entry.get("room_index", 0), guest.get("guest_index", 0))
-
-    out: list[tuple[str, str]] = []
-    for entry in sorted(inclusions, key=_key):
-        title, detail = "", ""
-        for item in entry.get("items") or []:
-            if item.get("type") in ("treatment", "special_package"):
-                title = (item.get("title") or "").strip()
-                detail = (item.get("description") or "").strip()
-                if title:
-                    break
-        out.append((title, detail))
-    return out
-
-
-# ── price ─────────────────────────────────────────────────────────────────────
-
-
-def _append_price(story, styles, labels, booking, ctx) -> None:
-    story.append(Paragraph(labels["price"], styles["h2"]))
-    currency = ctx.invoice["currency"]
-    nights = max(ctx.invoice["nights"], 1)
-    data = [
-        [
-            Paragraph(labels["description"], styles["base"]),
-            Paragraph(labels["amount"], styles["right"]),
+    def date_cell(label: str, value: date, t: time | None, template: str) -> list:
+        sub = _WEEKDAYS[ctx.lang][value.weekday()]
+        if t is not None:
+            sub += " · " + template.format(t=t.strftime("%H:%M"))
+        return [
+            Paragraph(label, s["label"]),
+            Paragraph(_fmt_date(value, ctx.lang), s["strip_value"]),
+            Paragraph(_esc(sub), s["strip_sub"]),
         ]
+
+    def count_cell(label: str, value: int) -> list:
+        return [Paragraph(label, s["label"]), Paragraph(str(value), s["strip_value"])]
+
+    row = [
+        date_cell(labels["check_in"], booking.check_in, ci_time, labels["from_time"]),
+        date_cell(
+            labels["check_out"], booking.check_out, co_time, labels["until_time"]
+        ),
+        count_cell(labels["nights"], ctx.invoice["nights"]),
+        count_cell(labels["guests"], booking.guests),
     ]
-    for item in ctx.invoice["line_items"]:
-        desc = str(item.get("description") or "")
-        if desc == "Room/program":
-            per_night = (Decimal(str(item["amount"])) / nights).quantize(
-                Decimal("0.01")
-            )
-            cell: list = [
-                Paragraph(
-                    f"<b>{_esc(labels['stay_line'].format(nights=nights))}</b>",
-                    styles["base"],
-                ),
-                Paragraph(
-                    labels["per_night"].format(amount=_fmt_money(per_night, currency)),
-                    styles["td_small"],
-                ),
-            ]
-        else:
-            cell = [Paragraph(_esc(_localize_line(item, labels, ctx)), styles["base"])]
-        data.append(
-            [cell, Paragraph(_fmt_money(item["amount"], currency), styles["right"])]
-        )
-    table = Table(data, colWidths=[_CONTENT_W - 50 * mm, 50 * mm])
-    table.setStyle(
-        TableStyle(
+    widths = [
+        _CONTENT_W * 0.33,
+        _CONTENT_W * 0.33,
+        _CONTENT_W * 0.17,
+        _CONTENT_W * 0.17,
+    ]
+    strip = Table([row], colWidths=widths)
+    strip.setStyle(
+        _plain(
             [
-                ("FONTNAME", (0, 0), (-1, -1), _FONT),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-                ("LINEBELOW", (0, 0), (-1, 0), 0.6, _RULE),
+                ("BACKGROUND", (0, 0), (-1, -1), _BRAND_SOFT),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LINEAFTER", (0, 0), (-2, -1), 0.6, _LINE),
+                ("ROUNDEDCORNERS", [6, 6, 6, 6]),
             ]
         )
     )
-    story.append(table)
+    return [strip]
 
-    # Total bar — full width, label left, amount right, with enough room so a
-    # long currency amount (e.g. UZS millions) never wraps.
-    total_bar = Table(
+
+def _details(s, ctx: _Ctx, booking: Booking) -> list:
+    labels = ctx.labels
+    # (label, value as Paragraph markup — escape plain text on the way in)
+    rows: list[tuple[str, str]] = []
+    type_key = {
+        BookingType.ROOM: "type_room",
+        BookingType.PACKAGE: "type_package",
+        BookingType.SESSION: "type_session",
+    }.get(booking.booking_type)
+    if type_key:
+        rows.append((labels["type"], _esc(labels[type_key])))
+    if ctx.stay_name:
+        rows.append((labels["name"], _esc(ctx.stay_name)))
+    board = _board_label(booking.board, ctx.lang)
+    if board:
+        rows.append((labels["board"], _esc(board)))
+    if booking.booking_type != BookingType.SESSION and booking.rooms_count:
+        rows.append((labels["rooms"], str(booking.rooms_count)))
+
+    if ctx.guests:
+        lines = []
+        for name, passport, treatment in ctx.guests:
+            line = f"<font name='{_FONT_SEMI}'>{_esc(name)}</font>"
+            if passport:
+                line += f" · {labels['passport']} {_esc(passport)}"
+            if treatment:
+                line += f"<br/><font color='#5F6B66' size='8.5'>{labels['treatment']}: {_esc(treatment)}</font>"
+            lines.append(line)
+        rows.append((labels["guest_list"], "<br/>".join(lines)))
+
+    data = [[Paragraph(_esc(k), s["key"]), Paragraph(v, s["value"])] for k, v in rows]
+    table = Table(data, colWidths=[38 * mm, _CONTENT_W - 38 * mm])
+    table.setStyle(
+        _plain(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.5, _LINE),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    return [Paragraph(labels["details"], s["h"]), table]
+
+
+def _payment(s, ctx: _Ctx, booking: Booking) -> list:
+    labels = ctx.labels
+    currency = ctx.invoice["currency"]
+    data = []
+    for item in ctx.invoice["line_items"]:
+        data.append(
+            [
+                Paragraph(_esc(_line_label(item, ctx, booking)), s["base"]),
+                Paragraph(_fmt_money(item["amount"], currency, ctx.lang), s["right"]),
+            ]
+        )
+    lines = Table(data, colWidths=[_CONTENT_W * 0.65, _CONTENT_W * 0.35])
+    lines.setStyle(
+        _plain(
+            [
+                ("LINEBELOW", (0, 0), (-1, -1), 0.5, _LINE),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+
+    paid = booking.status in (BookingStatus.CONFIRMED, BookingStatus.COMPLETED)
+    total_label = labels["paid"] if paid else labels["total"]
+    total = Table(
         [
             [
-                Paragraph(labels["total"], styles["total_label"]),
+                Paragraph(total_label, s["total_label"]),
                 Paragraph(
-                    _fmt_money(ctx.invoice["total"], currency), styles["total_amount"]
+                    _fmt_money(ctx.invoice["total"], currency, ctx.lang),
+                    s["total_value"],
                 ),
             ]
         ],
         colWidths=[_CONTENT_W * 0.5, _CONTENT_W * 0.5],
     )
-    total_bar.setStyle(
-        TableStyle(
+    total.setStyle(
+        _plain(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), _BOX_BG),
-                ("LINEABOVE", (0, 0), (-1, 0), 1.0, _ACCENT),
+                ("BACKGROUND", (0, 0), (-1, -1), _BRAND_SOFT),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 9),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("ROUNDEDCORNERS", [6, 6, 6, 6]),
             ]
         )
     )
-    story.append(total_bar)
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"<b>{_esc(labels['total_note'])}</b>", styles["base"]))
-    notes: list[str] = [labels["fees_note"]]
-    name = ctx.invoice["sanatorium_name"]
-    if name:
-        notes.append(labels["payment_by"].format(name=name))
-    methods = _payment_methods(ctx)
-    if methods:
-        notes.append(labels["payment_methods"].format(methods=methods))
-    story.append(Spacer(1, 2))
-    story.append(Paragraph(_esc(" ".join(notes)), styles["muted"]))
-
-
-# ── map ───────────────────────────────────────────────────────────────────────
-
-
-def _append_map(story, ctx) -> None:
-    if ctx.map_image is None:
-        return
-    img = _rl_image(ctx.map_image, _CONTENT_W, 52 * mm)
-    if img is None:
-        return
-    story.append(Spacer(1, 10))
-    story.append(img)
-
-
-# ── room block: details + cancellation ───────────────────────────────────────
-
-
-def _append_room_box(story, styles, labels, booking, ctx, lang) -> None:
-    # Service / room type as the heading, then board and room facilities.
-    left: list = [
-        Paragraph(_esc(ctx.stay_name or labels["description"]), styles["name"])
+    notes: list[str] = []
+    if paid:
+        notes.append(labels["pay_done"])
+    elif booking.status == BookingStatus.PENDING:
+        notes.append(labels["pay_how"])
+    notes.append(labels["extras_note"])
+    out = [
+        Paragraph(labels["payment"], s["h"]),
+        lines,
+        Spacer(1, 6),
+        total,
+        Spacer(1, 5),
     ]
-    board = _board_label(booking.board, lang)
-    nights = ctx.invoice["nights"]
-    if board:
-        left.append(
-            Paragraph(
-                f"<b>{labels['board']}:</b> {_esc(board)} · {nights} "
-                f"{labels['nights'].lower()}",
-                styles["base"],
+    out += [Paragraph(_esc(n), s["muted"]) for n in notes]
+    return [KeepTogether(out)]
+
+
+def _policies(s, ctx: _Ctx, booking: Booking) -> list:
+    labels = ctx.labels
+    left = [Paragraph(labels["cancellation"], s["h"])]
+    for line in _cancellation_lines(booking, ctx):
+        left.append(Paragraph(_esc(line), s["base"]))
+
+    right = [Paragraph(labels["arrival"], s["h"])]
+    sanatorium = ctx.sanatorium
+    arrival: list[str] = []
+    if sanatorium is not None:
+        if sanatorium.check_in_time is not None:
+            arrival.append(
+                labels["checkin_from"].format(
+                    t=sanatorium.check_in_time.strftime("%H:%M")
+                )
             )
-        )
-    if ctx.amenities:
-        left.append(Spacer(1, 4))
-        left.append(
-            Paragraph(
-                f"<b>{labels['amenities']}:</b> " + _esc(" • ".join(ctx.amenities)),
-                styles["muted"],
+        if sanatorium.check_out_time is not None:
+            arrival.append(
+                labels["checkout_until"].format(
+                    t=sanatorium.check_out_time.strftime("%H:%M")
+                )
             )
-        )
+        if sanatorium.pets_allowed is True:
+            arrival.append(labels["pets_allowed"])
+        elif sanatorium.pets_allowed is False:
+            arrival.append(labels["pets_not_allowed"])
+    for line in arrival:
+        right.append(Paragraph(_esc(line), s["base"]))
+    if len(right) == 1:
+        right = []
 
-    right: list = [Paragraph(labels["cancellation"], styles["name"])]
-    right.append(
-        Paragraph(
-            f"<b>{labels['prepayment']}:</b> {labels['prepayment_not_required']}"
-            if booking.payment_timing != "prepayment"
-            else f"<b>{labels['prepayment']}</b>",
-            styles["base"],
-        )
-    )
-    right.append(
-        Paragraph(
-            _esc(_cancellation_text(booking, ctx.sanatorium, lang, labels)),
-            styles["base"],
-        )
-    )
-
-    box = Table([[left, right]], colWidths=[_CONTENT_W * 0.58, _CONTENT_W * 0.42])
-    box.setStyle(
-        TableStyle(
-            [
-                ("BOX", (0, 0), (-1, -1), 0.8, _RULE),
-                ("LINEAFTER", (0, 0), (0, 0), 0.8, _RULE),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-            ]
-        )
-    )
-    story.append(Spacer(1, 10))
-    story.append(box)
-
-
-# ── important info / house rules ─────────────────────────────────────────────
-
-
-def _append_extras(story, styles, labels, ctx, lang) -> None:
-    if ctx.sanatorium is None:
-        return
-    left: list = []
-    house_rules_text = pick_locale(ctx.sanatorium.house_rules, lang)
-    if house_rules_text:
-        left.append(Paragraph(labels["important_info"], styles["h2"]))
-        left.append(Paragraph(_esc(house_rules_text), styles["base"]))
-
-    rules = _house_rule_lines(ctx.sanatorium, labels)
-    right: list = []
-    if rules:
-        right.append(Paragraph(labels["house_rules"], styles["h2"]))
-        for line in rules:
-            right.append(Paragraph(f"•&nbsp; {_esc(line)}", styles["base"]))
-
-    if not left and not right:
-        return
-    table = Table([[left, right]], colWidths=[_CONTENT_W * 0.5, _CONTENT_W * 0.5])
+    table = Table([[left, right]], colWidths=[_CONTENT_W * 0.55, _CONTENT_W * 0.45])
     table.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (0, 0), 0),
-                ("RIGHTPADDING", (0, 0), (0, 0), 12),
-                ("LEFTPADDING", (1, 0), (1, 0), 12),
-            ]
+        _plain(
+            [("VALIGN", (0, 0), (-1, -1), "TOP"), ("RIGHTPADDING", (0, 0), (0, 0), 14)]
         )
     )
-    story.append(table)
+    # A heading's spaceBefore is dropped inside a table cell; space it here.
+    out: list = [Spacer(1, 6), table]
+    rules = pick_locale(sanatorium.house_rules, ctx.lang) if sanatorium else ""
+    if rules:
+        out.append(Paragraph(labels["property_rules"], s["h"]))
+        out.append(Paragraph(_esc(rules), s["muted"]))
+    return [KeepTogether(out)]
 
 
-def _house_rule_lines(sanatorium: Sanatorium, labels) -> list[str]:
-    lines: list[str] = []
-    if sanatorium.check_in_time is not None:
-        lines.append(
-            labels["checkin_from"].format(t=sanatorium.check_in_time.strftime("%H:%M"))
+def _contacts(s, ctx: _Ctx) -> list:
+    labels = ctx.labels
+    sanatorium = ctx.sanatorium
+    prop: list[str] = []
+    if sanatorium is not None:
+        prop += [str(p) for p in (sanatorium.phones or []) if p]
+        if sanatorium.customer_support_email:
+            prop.append(sanatorium.customer_support_email)
+    support = [settings.SUPPORT_EMAIL] + (
+        [settings.SUPPORT_PHONE] if settings.SUPPORT_PHONE else []
+    )
+
+    cells = []
+    if prop:
+        cells.append(
+            [
+                Paragraph(labels["property"], s["label"]),
+                Paragraph(_esc(" · ".join(prop)), s["base"]),
+            ]
         )
-    if sanatorium.check_out_time is not None:
-        lines.append(
-            labels["checkout_until"].format(
-                t=sanatorium.check_out_time.strftime("%H:%M")
-            )
+    cells.append(
+        [
+            Paragraph(labels["support"], s["label"]),
+            Paragraph(_esc(" · ".join(support)), s["base"]),
+        ]
+    )
+    table = Table([cells], colWidths=[_CONTENT_W / len(cells)] * len(cells))
+    table.setStyle(_plain([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    return [
+        KeepTogether(
+            [
+                Spacer(1, 12),
+                _rule(_LINE, 0.8),
+                Spacer(1, 6),
+                Paragraph(
+                    labels["contacts"],
+                    ParagraphStyle("ch", parent=s["h"], spaceBefore=0),
+                ),
+                table,
+                Spacer(1, 8),
+                Paragraph(_esc(labels["footer"]), s["small"]),
+            ]
         )
-    if sanatorium.pets_allowed is True:
-        lines.append(labels["pets_allowed"])
-    elif sanatorium.pets_allowed is False:
-        lines.append(labels["pets_not_allowed"])
-    return lines
-
-
-# ── footer ────────────────────────────────────────────────────────────────────
-
-
-def _append_footer(story, styles, labels, ctx) -> None:
-    story.append(Spacer(1, 12))
-    story.append(HRFlowable(width="100%", thickness=0.6, color=_RULE))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(labels["need_help"], styles["h2"]))
-    name = ctx.invoice["sanatorium_name"]
-    if name:
-        story.append(
-            Paragraph(
-                _esc(labels["contact_property"].format(name=name)), styles["muted"]
-            )
-        )
-    if ctx.sanatorium is not None and ctx.sanatorium.customer_support_email:
-        story.append(
-            Paragraph(
-                f"{labels['support']}: {_esc(ctx.sanatorium.customer_support_email)}",
-                styles["muted"],
-            )
-        )
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(labels["footer"], styles["muted"]))
+    ]
 
 
 # ── data loading ──────────────────────────────────────────────────────────────
@@ -1091,22 +934,19 @@ def _append_footer(story, styles, labels, ctx) -> None:
 async def _load_context(db: AsyncSession, booking: Booking, lang: str) -> _Ctx:
     invoice = await build_invoice(db, booking)
     sanatorium = await _load_sanatorium(db, booking)
-    room = await _load_room(db, booking)
-    stay_name = await _stay_name(db, booking, lang)
-    amenities = [pick_locale(a.name, lang) for a in room.amenities][:14] if room else []
-    amenities = [a for a in amenities if a]
-
-    photo = await _fetch_photo(sanatorium)
-    map_image = await _fetch_map(sanatorium)
-
+    # The invoice resolves the name in one locale; the voucher wants the reader's.
+    name = (
+        pick_locale(sanatorium.name, lang) if sanatorium is not None else ""
+    ) or invoice["sanatorium_name"]
     return _Ctx(
+        lang=lang,
+        labels=_LABELS[lang],
         sanatorium=sanatorium,
-        room=room,
+        sanatorium_name=name,
         invoice=invoice,
-        stay_name=stay_name,
-        photo=photo,
-        map_image=map_image,
-        amenities=amenities,
+        stay_name=await _stay_name(db, booking, lang),
+        photo=await _fetch_photo(sanatorium),
+        guests=_guest_rows(booking, invoice),
     )
 
 
@@ -1139,22 +979,15 @@ async def _sanatorium_id(db: AsyncSession, booking: Booking):
     return None
 
 
-async def _load_room(db: AsyncSession, booking: Booking) -> Room | None:
-    room_id = booking.room_id
-    if room_id is None and booking.package_id is not None:
-        room_id = await db.scalar(
-            select(Package.room_id).where(Package.id == booking.package_id)
-        )
-    if room_id is None:
-        return None
-    return await db.scalar(
-        select(Room).options(selectinload(Room.amenities)).where(Room.id == room_id)
-    )
-
-
 async def _stay_name(db: AsyncSession, booking: Booking, lang: str) -> str | None:
+    # A package booking also carries the package's room_id, so the package
+    # title wins: it is what the guest bought.
     name: dict | None = None
-    if booking.room_id is not None:
+    if booking.package_id is not None:
+        name = await db.scalar(
+            select(Package.title).where(Package.id == booking.package_id)
+        )
+    elif booking.room_id is not None:
         name = await db.scalar(select(Room.name).where(Room.id == booking.room_id))
     elif booking.program_id is not None:
         name = await db.scalar(
@@ -1162,22 +995,50 @@ async def _stay_name(db: AsyncSession, booking: Booking, lang: str) -> str | Non
                 TreatmentProgram.id == booking.program_id
             )
         )
-    elif booking.package_id is not None:
-        name = await db.scalar(
-            select(Package.title).where(Package.id == booking.package_id)
-        )
     return (pick_locale(name, lang) or None) if name else None
 
 
-# ── external assets (best-effort) ────────────────────────────────────────────
+def _guest_rows(booking: Booking, invoice: dict) -> list[tuple[str, str, str]]:
+    """(name, passport, treatment) per guest; empty parts are left out."""
+    treatments = _guest_treatments(booking)
+    rows: list[tuple[str, str, str]] = []
+    for i, gd in enumerate(booking.guest_details or []):
+        if not isinstance(gd, dict):
+            continue
+        name = (gd.get("full_name") or "").strip()
+        if not name:
+            continue
+        treatment = treatments[i] if i < len(treatments) else ""
+        rows.append((name, (gd.get("passport") or "").strip(), treatment))
+    if not rows and invoice["customer_name"]:
+        rows.append((invoice["customer_name"], "", treatments[0] if treatments else ""))
+    return rows
+
+
+def _guest_treatments(booking: Booking) -> list[str]:
+    """Per-guest treatment title from the offer snapshot, in guest order."""
+    inclusions = (booking.offer_snapshot or {}).get("inclusions") or []
+
+    def _key(entry: dict):
+        guest = entry.get("guest") or {}
+        return (entry.get("room_index", 0), guest.get("guest_index", 0))
+
+    out: list[str] = []
+    for entry in sorted(inclusions, key=_key):
+        title = ""
+        for item in entry.get("items") or []:
+            if item.get("type") in ("treatment", "special_package"):
+                title = (item.get("title") or "").strip()
+                if title:
+                    break
+        out.append(title)
+    return out
 
 
 async def _fetch_photo(sanatorium: Sanatorium | None) -> bytes | None:
-    if sanatorium is None:
+    if sanatorium is None or not sanatorium.images:
         return None
-    images = sanatorium.images or []
-    if not images:
-        return None
+    images = sanatorium.images
     primary = next((i for i in images if i.is_primary), images[0])
     url = primary.url
     if not url:
@@ -1197,126 +1058,145 @@ async def _fetch_photo(sanatorium: Sanatorium | None) -> bytes | None:
     return None
 
 
-async def _fetch_map(sanatorium: Sanatorium | None) -> bytes | None:
-    if sanatorium is None or sanatorium.lat is None or sanatorium.lng is None:
-        return None
-    try:
-        return await _render_tile_map(float(sanatorium.lat), float(sanatorium.lng))
-    except Exception:
-        logger.warning("voucher: failed to render map")
-        return None
-
-
-async def _render_tile_map(
-    lat: float, lng: float, *, width: int = 660, height: int = 280
-) -> bytes | None:
-    """Stitch a static map from OSM tiles and draw a marker at the point."""
-    zoom = settings.VOUCHER_MAP_ZOOM
-    n = 2**zoom
-    x = (lng + 180.0) / 360.0 * n
-    y = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
-    cx_px, cy_px = x * 256.0, y * 256.0
-    left, top = cx_px - width / 2, cy_px - height / 2
-    x0, x1 = int(left // 256), int((left + width) // 256)
-    y0, y1 = int(top // 256), int((top + height) // 256)
-
-    headers = {"User-Agent": f"{settings.VOUCHER_BRAND_NAME}/1.0 (booking voucher)"}
-    async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
-
-        async def _tile(tx: int, ty: int):
-            url = settings.VOUCHER_MAP_TILE_URL.format(z=zoom, x=tx % n, y=ty)
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return tx, ty, resp.content
-
-        coords = [(tx, ty) for ty in range(y0, y1 + 1) for tx in range(x0, x1 + 1)]
-        tiles = await asyncio.gather(*[_tile(tx, ty) for tx, ty in coords])
-
-    canvas = PILImage.new(
-        "RGB", ((x1 - x0 + 1) * 256, (y1 - y0 + 1) * 256), (235, 235, 235)
-    )
-    for tx, ty, content in tiles:
-        canvas.paste(
-            PILImage.open(BytesIO(content)).convert("RGB"),
-            ((tx - x0) * 256, (ty - y0) * 256),
-        )
-    crop_left, crop_top = int(left - x0 * 256), int(top - y0 * 256)
-    crop = canvas.crop((crop_left, crop_top, crop_left + width, crop_top + height))
-
-    draw = ImageDraw.Draw(crop)
-    mx, my, r = width // 2, height // 2, 9
-    draw.ellipse(
-        [mx - r, my - 2 * r, mx + r, my],
-        fill=(204, 0, 0),
-        outline=(255, 255, 255),
-        width=2,
-    )
-    draw.polygon([(mx - 6, my - 5), (mx + 6, my - 5), (mx, my + 7)], fill=(204, 0, 0))
-    buf = BytesIO()
-    crop.save(buf, format="PNG")
-    return buf.getvalue()
-
-
 def _rl_image(raw: bytes, max_w: float, max_h: float) -> RLImage | None:
     try:
-        im = PILImage.open(BytesIO(raw)).convert("RGB")
-        buf = BytesIO()
-        im.save(buf, format="PNG")
-        buf.seek(0)
-        iw, ih = im.size
-        scale = min(max_w / iw, max_h / ih)
-        return RLImage(buf, width=iw * scale, height=ih * scale)
+        jpeg, width, height = _print_jpeg(raw, max_w, max_h)
+        return RLImage(BytesIO(jpeg), width=width, height=height)
     except Exception:
         logger.warning("voucher: failed to embed image")
         return None
 
 
+def _print_jpeg(raw: bytes, max_w: float, max_h: float) -> tuple[bytes, float, float]:
+    """Photo as a JPEG sized for print, plus its size in points.
+
+    A full-resolution upload made the voucher ~1.5 MB — heavy for an email
+    attachment. ~200 dpi at the printed size is plenty for paper and screens.
+    """
+    im = PILImage.open(BytesIO(raw)).convert("RGB")
+    iw, ih = im.size
+    scale = min(max_w / iw, max_h / ih)
+    target_px = (
+        max(1, int(iw * scale / 72 * 200)),
+        max(1, int(ih * scale / 72 * 200)),
+    )
+    if target_px[0] < iw:
+        im = im.resize(target_px, PILImage.Resampling.LANCZOS)
+    buf = BytesIO()
+    im.save(buf, format="JPEG", quality=82, optimize=True)
+    return buf.getvalue(), iw * scale, ih * scale
+
+
 # ── small helpers ─────────────────────────────────────────────────────────────
+
+
+def _status_key(booking: Booking) -> str:
+    return {
+        BookingStatus.CONFIRMED: "confirmed",
+        BookingStatus.COMPLETED: "completed",
+        BookingStatus.CANCELLED: "cancelled",
+    }.get(booking.status, "pending")
+
+
+def _cancellation_lines(booking: Booking, ctx: _Ctx) -> list[str]:
+    """The terms `cancellation_policy.refund_for` will actually apply."""
+    labels = ctx.labels
+    if booking.refundable is False:
+        return [labels["non_refundable"]]
+    currency = ctx.invoice["currency"]
+    penalty = None
+    if booking.cancellation_penalty_amount:
+        penalty = (
+            "amount",
+            _fmt_money(booking.cancellation_penalty_amount, currency, ctx.lang),
+        )
+    elif booking.cancellation_penalty_percent:
+        penalty = ("percent", _fmt_percent(booking.cancellation_penalty_percent))
+
+    deadline = free_cancellation_deadline(booking)
+    if penalty is None:
+        if deadline is not None:
+            return [labels["free_until"].format(date=_fmt_date(deadline, ctx.lang))]
+        return [labels["free"]]
+    kind, value = penalty
+    if deadline is None:
+        key = "penalty_amount" if kind == "amount" else "penalty_percent"
+        return [labels[key].format(amount=value, pct=value)]
+    key = "penalty_amount_after" if kind == "amount" else "penalty_percent_after"
+    return [
+        labels["free_until"].format(date=_fmt_date(deadline, ctx.lang)),
+        labels[key].format(amount=value, pct=value),
+    ]
+
+
+def _line_label(item: dict, ctx: _Ctx, booking: Booking) -> str:
+    labels = ctx.labels
+    desc = str(item.get("description") or "")
+    if desc == "Room/program":
+        if booking.booking_type == BookingType.ROOM or not ctx.stay_name:
+            return labels["line_stay"].format(nights=ctx.invoice["nights"])
+        return ctx.stay_name
+    if desc.startswith("Extra bed"):
+        return labels["extra_bed"].format(n=item.get("qty", 1))
+    if desc.startswith("Transfer ("):
+        return labels["transfer"].format(route=desc[len("Transfer (") : -1])
+    return desc
 
 
 def _board_label(board, lang: str) -> str | None:
     if board is None:
         return None
     value = board.value if hasattr(board, "value") else str(board)
-    return _BOARD_LABELS.get(lang, _BOARD_LABELS["en"]).get(value)
+    return _BOARD_LABELS[lang].get(value)
 
 
-def _payment_methods(ctx) -> str:
-    if ctx.sanatorium is None:
-        return ""
-    methods = [str(m) for m in (ctx.sanatorium.payment_methods or []) if m]
-    return ", ".join(methods)
+def _fmt_date(value: date, lang: str) -> str:
+    month = _MONTHS[lang][value.month - 1]
+    if lang == "uz":
+        return f"{value.day}-{month}, {value.year}"
+    return f"{value.day} {month} {value.year}"
 
 
-def _localize_line(item: dict, labels, ctx) -> str:
-    desc = str(item.get("description") or "")
-    if desc.startswith("Extra bed"):
-        return f"{labels['extra_bed']} × {item.get('qty', 1)}"
-    if desc == "Room/program":
-        return ctx.stay_name or labels["description"]
-    return desc
+def _fmt_money(amount, currency: str, lang: str) -> str:
+    value = Decimal(str(amount))
+    if currency == "UZS":
+        whole = f"{value.quantize(Decimal('1')):,}"
+        if lang in _UZS_SUFFIX:
+            # Narrow no-break spaces: digits group the local way and never wrap.
+            return whole.replace(",", " ") + " " + _UZS_SUFFIX[lang]
+        return f"UZS {whole}"
+    symbol = {"USD": "$", "EUR": "€"}.get(currency)
+    text = f"{value.quantize(Decimal('0.01')):,.2f}"
+    return f"{symbol}{text}" if symbol else f"{currency} {text}"
 
 
-def _cancellation_text(booking, sanatorium, lang, labels) -> str:
-    if booking.refundable is False:
-        return labels["non_refundable"]
-    if booking.refundable is True:
-        if booking.free_cancellation_days:
-            return labels["free_cancellation_days"].format(
-                days=booking.free_cancellation_days
-            )
-        return labels["free_cancellation"]
-    if sanatorium is not None:
-        text = pick_locale(sanatorium.cancellation_policy, lang)
-        if text:
-            return text
-    return labels["see_policy"]
+def _fmt_percent(value) -> str:
+    return f"{Decimal(str(value)).normalize():f}"
 
 
-def _fmt_money(amount, currency: str) -> str:
-    value = Decimal(str(amount)).quantize(Decimal("0.01"))
-    # Non-breaking space so the currency never wraps away from the number.
-    return f"{currency} {value:,.2f}"
+def _group_digits(number: str) -> str:
+    """2610053172617351 -> 2610 0531 7261 7351, easy to read out and type."""
+    digits = str(number)
+    return " ".join(digits[i : i + 4] for i in range(0, len(digits), 4))
+
+
+def _rule(color, thickness: float) -> Table:
+    line = Table([[""]], colWidths=[_CONTENT_W], rowHeights=[0])
+    line.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, -1), thickness, color)]))
+    return line
+
+
+def _plain(extra: list) -> TableStyle:
+    """No padding unless asked — layout tables, not data grids."""
+    return TableStyle(
+        [
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            *extra,
+        ]
+    )
 
 
 def _esc(text) -> str:
