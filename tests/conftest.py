@@ -12,9 +12,16 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+import bcrypt
+
 from app.core.config import settings
 
 settings.RATE_LIMIT_ENABLED = False
+
+# Production cost (12 rounds) makes every user fixture + login ~0.5s. Hashes
+# made with 4 rounds still verify through the same code path.
+_gensalt = bcrypt.gensalt
+bcrypt.gensalt = lambda rounds=4, prefix=b"2b": _gensalt(rounds, prefix)
 
 from app.core.database import Base, get_db  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
@@ -75,6 +82,19 @@ async def engine():
         await conn.execute(text("CREATE SCHEMA public"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
+        # A test leaves a few rows in a handful of tables. TRUNCATE rewrites
+        # every table it touches (and CASCADE from `users` touches nearly all),
+        # costing ~1s per test; DELETE children-first is near-free at this size.
+        # All primary keys are UUIDs, so there are no sequences to restart.
+        deletes = "".join(
+            f"DELETE FROM {t.name};" for t in reversed(Base.metadata.sorted_tables)
+        )
+        await conn.execute(
+            text(
+                "CREATE FUNCTION reset_test_data() RETURNS void AS $$ "
+                f"BEGIN {deletes} END $$ LANGUAGE plpgsql"
+            )
+        )
     yield eng
     await eng.dispose()
 
@@ -90,10 +110,9 @@ async def db(session_factory, engine) -> AsyncGenerator[AsyncSession, None]:
     async with session_factory() as session:
         yield session
 
-    # Cleanup: truncate all tables to keep tests isolated
+    # Cleanup: truncate every table the test wrote to, to keep tests isolated
     async with engine.begin() as conn:
-        table_names = ", ".join(t.name for t in Base.metadata.sorted_tables)
-        await conn.execute(text(f"TRUNCATE {table_names} RESTART IDENTITY CASCADE"))
+        await conn.execute(text("SELECT reset_test_data()"))
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import uuid
 
@@ -24,10 +24,28 @@ from app.services.room_offer_service import RoomOfferService, _OfferContext
 from tests.factories import make_exchange_rate, make_room, make_sanatorium
 
 
+def _next_weekday(weekday: int, *, min_days: int = 30) -> date:
+    """A date at least `min_days` out that falls on `weekday` (Mon=0).
+
+    Offers are priced per weekday (Fri/Sat are weekend nights), so the stay
+    keeps the weekday the expected prices were written against.
+    """
+    start = date.today() + timedelta(days=min_days)
+    return start + timedelta(days=(weekday - start.weekday()) % 7)
+
+
+# Friday arrival, two nights (Fri + Sat), as the expected prices assume.
+CHECK_IN = _next_weekday(4)
+CHECK_OUT = CHECK_IN + timedelta(days=2)
+# Monday arrival, two weekday nights.
+WEEKDAY_CHECK_IN = _next_weekday(0)
+WEEKDAY_CHECK_OUT = WEEKDAY_CHECK_IN + timedelta(days=2)
+
+
 def test_room_offer_guest_options_use_room_board() -> None:
     payload = RoomOfferSearchRequest(
-        check_in=date(2026, 10, 2),
-        check_out=date(2026, 10, 4),
+        check_in=CHECK_IN,
+        check_out=CHECK_OUT,
         rooms=[{"adults": 2, "children": [], "board": "half_board"}],
         guest_options=[
             {
@@ -48,8 +66,8 @@ def test_room_offer_guest_options_use_room_board() -> None:
 
 def test_room_offer_guest_options_board_overrides_room_default() -> None:
     payload = RoomOfferSearchRequest(
-        check_in=date(2026, 10, 2),
-        check_out=date(2026, 10, 4),
+        check_in=CHECK_IN,
+        check_out=CHECK_OUT,
         rooms=[{"adults": 2, "children": [], "board": "full_board"}],
         guest_options=[
             {
@@ -72,8 +90,8 @@ def test_room_offer_guest_options_board_overrides_room_default() -> None:
 def test_room_offer_inclusions_are_compact_package_summary() -> None:
     sanatorium_id = uuid.uuid4()
     payload = RoomOfferSearchRequest(
-        check_in=date(2026, 10, 2),
-        check_out=date(2026, 10, 4),
+        check_in=CHECK_IN,
+        check_out=CHECK_OUT,
         rooms=[{"adults": 1, "children": []}],
     )
     program = TreatmentProgram(
@@ -101,7 +119,7 @@ def test_room_offer_inclusions_are_compact_package_summary() -> None:
         check_in=payload.check_in,
         check_out=payload.check_out,
         nights=2,
-        dates=[date(2026, 10, 2), date(2026, 10, 3)],
+        dates=[CHECK_IN, CHECK_IN + timedelta(days=1)],
         requested_rooms=payload.rooms,
         guest_options=guest_options(payload),
         treatment_by_guest={},
@@ -229,8 +247,8 @@ async def test_room_offer_search_returns_guest_level_treatment_and_inclusions(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": [{"age": 11}]}],
         },
     )
@@ -277,8 +295,8 @@ async def test_room_offer_treatment_options_expose_display_prices(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?currency=RUB",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 1}],
             "treatment_selections": [
                 {"room_index": 0, "guest_index": 0, "program_id": str(basic.id)}
@@ -327,8 +345,8 @@ async def test_room_offer_search_supports_room_board_and_guest_treatment_options
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
@@ -404,8 +422,8 @@ async def test_room_offer_search_supports_mixed_guest_boards(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 3, "children": [], "board": "full_board"}],
             "guest_options": [
                 {
@@ -491,8 +509,8 @@ async def test_room_offer_search_prices_guest_stay_options(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
@@ -548,8 +566,8 @@ async def test_room_offer_search_rejects_unavailable_stay_option(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 1, "children": []}],
             "guest_options": [
                 {
@@ -585,8 +603,8 @@ async def test_room_offer_search_respects_explicit_room_distribution(
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [
                 {"adults": 2, "children": [{"age": 11}]},
                 {"adults": 2, "children": []},
@@ -622,13 +640,13 @@ async def test_room_offer_search_returns_alternative_dates_when_requested_dates_
         [
             RoomAvailability(
                 room_id=room.id,
-                date=date(2026, 10, 2),
+                date=CHECK_IN,
                 units_blocked=1,
                 units_booked=0,
             ),
             RoomAvailability(
                 room_id=room.id,
-                date=date(2026, 10, 3),
+                date=CHECK_IN + timedelta(days=1),
                 units_blocked=1,
                 units_booked=0,
             ),
@@ -639,8 +657,8 @@ async def test_room_offer_search_returns_alternative_dates_when_requested_dates_
     resp = await client.post(
         f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en",
         json={
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": []}],
         },
     )
@@ -679,8 +697,8 @@ async def test_room_offer_booking_recalculates_and_reserves_inventory(
             "sanatorium_id": str(sanatorium.id),
             "room_id": str(room.id),
             "rate_plan_id": str(rate_plan.id),
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": [{"age": 11}], "board": "half_board"}],
             "guest_options": [
                 {
@@ -747,13 +765,13 @@ async def test_room_offer_booking_rejects_stale_offer(
         [
             RoomAvailability(
                 room_id=room.id,
-                date=date(2026, 10, 2),
+                date=CHECK_IN,
                 units_blocked=1,
                 units_booked=0,
             ),
             RoomAvailability(
                 room_id=room.id,
-                date=date(2026, 10, 3),
+                date=CHECK_IN + timedelta(days=1),
                 units_blocked=1,
                 units_booked=0,
             ),
@@ -767,8 +785,8 @@ async def test_room_offer_booking_rejects_stale_offer(
         json={
             "sanatorium_id": str(sanatorium.id),
             "room_id": str(room.id),
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 2, "children": []}],
         },
     )
@@ -813,8 +831,8 @@ async def test_room_offer_booking_rejects_guest_incompatible_treatment(
         json={
             "sanatorium_id": str(sanatorium.id),
             "room_id": str(room.id),
-            "check_in": "2026-10-02",
-            "check_out": "2026-10-04",
+            "check_in": CHECK_IN.isoformat(),
+            "check_out": CHECK_OUT.isoformat(),
             "rooms": [{"adults": 1, "children": [{"age": 11}]}],
             "treatment_selections": [
                 {
@@ -864,8 +882,8 @@ async def test_room_offer_search_applies_agent_tier_price(
         db, sanatorium=sanatorium, base_price="100.00", capacity=2, inventory_count=2
     )
     body = {
-        "check_in": "2026-10-05",
-        "check_out": "2026-10-07",
+        "check_in": WEEKDAY_CHECK_IN.isoformat(),
+        "check_out": WEEKDAY_CHECK_OUT.isoformat(),
         "rooms": [{"adults": 2, "children": []}],
     }
     url = f"/api/sanatoriums/{sanatorium.id}/room-offers/search?lang=en"
