@@ -50,6 +50,26 @@ _AMENITY_CATEGORY: dict[str, Label] = {
         "ru": "Доступность",
         "en": "Accessibility",
     },
+    "business": {"uz": "Biznes", "ru": "Бизнес", "en": "Business"},
+    "connectivity": {"uz": "Aloqa", "ru": "Связь", "en": "Connectivity"},
+    "family": {"uz": "Oila uchun", "ru": "Для семьи", "en": "Family"},
+    "food": {"uz": "Ovqatlanish", "ru": "Питание", "en": "Food"},
+    "health_and_wellness": {
+        "uz": "Sog'liq va wellness",
+        "ru": "Здоровье и велнес",
+        "en": "Health and wellness",
+    },
+    "location": {"uz": "Joylashuv", "ru": "Расположение", "en": "Location"},
+    "sport": {"uz": "Sport", "ru": "Спорт", "en": "Sport"},
+    "room": {"uz": "Xona", "ru": "Номер", "en": "Room"},
+    "bathroom": {"uz": "Hammom", "ru": "Ванная комната", "en": "Bathroom"},
+    "kitchen": {"uz": "Oshxona", "ru": "Кухня", "en": "Kitchen"},
+    "media": {"uz": "Media", "ru": "Медиа", "en": "Media"},
+    "room_layout": {
+        "uz": "Xona rejasi",
+        "ru": "Планировка номера",
+        "en": "Room layout",
+    },
 }
 
 

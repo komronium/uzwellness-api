@@ -526,8 +526,8 @@ async def upsert_amenities(db: AsyncSession) -> dict[str, Amenity]:
             amenity = Amenity(code=code)
             db.add(amenity)
             by_code[code] = amenity
-        amenity.name = tr(name)
-        amenity.description = tr(f"{name} is available for this stay.")
+            amenity.name = tr(name)
+            amenity.description = tr(f"{name} is available for this stay.")
         amenity.category = category
         amenity.scope = scope
         amenity.icon = icon
