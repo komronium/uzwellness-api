@@ -915,7 +915,9 @@ async def create_room_calendar(db: AsyncSession, room: Room) -> None:
                 room_id=room.id,
                 date=day,
                 units_blocked=1 if day.weekday() in {5, 6} and offset % 17 == 0 else 0,
-                units_booked=1 if offset % 13 == 0 else 0,
+                # units_booked is the count of real bookings holding the room;
+                # a seeded value with no booking behind it never gets released.
+                units_booked=0,
             )
         )
 
