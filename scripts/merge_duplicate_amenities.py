@@ -33,12 +33,12 @@ MERGES: dict[str, tuple[str, str]] = {
     "sauna": ("wellness", "Sauna"),
     "parking": ("transport", "Parking"),
     "wifi": ("connectivity", "Wi-Fi"),
+    "kids_corner": ("family", "Kids club"),
 }
 
 # Seed rows with no twin: only their uz/ru text was missing.
 TRANSLATIONS: dict[str, tuple[str, str]] = {
     "diet_meals": ("Parhez ovqatlanish", "Диетическое питание"),
-    "kids_corner": ("Bolalar burchagi", "Детский уголок"),
     "mountain_air": ("Tog' havosi", "Горный воздух"),
     "garden": ("Sayr qilish bog'i", "Парк для прогулок"),
     "therapeutic_baths": ("Davolovchi vannalar", "Лечебные ванны"),
