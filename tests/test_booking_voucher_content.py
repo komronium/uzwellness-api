@@ -10,6 +10,9 @@ from app.models.booking import BookingStatus, BookingType
 from app.services.booking_voucher import (
     _LABELS,
     _Ctx,
+    _Guest,
+    _ensure_fonts,
+    _render_one_page,
     _cancellation_lines,
     _fmt_date,
     _fmt_money,
@@ -145,3 +148,50 @@ def test_photo_is_downscaled_for_email() -> None:
     assert jpeg[:3] == b"\xff\xd8\xff"
     assert len(jpeg) < 60_000
     assert (round(width), round(height)) == (128, 85)
+
+
+def test_large_family_with_programs_still_fits_one_page() -> None:
+    _ensure_fonts()
+    detail = (
+        "Doctor check-up, ECG, 12 procedures: mineral baths, manual massage, "
+        "physiotherapy, hydrotherapy, inhalations and exercise therapy"
+    )
+    ctx = _ctx()
+    ctx.sanatorium_name = "Chotqol Sanatorium"
+    ctx.invoice = {
+        "currency": "UZS",
+        "nights": 10,
+        "total": Decimal("48000000"),
+        "line_items": [
+            {"description": "Room/program", "amount": Decimal("46000000")},
+            {"description": "Extra bed × 1", "qty": 1, "amount": Decimal("2000000")},
+        ],
+    }
+    ctx.guests = [
+        _Guest(
+            name=f"Guest Number {i} Longsurname",
+            passport=f"AB 12345{i:02d}",
+            is_child=i > 5,
+            child_age=8 if i > 5 else None,
+            treatment=f"Program {i}: extended cardio-respiratory recovery course",
+            treatment_detail=detail,
+        )
+        for i in range(1, 9)
+    ]
+    booking = _booking(
+        status=BookingStatus.CONFIRMED,
+        reservation_number="2610053172617351",
+        code="ABCD1234",
+        check_out=CHECK_IN + timedelta(days=10),
+        guests=8,
+        rooms_count=3,
+        board=None,
+        refundable=True,
+        free_cancellation_days=7,
+        cancellation_penalty_percent=Decimal("30"),
+    )
+
+    pdf, pages = _render_one_page(ctx, booking)
+
+    assert pdf[:5] == b"%PDF-"
+    assert pages == 1
