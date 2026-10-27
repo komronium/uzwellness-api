@@ -9,7 +9,6 @@ from fastapi import (
     status,
 )
 
-from app.core.errors import ensure_check_in_not_past
 from app.api.deps import (
     ConverterDep,
     CurrentUser,
@@ -26,6 +25,7 @@ from app.api.room_mapping import (
     room_public_read,
     room_search_result,
 )
+from app.core.errors import ensure_check_in_not_past
 from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.room import (

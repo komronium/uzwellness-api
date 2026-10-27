@@ -8,8 +8,8 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.errors import ensure_check_in_not_past
 from app.core.database import get_db
+from app.core.errors import ensure_check_in_not_past
 from app.core.policies import BookingPolicy
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.core.utils import TASHKENT_TZ, today_tashkent

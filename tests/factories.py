@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.utils import today_tashkent
 from app.models.exchange_rate import ExchangeRate
 from app.models.room import Room
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
@@ -20,7 +21,7 @@ def future_date(weekday: int, *, min_days: int = 30) -> date:
     they start failing once the date passes. Keeping the weekday keeps weekday
     vs Fri/Sat weekend pricing stable.
     """
-    start = date.today() + timedelta(days=min_days)
+    start = today_tashkent() + timedelta(days=min_days)
     return start + timedelta(days=(weekday - start.weekday()) % 7)
 
 

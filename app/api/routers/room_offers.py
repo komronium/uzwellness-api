@@ -3,9 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ensure_check_in_not_past
 from app.api.deps import CurrencyDep, LocaleDep, OptionalUser
 from app.core.database import get_db
+from app.core.errors import ensure_check_in_not_past
 from app.models.sanatorium import Sanatorium
 from app.schemas.room_offer import RoomOfferSearchRequest, RoomOfferSearchResponse
 from app.services.booking_pricing_policy import (

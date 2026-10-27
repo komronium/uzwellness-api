@@ -2,6 +2,7 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator
 
+import bcrypt
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -11,8 +12,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-
-import bcrypt
 
 from app.core.config import settings
 
@@ -110,7 +109,7 @@ async def db(session_factory, engine) -> AsyncGenerator[AsyncSession, None]:
     async with session_factory() as session:
         yield session
 
-    # Cleanup: truncate every table the test wrote to, to keep tests isolated
+    # Cleanup: empty every table (reset_test_data) to keep tests isolated
     async with engine.begin() as conn:
         await conn.execute(text("SELECT reset_test_data()"))
 

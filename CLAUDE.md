@@ -551,7 +551,7 @@ bosilganda unique constraint buziladi.
 ```python
 # conftest.py da tayyor fixture'lar:
 customer_headers, admin_headers, super_admin_headers
-db  # har test uchun yangi session, keyin truncate
+db  # har test uchun yangi session, keyin reset_test_data() (DELETE, bola jadvallardan boshlab)
 client  # ASGI test client, dependency override qilingan
 ```
 
@@ -639,6 +639,16 @@ ssh root@vps "nginx -t && systemctl reload nginx && systemctl daemon-reload && s
 Certbot'ning "managed by Certbot" izohli qatorlarini `certbot renew`
 o'zi yangilab turadi — ularga qo'l tegizma, faqat faylning qolgan qismini
 sinxron tut.
+
+Hardened unit `User=uzwellness` bilan ishlaydi. **Birinchi o'rnatishdan
+oldin** host'da (aks holda servis 217/USER bilan yiqiladi):
+
+```bash
+useradd --system --no-create-home --shell /usr/sbin/nologin uzwellness
+chown -R uzwellness:www-data /var/www/uzwellness-api/uploads
+```
+
+`.env` `root:root 0600` qoladi — systemd uni root sifatida o'qiydi.
 
 `tests/test_deployment_config.py` bu fayllarning invariantlarini tekshiradi
 (unit nomi, socket yo'li, least-privilege, security header'lar).

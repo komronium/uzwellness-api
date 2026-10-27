@@ -3,8 +3,8 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.errors import ensure_check_in_not_past
 from app.api.deps import CurrencyDep, LocaleDep
+from app.core.errors import ensure_check_in_not_past
 from app.core.pagination import Pagination
 from app.models.sanatorium import PropertyType
 from app.schemas.search import StaySearchList

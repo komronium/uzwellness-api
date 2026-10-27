@@ -53,7 +53,10 @@ def test_api_unit_runs_with_least_privilege() -> None:
     assert f"/usr/bin/chmod 0660 {SOCKET}" in unit["ExecStartPost"]
     assert unit["NoNewPrivileges"] == ["true"]
     assert unit["ProtectSystem"] == ["strict"]
+    assert unit["ProtectHome"] == ["true"]
+    assert unit["PrivateTmp"] == ["true"]
     assert unit["ReadWritePaths"] == ["/var/www/uzwellness-api/uploads"]
+    assert unit["Restart"] == ["always"]
 
 
 def test_nginx_sends_security_headers_on_every_response() -> None:
