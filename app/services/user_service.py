@@ -6,7 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password
+from app.core.security import (
+    burn_password_check,
+    hash_password_async,
+    verify_password_async,
+)
 from app.models.sanatorium import Sanatorium
 from app.models.user import User, UserRole
 from app.schemas.user import UserAdminCreate, UserCreate, UserRead, UserUpdate
@@ -29,7 +33,7 @@ class UserService:
     ) -> User:
         user = User(
             email=user_in.email.lower(),
-            password_hash=hash_password(user_in.password),
+            password_hash=await hash_password_async(user_in.password),
             role=role,
             full_name=user_in.full_name,
             phone=user_in.phone,
@@ -51,7 +55,7 @@ class UserService:
             await self._assert_no_other_transfer_admin()
         user = User(
             email=payload.email.lower(),
-            password_hash=hash_password(payload.password),
+            password_hash=await hash_password_async(payload.password),
             role=payload.role,
             full_name=payload.full_name,
             phone=payload.phone,
@@ -71,9 +75,14 @@ class UserService:
 
     async def authenticate(self, email: str, password: str) -> User | None:
         user = await self.get_by_email(email)
-        if user is None or not user.is_active:
+        if user is None:
+            await burn_password_check(password)
             return None
-        if not verify_password(password, user.password_hash):
+        if not await verify_password_async(password, user.password_hash):
+            return None
+        # Checked after the password, so a disabled account answers exactly
+        # like a wrong password does — in content and in time.
+        if not user.is_active:
             return None
         return user
 

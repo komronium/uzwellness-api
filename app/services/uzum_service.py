@@ -423,7 +423,10 @@ class UzumService:
         for payment in stale:
             payment.status = PaymentStatus.FAILED
             logger.info("Expired Uzum transaction %s", payment.provider_payment_id)
-        await self.db.commit()
+        # Flush, not commit: /create holds the booking row lock across this
+        # call, and committing would release it before the new transaction is
+        # written, letting a concurrent /create open a second one.
+        await self.db.flush()
 
     def _is_expired(self, payment: Payment) -> bool:
         created = payment.created_at

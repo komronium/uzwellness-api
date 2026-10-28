@@ -3,6 +3,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
 
+from app.core.errors import ensure_date_range
 from app.api.deps import CurrentUser, not_found, require_roles
 from app.models.user import UserRole
 from app.schemas.availability_calendar import AvailableAllotmentSet
@@ -29,6 +30,7 @@ async def get_room_availability(
     room = await rooms.get_by_id(room_id)
     if room is None:
         raise not_found("No room found with this id")
+    ensure_date_range(date_from, date_to)
     rows = await availability.get_availability(room, date_from, date_to)
     return [_availability_read(row) for row in rows]
 

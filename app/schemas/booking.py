@@ -43,8 +43,8 @@ class BookingCreate(BaseModel):
     rate_plan_id: uuid.UUID | None = None
     check_in: date
     check_out: date | None = None
-    guests: int = Field(default=1, ge=1)
-    extra_beds: list[ExtraBedItem] = Field(default_factory=list)
+    guests: int = Field(default=1, ge=1, le=50)
+    extra_beds: list[ExtraBedItem] = Field(default_factory=list, max_length=20)
     guest_details: list[GuestDetail] = Field(default_factory=list)
     special_requests: str | None = Field(default=None, max_length=1000)
     # Optional add-on, priced server-side and folded into final_price so the
@@ -74,9 +74,11 @@ class RoomOfferBookingCreate(BaseModel):
     check_in: date
     check_out: date
     rooms: list[RoomOfferRequestedRoom] = Field(min_length=1, max_length=8)
-    guest_options: list[RoomOfferGuestOption] = Field(default_factory=list)
+    guest_options: list[RoomOfferGuestOption] = Field(
+        default_factory=list, max_length=240
+    )
     treatment_selections: list[RoomOfferTreatmentSelection] = Field(
-        default_factory=list
+        default_factory=list, max_length=240
     )
     guest_details: list[GuestDetail] = Field(default_factory=list)
     special_requests: str | None = Field(default=None, max_length=1000)

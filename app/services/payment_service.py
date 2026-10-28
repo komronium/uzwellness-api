@@ -127,7 +127,10 @@ class PaymentService:
                     "can confirm a cash payment."
                 ),
             )
-        payment = await self.db.get(Payment, payment_id)
+        # Locked so a double-clicked "Confirm" settles (and emails) once.
+        payment = await self.db.scalar(
+            select(Payment).where(Payment.id == payment_id).with_for_update()
+        )
         if payment is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -171,6 +174,23 @@ class PaymentService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "This booking was cancelled, so its payment cannot be confirmed."
+                ),
+            )
+
+        settled_elsewhere = await self.db.scalar(
+            select(Payment.id).where(
+                Payment.booking_id == payment.booking_id,
+                Payment.id != payment.id,
+                Payment.status.in_((PaymentStatus.PAID, PaymentStatus.REFUND_PENDING)),
+            )
+        )
+        if settled_elsewhere is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This booking has already been paid another way, so this "
+                    "cash payment cannot be confirmed as well. If the guest "
+                    "also paid in cash, return it to them."
                 ),
             )
 

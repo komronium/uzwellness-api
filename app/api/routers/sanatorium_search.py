@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import CurrencyDep, LocaleDep
-from app.core.errors import ensure_check_in_not_past
+from app.core.errors import ensure_check_in_not_past, ensure_stay_window
 from app.core.pagination import Pagination
 from app.models.sanatorium import PropertyType
 from app.schemas.search import StaySearchList
@@ -21,8 +21,8 @@ async def search_sanatorium_stays(
     search: SearchService = Depends(get_search_service),
     check_in: date = Query(...),
     check_out: date = Query(...),
-    adults: int = Query(default=2, ge=1),
-    children: int = Query(default=0, ge=0),
+    adults: int = Query(default=2, ge=1, le=50),
+    children: int = Query(default=0, ge=0, le=20),
     location: str | None = Query(default=None, max_length=200),
     sanatorium_id: uuid.UUID | None = Query(default=None),
     treatment_focus: str | None = Query(default=None, max_length=60),
@@ -34,6 +34,7 @@ async def search_sanatorium_stays(
             detail="Check-out must be at least one night after check-in.",
         )
     ensure_check_in_not_past(check_in)
+    ensure_stay_window(check_in, check_out)
     items, total = await search.search_stays(
         locale=locale,
         display_currency=display_currency,

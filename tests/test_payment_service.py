@@ -146,3 +146,33 @@ async def test_confirm_cash_rejects_an_admin_from_another_property(db: AsyncSess
 
     assert exc.value.status_code == 403
     assert "another property" in exc.value.detail
+
+
+async def test_confirm_cash_refuses_a_booking_already_paid_another_way(
+    db: AsyncSession,
+):
+    """A cash intent opened before the guest paid in the Uzum app must not
+    become a second settled payment — finance would count the stay twice."""
+
+    owner = await make_user(db, email="cash-owner4@test.com")
+    admin = await make_user(db, email="cash-admin4@test.com", role=UserRole.ADMIN)
+    booking = await _booking(db, owner, admin=admin)
+    cash = await PaymentService(db).initiate(booking.id, PaymentMethod.CASH, owner)
+    db.add(
+        Payment(
+            booking_id=booking.id,
+            method=PaymentMethod.UZUM,
+            status=PaymentStatus.PAID,
+            amount=Decimal("1250000.00"),
+            currency="UZS",
+            provider_payment_id="uzum-trans-1",
+        )
+    )
+    await db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await PaymentService(db).confirm_cash(cash.id, admin)
+
+    assert exc.value.status_code == 409
+    await db.refresh(cash)
+    assert cash.status == PaymentStatus.PENDING

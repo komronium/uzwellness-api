@@ -44,6 +44,18 @@ def booking_visibility_clauses(user: User) -> list:
 async def admin_owns_booking_sanatorium(
     db: AsyncSession, booking: Booking, admin_id: uuid.UUID
 ) -> bool:
+    sanatorium_id = await booking_sanatorium_id(db, booking)
+    if sanatorium_id is None:
+        return False
+    owner_id = await db.scalar(
+        select(Sanatorium.admin_user_id).where(Sanatorium.id == sanatorium_id)
+    )
+    return owner_id == admin_id
+
+
+async def booking_sanatorium_id(db: AsyncSession, booking: Booking) -> uuid.UUID | None:
+    """The property behind a room, session or package booking."""
+
     sanatorium_id: uuid.UUID | None = None
     if booking.room_id is not None:
         sanatorium_id = await db.scalar(
@@ -59,10 +71,4 @@ async def admin_owns_booking_sanatorium(
         sanatorium_id = await db.scalar(
             select(Package.sanatorium_id).where(Package.id == booking.package_id)
         )
-
-    if sanatorium_id is None:
-        return False
-    owner_id = await db.scalar(
-        select(Sanatorium.admin_user_id).where(Sanatorium.id == sanatorium_id)
-    )
-    return owner_id == admin_id
+    return sanatorium_id

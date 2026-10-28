@@ -5,10 +5,11 @@ same condition cannot drift between endpoints (e.g. unavailable room being
 404 in one flow and 409 in another).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.core.utils import today_tashkent
 
 # Session wording lives here so the token check in app/api/deps.py and the
@@ -52,6 +53,36 @@ def ensure_check_in_not_past(check_in: date) -> None:
 
     if check_in < today_tashkent():
         raise bad_request(PAST_CHECK_IN)
+
+
+def ensure_date_range(date_from: date, date_to: date) -> None:
+    """Reject a from/to window wider than any screen needs.
+
+    Calendars build one row per day, so an open-ended range is a single
+    request that keeps a worker busy for minutes.
+    """
+
+    if (date_to - date_from).days > settings.MAX_DATE_RANGE_DAYS:
+        raise bad_request(
+            f"A date range can span at most {settings.MAX_DATE_RANGE_DAYS} "
+            "days. Please narrow it and try again."
+        )
+
+
+def ensure_stay_window(check_in: date, check_out: date | None) -> None:
+    """Reject a stay too long, or too far ahead, to hold inventory for."""
+
+    horizon = today_tashkent() + timedelta(days=settings.BOOKING_HORIZON_DAYS)
+    if check_in > horizon:
+        raise bad_request(
+            f"Bookings open up to {settings.BOOKING_HORIZON_DAYS} days ahead. "
+            f"Please pick a check-in on or before {horizon:%d %b %Y}."
+        )
+    if check_out is not None and (check_out - check_in).days > settings.MAX_STAY_NIGHTS:
+        raise bad_request(
+            f"A single booking can cover at most {settings.MAX_STAY_NIGHTS} "
+            "nights. Please shorten the stay, or book it as two reservations."
+        )
 
 
 def room_unavailable(

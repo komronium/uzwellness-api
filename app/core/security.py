@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 import bcrypt
 from jose import ExpiredSignatureError, JWTError, jwt
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
@@ -27,6 +28,26 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+# bcrypt is a few hundred milliseconds of CPU by design. On the event loop that
+# is a few hundred milliseconds in which the whole API answers nobody, so
+# request handlers use these; bcrypt releases the GIL while it works.
+async def hash_password_async(password: str) -> str:
+    return await run_in_threadpool(hash_password, password)
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    return await run_in_threadpool(verify_password, plain, hashed)
+
+
+# Checked against when the email is unknown, so a miss costs the same time as
+# a wrong password and the response time cannot reveal who has an account.
+_DUMMY_HASH = bcrypt.hashpw(b"uzwellness-timing-guard", bcrypt.gensalt()).decode()
+
+
+async def burn_password_check(plain: str) -> None:
+    await verify_password_async(plain, _DUMMY_HASH)
 
 
 def create_token(

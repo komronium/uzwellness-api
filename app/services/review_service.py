@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.utils import today_tashkent
 from app.core.policies import ReviewPolicy
 from app.models.review import (
     ReviewAppealStatus,
@@ -15,8 +16,10 @@ from app.models.review import (
     ReviewSource,
     SanatoriumReview,
 )
+from app.models.booking import Booking, BookingStatus
 from app.models.sanatorium import Sanatorium, SanatoriumStatus
 from app.models.user import User, UserRole
+from app.services.booking_visibility import booking_sanatorium_id
 from app.schemas.review import (
     ReviewAdminSummary,
     ReviewAppealCreate,
@@ -97,6 +100,9 @@ class ReviewService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No published property found with this id",
             )
+
+        if user.role != UserRole.SUPER_ADMIN:
+            await self._assert_verified_stay(sanatorium, payload, user)
 
         review = SanatoriumReview(
             sanatorium_id=sanatorium_id,
@@ -268,6 +274,82 @@ class ReviewService:
 
     async def _review_sanatorium(self, review: SanatoriumReview) -> Sanatorium | None:
         return await self.db.get(Sanatorium, review.sanatorium_id)
+
+    async def _assert_verified_stay(
+        self, sanatorium: Sanatorium, payload: ReviewCreate, user: User
+    ) -> None:
+        """A guest review must come from that guest's own finished, paid stay.
+
+        Reviews count towards the public rating the moment they are saved, so
+        without this anyone with an account — the property's own admin
+        included — could rate any property as often as they liked, and label
+        the result as a Booking.com or Google review.
+        """
+
+        if (
+            payload.source != ReviewSource.UZWELLNESS
+            or payload.external_id
+            or payload.external_url
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Only a platform administrator can import reviews from "
+                    "other sites. Remove source, external_id and external_url "
+                    "to post your own review."
+                ),
+            )
+        if payload.booking_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Reviews are written about a stay. Open the booking in "
+                    "My bookings and leave your review from there."
+                ),
+            )
+        booking = await self.db.get(Booking, payload.booking_id)
+        if booking is None or booking.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No booking found with this id under your account",
+            )
+        if await booking_sanatorium_id(self.db, booking) != sanatorium.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "This booking is at a different property. Review it on "
+                    "that property's page."
+                ),
+            )
+        # COMPLETED is set by a nightly job; a paid stay past check-out is
+        # just as finished while it waits for that job.
+        if booking.status not in (
+            BookingStatus.CONFIRMED,
+            BookingStatus.COMPLETED,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Only a paid stay can be reviewed, and this booking is "
+                    f"{booking.status.value}."
+                ),
+            )
+        if booking.check_out > today_tashkent():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "You can review this stay after check-out on "
+                    f"{booking.check_out:%d %b %Y}."
+                ),
+            )
+        already = await self.db.scalar(
+            select(SanatoriumReview.id).where(SanatoriumReview.booking_id == booking.id)
+        )
+        if already is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have already reviewed this stay.",
+            )
 
     def _apply_visibility_scope(self, stmt, *, user: User | None):
         if user is None or user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):

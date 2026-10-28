@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import ensure_date_range
 from app.core.database import get_db
 from app.core.permissions import assert_sanatorium_access
 from app.core.pricing import calculate_rate_plan_night_price
@@ -47,6 +48,7 @@ class AvailabilityCalendarService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="date_to must be at least one day after date_from.",
             )
+        ensure_date_range(date_from, date_to)
         await assert_sanatorium_access(
             self.db, sanatorium_id, user, action="view availability calendar"
         )

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.errors import ensure_check_in_not_past
+from app.core.errors import ensure_check_in_not_past, ensure_stay_window
 from app.core.utils import date_range, pick_locale
 from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.notification import Notification
@@ -46,6 +46,7 @@ class RoomOfferBookingService:
         self, payload: RoomOfferBookingCreate, user: User, *, locale: str
     ) -> Booking:
         ensure_check_in_not_past(payload.check_in)
+        ensure_stay_window(payload.check_in, payload.check_out)
         sanatorium = await approved_sanatorium(self.db, payload.sanatorium_id)
         response = await self.offers.search(
             sanatorium_id=payload.sanatorium_id,

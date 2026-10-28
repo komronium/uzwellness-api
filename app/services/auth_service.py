@@ -12,8 +12,8 @@ from app.core.errors import ACCOUNT_DISABLED, SESSION_EXPIRED, SESSION_INVALID
 from app.core.security import (
     create_token,
     decode_token,
-    hash_password,
-    verify_password,
+    hash_password_async,
+    verify_password_async,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -67,7 +67,7 @@ class AuthService:
             # set a real one later via password reset.
             user = User(
                 email=email,
-                password_hash=hash_password(secrets.token_urlsafe(32)),
+                password_hash=await hash_password_async(secrets.token_urlsafe(32)),
                 full_name=userinfo.get("name"),
             )
             self.db.add(user)
@@ -131,12 +131,12 @@ class AuthService:
     async def change_password(
         self, user: User, current_password: str, new_password: str
     ) -> None:
-        if not verify_password(current_password, user.password_hash):
+        if not await verify_password_async(current_password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="The current password you entered is incorrect.",
             )
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         await self._revoke_all_for_user(user.id)
         await self.db.commit()
 

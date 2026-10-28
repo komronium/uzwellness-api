@@ -25,7 +25,7 @@ from app.api.room_mapping import (
     room_public_read,
     room_search_result,
 )
-from app.core.errors import ensure_check_in_not_past
+from app.core.errors import ensure_check_in_not_past, ensure_stay_window
 from app.core.pagination import Pagination
 from app.models.user import UserRole
 from app.schemas.room import (
@@ -104,7 +104,7 @@ async def search_rooms(
     converter: ConverterDep,
     check_in: date = Query(...),
     check_out: date = Query(...),
-    guests: int = Query(default=1, ge=1),
+    guests: int = Query(default=1, ge=1, le=50),
     sanatorium_id: uuid.UUID | None = Query(default=None),
     rooms: RoomService = Depends(get_room_service),
 ) -> list[RoomSearchResult]:
@@ -114,6 +114,7 @@ async def search_rooms(
             detail="Check-out must be at least one night after check-in.",
         )
     ensure_check_in_not_past(check_in)
+    ensure_stay_window(check_in, check_out)
     hits = await rooms.search(
         converter=converter,
         check_in=check_in,

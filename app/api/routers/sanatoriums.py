@@ -10,6 +10,10 @@ from fastapi import (
     status,
 )
 
+from app.core.permissions import (
+    SANATORIUM_SUPER_ADMIN_ONLY_FIELDS,
+    assert_super_admin_only_fields,
+)
 from app.api.deps import (
     CurrentUser,
     IncludeTranslationsDep,
@@ -268,6 +272,13 @@ async def create_sanatorium(
     # Admins always own the sanatorium they create; only super_admin may
     # explicitly assign it to a different admin.
     if current_user.role == UserRole.ADMIN:
+        # The same fields PATCH reserves to the platform: a property admin
+        # does not choose its own commission or homepage placement.
+        assert_super_admin_only_fields(
+            payload.model_dump(exclude_unset=True, exclude={"admin_user_id"}),
+            current_user,
+            restricted_fields=SANATORIUM_SUPER_ADMIN_ONLY_FIELDS,
+        )
         payload = payload.model_copy(update={"admin_user_id": current_user.id})
     sanatorium = await sanatoriums.create(payload)
     return sanatorium_admin_read(sanatorium, viewer=current_user)

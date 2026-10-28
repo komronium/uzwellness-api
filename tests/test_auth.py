@@ -297,3 +297,27 @@ async def test_change_password_anonymous_returns_401(client: AsyncClient) -> Non
         },
     )
     assert resp.status_code == 401
+
+
+async def test_login_with_an_unknown_email_still_pays_for_a_hash_check(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """Skipping bcrypt for unknown emails answered ~100x faster than a wrong
+    password, which told anyone timing the response who has an account."""
+
+    from app.services import user_service
+
+    calls: list[str] = []
+
+    async def _record(plain: str) -> None:
+        calls.append(plain)
+
+    monkeypatch.setattr(user_service, "burn_password_check", _record)
+
+    resp = await client.post(
+        "/api/auth/login",
+        json={"email": "nobody-here@test.com", "password": "Whatever123!"},
+    )
+
+    assert resp.status_code == 401
+    assert calls == ["Whatever123!"]

@@ -9,7 +9,7 @@ from app.models.booking import Booking, BookingStatus, BookingType
 from app.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.services.booking_service import BookingService, get_booking_service
 from app.services.cancellation_policy import refund_for
-from tests.factories import make_room, make_sanatorium, make_user
+from tests.factories import make_exchange_rate, make_room, make_sanatorium, make_user
 
 
 class _Terms:
@@ -206,3 +206,89 @@ async def test_cancelling_late_withholds_the_fee(db: AsyncSession):
     payment = cancelled.payments[0]
     assert payment.status == PaymentStatus.REFUND_PENDING
     assert payment.refund_amount == Decimal("750.00")
+
+
+async def test_a_usd_stay_paid_in_som_withholds_the_fee_in_som(db: AsyncSession):
+    """Uzum settles in UZS while the stay is priced in USD.
+
+    The fee is a share of the USD price; withholding that USD figure as if it
+    were so'm refunded a $250 fee as 250 so'm and kept almost nothing.
+    """
+
+    await make_exchange_rate(db, pair="USD_UZS", rate="12500")
+    owner = await make_user(db, email="refund-fx@test.com")
+    sanatorium = await make_sanatorium(db)
+    room = await make_room(db, sanatorium=sanatorium)
+    booking = Booking(
+        user_id=owner.id,
+        room_id=room.id,
+        booking_type=BookingType.ROOM,
+        check_in=date.today() + timedelta(days=3),
+        check_out=date.today() + timedelta(days=5),
+        guests=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=Decimal("1000.00"),
+        currency="USD",
+        free_cancellation_days=7,
+        cancellation_penalty_percent=Decimal("25.00"),
+    )
+    db.add(booking)
+    await db.flush()
+    db.add(
+        Payment(
+            booking_id=booking.id,
+            method=PaymentMethod.UZUM,
+            status=PaymentStatus.PAID,
+            amount=Decimal("12500000.00"),
+            currency="UZS",
+        )
+    )
+    await db.commit()
+    await db.refresh(booking)
+
+    cancelled = await _service(db).cancel(booking, owner)
+
+    # The snapshot sits next to the booking's own price, so it stays in USD.
+    assert cancelled.cancellation_penalty_snapshot == Decimal("250.00")
+    payment = cancelled.payments[0]
+    assert payment.status == PaymentStatus.REFUND_PENDING
+    assert payment.refund_amount == Decimal("9375000.00")
+
+
+async def test_a_full_refund_in_another_currency_returns_every_som(
+    db: AsyncSession,
+):
+    """No conversion rounding may shave a full refund."""
+
+    await make_exchange_rate(db, pair="USD_UZS", rate="12345.67")
+    owner = await make_user(db, email="refund-fx-full@test.com")
+    sanatorium = await make_sanatorium(db)
+    room = await make_room(db, sanatorium=sanatorium)
+    booking = Booking(
+        user_id=owner.id,
+        room_id=room.id,
+        booking_type=BookingType.ROOM,
+        check_in=date.today() + timedelta(days=30),
+        check_out=date.today() + timedelta(days=32),
+        guests=1,
+        status=BookingStatus.CONFIRMED,
+        final_price=Decimal("333.33"),
+        currency="USD",
+    )
+    db.add(booking)
+    await db.flush()
+    db.add(
+        Payment(
+            booking_id=booking.id,
+            method=PaymentMethod.UZUM,
+            status=PaymentStatus.PAID,
+            amount=Decimal("4115185.17"),
+            currency="UZS",
+        )
+    )
+    await db.commit()
+    await db.refresh(booking)
+
+    cancelled = await _service(db).cancel(booking, owner)
+
+    assert cancelled.payments[0].refund_amount == Decimal("4115185.17")

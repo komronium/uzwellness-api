@@ -226,7 +226,11 @@ class UzumCheckoutService:
     async def refresh(self, payment_id: uuid.UUID, user: User) -> tuple[Payment, str]:
         """Re-read one payment's state from Uzum, for the guest's status page."""
 
-        payment = await self.db.get(Payment, payment_id)
+        # Locked like sync_order(): a callback settling the same order at the
+        # same moment would otherwise confirm it twice and email twice.
+        payment = await self.db.scalar(
+            select(Payment).where(Payment.id == payment_id).with_for_update()
+        )
         if payment is None or payment.method != PaymentMethod.UZUM_CHECKOUT:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -249,9 +253,19 @@ class UzumCheckoutService:
         return payment, order_status
 
     async def _apply(
-        self, payment: Payment, order_status: str | None, result: dict
+        self,
+        payment: Payment,
+        order_status: str | None,
+        result: dict,
+        *,
+        commit: bool = True,
     ) -> None:
-        """Move the payment (and its booking) to match Uzum's order state."""
+        """Move the payment (and its booking) to match Uzum's order state.
+
+        ``commit=False`` keeps the caller's row locks: committing here would
+        release the booking lock ``start()`` holds while it decides whether a
+        second order may be registered.
+        """
 
         if order_status is None:
             logger.warning(
@@ -300,8 +314,18 @@ class UzumCheckoutService:
                 payment.paid_at = datetime.now(UTC)
                 confirmed = True
         elif order_status == ORDER_REFUNDED:
+            was_settled = payment.status == PaymentStatus.PAID
             payment.status = PaymentStatus.REFUNDED
-            payment.cancelled_at = datetime.now(UTC)
+            payment.cancelled_at = payment.cancelled_at or datetime.now(UTC)
+            if (
+                was_settled
+                and booking is not None
+                and booking.status == BookingStatus.CONFIRMED
+                and not await self._has_other_settled_payment(booking, payment)
+            ):
+                # The money went back, so the stay is unpaid again — the same
+                # answer the Merchant API's /reverse gives.
+                booking.status = BookingStatus.PENDING
         elif order_status == ORDER_DECLINED:
             if payment.status == PaymentStatus.PENDING:
                 payment.status = PaymentStatus.FAILED
@@ -318,9 +342,24 @@ class UzumCheckoutService:
             and booking.status == BookingStatus.PENDING
         ):
             booking.status = BookingStatus.CONFIRMED
+        if not commit:
+            await self.db.flush()
+            return
         await self.db.commit()
         if confirmed and booking is not None:
             await send_booking_confirmed_email(self.db, booking)
+
+    async def _has_other_settled_payment(
+        self, booking: Booking, payment: Payment
+    ) -> bool:
+        other = await self.db.scalar(
+            select(Payment.id).where(
+                Payment.booking_id == booking.id,
+                Payment.id != payment.id,
+                Payment.status == PaymentStatus.PAID,
+            )
+        )
+        return other is not None
 
     @staticmethod
     def _amount_matches(payment: Payment, result: dict) -> bool:
@@ -563,8 +602,14 @@ class UzumCheckoutService:
                 )
                 continue
             order_status = pick_status(result)
-            await self._apply(payment, order_status, result)
+            was_paid = payment.status == PaymentStatus.PAID
+            await self._apply(payment, order_status, result, commit=False)
             if payment.status == PaymentStatus.PAID:
+                # Settle it for good before refusing: the 409 below would
+                # otherwise roll the confirmation back with the request.
+                await self.db.commit()
+                if not was_paid:
+                    await send_booking_confirmed_email(self.db, booking)
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="This booking has already been paid in full.",

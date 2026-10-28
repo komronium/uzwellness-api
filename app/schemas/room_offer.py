@@ -29,9 +29,18 @@ class RoomOfferChild(BaseModel):
     age: int = Field(ge=0, le=17)
 
 
+# Pricing walks every guest of every room, and the search is public: without
+# a ceiling one request for a million adults kept a worker busy for minutes.
+MAX_ADULTS_PER_ROOM = 20
+MAX_CHILDREN_PER_ROOM = 10
+_MAX_GUEST_ENTRIES = 8 * (MAX_ADULTS_PER_ROOM + MAX_CHILDREN_PER_ROOM)
+
+
 class RoomOfferRequestedRoom(BaseModel):
-    adults: int = Field(ge=1)
-    children: list[RoomOfferChild] = Field(default_factory=list)
+    adults: int = Field(ge=1, le=MAX_ADULTS_PER_ROOM)
+    children: list[RoomOfferChild] = Field(
+        default_factory=list, max_length=MAX_CHILDREN_PER_ROOM
+    )
     board: BoardType = BoardType.FULL_BOARD
 
     @property
@@ -83,9 +92,11 @@ class RoomOfferSearchRequest(BaseModel):
     check_in: date
     check_out: date
     rooms: list[RoomOfferRequestedRoom] = Field(min_length=1, max_length=8)
-    guest_options: list[RoomOfferGuestOption] = Field(default_factory=list)
+    guest_options: list[RoomOfferGuestOption] = Field(
+        default_factory=list, max_length=_MAX_GUEST_ENTRIES
+    )
     treatment_selections: list[RoomOfferTreatmentSelection] = Field(
-        default_factory=list
+        default_factory=list, max_length=_MAX_GUEST_ENTRIES
     )
     filters: RoomOfferFilters = Field(default_factory=RoomOfferFilters)
     sort: RoomOfferSort = RoomOfferSort.CHEAPEST

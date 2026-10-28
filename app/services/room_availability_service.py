@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ensure_date_range
 from app.core.database import get_db
 from app.core.db_utils import lock_rows
 from app.core.permissions import assert_sanatorium_access
@@ -149,6 +150,7 @@ class RoomAvailabilityService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="date_to must be at least one day after date_from.",
             )
+        ensure_date_range(payload.date_from, payload.date_to)
 
     async def _locked_rows(
         self, room: Room, dates: list[date]

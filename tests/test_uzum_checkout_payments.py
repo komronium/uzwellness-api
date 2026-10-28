@@ -287,6 +287,48 @@ class TestSettlement:
         assert payment.status == PaymentStatus.REFUNDED
         assert payment.cancelled_at is not None
 
+    async def test_refund_after_payment_returns_the_booking_to_unpaid(
+        self, db: AsyncSession
+    ):
+        """``confirmed`` means "money arrived"; once it went back, it did not.
+
+        The Merchant API's /reverse already does this; Checkout left the
+        property believing a refunded stay was paid.
+        """
+
+        owner = await make_user(db, email="settle-refund-pending@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+        service = UzumCheckoutService(db, stub)
+        await service.start(booking.id, owner)
+        stub.status = "COMPLETED"
+        await service.sync_order(ORDER_ID)
+        await db.refresh(booking)
+        assert booking.status == BookingStatus.CONFIRMED
+
+        stub.status = "REFUNDED"
+        await service.sync_order(ORDER_ID)
+
+        await db.refresh(booking)
+        assert booking.status == BookingStatus.PENDING
+
+    async def test_refund_of_a_cancelled_booking_leaves_it_cancelled(
+        self, db: AsyncSession
+    ):
+        owner = await make_user(db, email="settle-refund-cancel@test.com")
+        booking = await _booking(db, owner)
+        stub = StubCheckout()
+        service = UzumCheckoutService(db, stub)
+        await service.start(booking.id, owner)
+        booking.status = BookingStatus.CANCELLED
+        await db.commit()
+
+        stub.status = "REFUNDED"
+        await service.sync_order(ORDER_ID)
+
+        await db.refresh(booking)
+        assert booking.status == BookingStatus.CANCELLED
+
     async def test_unknown_order_is_ignored(self, db: AsyncSession):
         assert await UzumCheckoutService(db, StubCheckout()).sync_order("nope") is None
 

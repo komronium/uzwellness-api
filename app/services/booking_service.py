@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.errors import ensure_check_in_not_past
+from app.core.errors import (
+    ensure_check_in_not_past,
+    ensure_stay_window,
+    missing_exchange_rate,
+)
 from app.core.policies import BookingPolicy
 from app.core.sanatorium_lookup import sanatorium_name_for_booking
 from app.core.utils import TASHKENT_TZ, today_tashkent
@@ -36,6 +40,7 @@ from app.services.booking_visibility import (
     booking_visibility_clauses,
 )
 from app.services.email_service import BookingEmailContext, send_booking_cancelled
+from app.services.exchange_rate_service import ExchangeRateService
 from app.services.transfer_request_service import cancel_transfers_for_booking
 
 _LOAD_OPTIONS = (
@@ -59,6 +64,7 @@ class BookingService:
         self, payload: BookingCreate, user: User, *, locale: str = "en"
     ) -> Booking:
         ensure_check_in_not_past(payload.check_in)
+        ensure_stay_window(payload.check_in, payload.check_out)
         for flow in self.flows:
             if flow.matches(payload):
                 return await flow.create(payload, user, locale=locale)
@@ -261,7 +267,11 @@ class BookingService:
             )
         ).all()
         settled = [p for p in payments if p.status == PaymentStatus.PAID]
-        paid_total = sum((p.amount for p in settled), Decimal("0"))
+        # The terms are in the booking's currency, but Uzum settles in UZS, so
+        # each payment is weighed in booking currency before the fee is taken.
+        to_booking, to_payment = await self._payment_converters(booking, settled)
+        paid_in_booking = {p.id: to_booking(p) for p in settled}
+        paid_total = sum(paid_in_booking.values(), Decimal("0"))
         breakdown = refund_for(booking, paid_total, today=today_tashkent())
         booking.cancellation_penalty_snapshot = breakdown.penalty_amount
 
@@ -270,8 +280,11 @@ class BookingService:
         # exactly what is owed back on it.
         remaining = breakdown.refund_amount
         for p in sorted(settled, key=lambda row: row.created_at or datetime.min):
-            owed = min(p.amount, remaining)
-            remaining -= owed
+            share = min(paid_in_booking[p.id], remaining)
+            remaining -= share
+            # A whole payment goes back as the exact sum that arrived, so a
+            # round trip through the exchange rate cannot shave a full refund.
+            owed = p.amount if share == paid_in_booking[p.id] else to_payment(p, share)
             p.refund_amount = owed
             if owed > 0:
                 p.status = PaymentStatus.REFUND_PENDING
@@ -282,6 +295,45 @@ class BookingService:
         for p in payments:
             if p.status == PaymentStatus.PENDING:
                 p.status = PaymentStatus.CANCELLED
+
+    async def _payment_converters(
+        self, booking: Booking, payments: Sequence[Payment]
+    ) -> tuple[Callable[[Payment], Decimal], Callable[[Payment, Decimal], Decimal]]:
+        """Move a payment's amount into booking currency, and a share back.
+
+        Today's rate is used: the fee is denominated in the booking's currency,
+        so that is what the property is owed whatever the rate did since.
+        """
+
+        booking_currency = booking.currency.upper()
+        foreign = {
+            p.currency.upper()
+            for p in payments
+            if p.currency.upper() != booking_currency
+        }
+        converter = (
+            await ExchangeRateService(self.db).get_converter(booking_currency)
+            if foreign
+            else None
+        )
+
+        def convert(amount: Decimal, source: str, target: str) -> Decimal:
+            if source.upper() == target.upper():
+                return amount
+            converted = converter.convert(amount, source, target) if converter else None
+            if converted is None:
+                raise missing_exchange_rate(source, target)
+            return converted
+
+        def to_booking(payment: Payment) -> Decimal:
+            return convert(payment.amount, payment.currency, booking_currency)
+
+        def to_payment(payment: Payment, share: Decimal) -> Decimal:
+            return min(
+                convert(share, booking_currency, payment.currency), payment.amount
+            )
+
+        return to_booking, to_payment
 
     async def _load(self, booking_id: uuid.UUID) -> Booking | None:
         return await self.db.scalar(

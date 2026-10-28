@@ -46,6 +46,7 @@ from app.services.booking_invoice import build_invoice
 from app.services.cancellation_policy import free_cancellation_deadline
 
 from reportlab.lib import colors
+from starlette.concurrency import run_in_threadpool
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -498,7 +499,10 @@ async def build_voucher_pdf(
     lang = locale if locale in _LABELS else "en"
     ctx = await _load_context(db, booking, lang)
 
-    return _render_one_page(ctx, booking)[0]
+    # Laying out and compressing a PDF is pure CPU; off the event loop it
+    # stops one voucher download from stalling every other request.
+    pdf, _pages = await run_in_threadpool(_render_one_page, ctx, booking)
+    return pdf
 
 
 def _render_one_page(ctx: _Ctx, booking: Booking) -> tuple[bytes, int]:

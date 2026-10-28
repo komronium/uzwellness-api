@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     IMAGE_MAX_DIMENSION: int = 1600
     IMAGE_WEBP_QUALITY: int = 80
 
+    # Bounds on a stay. Inventory is held from booking until payment or
+    # cancellation, so without them one unpaid booking could take every room
+    # of a type for years; they also cap how many nights a search prices.
+    MAX_STAY_NIGHTS: int = 90
+    BOOKING_HORIZON_DAYS: int = 730
+    # Widest from/to window any calendar or availability read will build.
+    MAX_DATE_RANGE_DAYS: int = 731
+
     # Uzum Bank Merchant API. The customer pays inside the Uzum Bank app and
     # Uzum calls our /payments/uzum/* webhooks, authenticated with Basic auth.
     # Credentials and serviceId are agreed with Uzum (we pick them for testing,

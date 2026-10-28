@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrencyDep, LocaleDep, OptionalUser
 from app.core.database import get_db
-from app.core.errors import ensure_check_in_not_past
+from app.core.errors import ensure_check_in_not_past, ensure_stay_window
 from app.models.sanatorium import Sanatorium
 from app.schemas.room_offer import RoomOfferSearchRequest, RoomOfferSearchResponse
 from app.services.booking_pricing_policy import (
@@ -34,6 +34,7 @@ async def search_sanatorium_room_offers(
     db: AsyncSession = Depends(get_db),
 ) -> RoomOfferSearchResponse:
     ensure_check_in_not_past(payload.check_in)
+    ensure_stay_window(payload.check_in, payload.check_out)
     # Agents see their B2B tier price; customers/anonymous see retail.
     sanatorium = await db.get(Sanatorium, sanatorium_id)
     agent_discount_percent = await pricing.agent_discount_for(current_user, sanatorium)

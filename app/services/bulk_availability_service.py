@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import ensure_date_range
 from app.core.database import get_db
 from app.core.db_utils import lock_rows
 from app.core.permissions import assert_sanatorium_access
@@ -426,6 +427,7 @@ class BulkAvailabilityService:
 def _scope_dates(date_ranges, weekdays: list[int]) -> list[date]:
     dates: set[date] = set()
     for item in date_ranges:
+        ensure_date_range(item.date_from, item.date_to)
         dates.update(_filtered_range(item.date_from, item.date_to, weekdays))
     return sorted(dates)
 

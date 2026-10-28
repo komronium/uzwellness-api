@@ -104,6 +104,22 @@ async def test_create_rejects_room_scoped_facility_amenity(
     assert "GET /amenities?scope=sanatorium" in detail
 
 
+async def test_admin_cannot_set_their_own_commission_on_create(
+    client: AsyncClient, admin_headers
+) -> None:
+    """PATCH already reserves these to the platform; POST let a property
+    admin pick its own commission before the platform ever saw it."""
+
+    resp = await client.post(
+        "/api/sanatoriums",
+        json={**CREATE_PAYLOAD, "platform_commission_percent": "0.5"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 403, resp.text
+    assert "platform_commission_percent" in resp.json()["detail"]
+
+
 async def test_create_as_admin_auto_assigns_owner(
     client: AsyncClient, admin_headers, admin_user
 ) -> None:
@@ -1209,7 +1225,7 @@ async def test_policy_endpoint_reads_and_patches_sections(
 async def test_review_rating_breakdown_is_automatic(
     client: AsyncClient,
     db: AsyncSession,
-    customer_headers,
+    super_admin_headers,
 ) -> None:
     sanatorium = await make_sanatorium(db, slug="rating-breakdown")
 
@@ -1225,7 +1241,7 @@ async def test_review_rating_breakdown_is_automatic(
             "treatment": 5,
             "body": "Excellent treatment and clean rooms.",
         },
-        headers=customer_headers,
+        headers=super_admin_headers,
     )
     assert first.status_code == 201, first.text
     second = await client.post(
@@ -1240,7 +1256,7 @@ async def test_review_rating_breakdown_is_automatic(
             "treatment": 4,
             "body": "Good location but service can improve.",
         },
-        headers=customer_headers,
+        headers=super_admin_headers,
     )
     assert second.status_code == 201, second.text
 
@@ -1259,7 +1275,6 @@ async def test_review_rating_breakdown_is_automatic(
 async def test_review_visibility_recomputes_rating_breakdown(
     client: AsyncClient,
     db: AsyncSession,
-    customer_headers,
     super_admin_headers,
 ) -> None:
     sanatorium = await make_sanatorium(db, slug="rating-visibility")
@@ -1275,7 +1290,7 @@ async def test_review_visibility_recomputes_rating_breakdown(
             "treatment": 1,
             "body": "This stay did not meet expectations.",
         },
-        headers=customer_headers,
+        headers=super_admin_headers,
     )
     assert low.status_code == 201, low.text
     high = await client.post(
@@ -1290,7 +1305,7 @@ async def test_review_visibility_recomputes_rating_breakdown(
             "treatment": 5,
             "body": "Excellent stay with strong treatment quality.",
         },
-        headers=customer_headers,
+        headers=super_admin_headers,
     )
     assert high.status_code == 201, high.text
 
@@ -1314,7 +1329,7 @@ async def test_admin_review_reply_workflow_and_summary(
     db: AsyncSession,
     admin_user,
     admin_headers,
-    customer_headers,
+    super_admin_headers,
 ) -> None:
     sanatorium = await make_sanatorium(
         db,
@@ -1343,7 +1358,7 @@ async def test_admin_review_reply_workflow_and_summary(
             "negative_tags": ["cleanliness", "service"],
             "photos": [{"url": "https://example.com/review.jpg"}],
         },
-        headers=customer_headers,
+        headers=super_admin_headers,
     )
     assert created.status_code == 201, created.text
     review_id = created.json()["id"]
