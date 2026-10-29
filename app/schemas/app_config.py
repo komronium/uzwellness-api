@@ -57,21 +57,23 @@ class HeroSlide(BaseModel):
 
 
 class TrustStats(BaseModel):
-    sanatoriums: str = Field(default="200+", max_length=32)
-    countries: str = Field(default="47", max_length=32)
-    rating: str = Field(default="4.8", max_length=32)
-    savings: str = Field(default="Up to 60%", max_length=32)
+    # Empty until an admin enters real figures: the homepage must never show
+    # made-up numbers just because nobody saved the config yet.
+    sanatoriums: str = Field(default="", max_length=32)
+    countries: str = Field(default="", max_length=32)
+    rating: str = Field(default="", max_length=32)
+    savings: str = Field(default="", max_length=32)
 
 
 class SectionVisibility(BaseModel):
-    trust_bar: bool = True
+    trust_bar: bool = False
     why_uzbekistan: bool = True
     destinations: bool = True
     treatments: bool = True
     featured_sanatoriums: bool = True
     packages: bool = True
     how_it_works: bool = True
-    testimonials: bool = True
+    testimonials: bool = False
     b2b: bool = True
 
 

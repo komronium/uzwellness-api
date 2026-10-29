@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.amenity import (
     Amenity,
@@ -440,6 +441,10 @@ SANATORIUMS: list[dict[str, Any]] = [
 
 async def main() -> None:
     args = parse_args()
+    # Even the dry run deletes every sanatorium and booking inside a
+    # transaction, and the seeded prices/reviews are demo data.
+    if settings.ENVIRONMENT == "production":
+        raise SystemExit("Refusing to run against production: demo catalog only.")
     async with SessionLocal() as db:
         stats = await replace_catalog(db)
         if args.write:

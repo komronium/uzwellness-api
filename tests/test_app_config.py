@@ -109,8 +109,9 @@ async def test_homepage_config_get_is_public_with_defaults(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["hero_slides"] == []
-    assert body["trust_stats"]["sanatoriums"] == "200+"
-    assert body["section_visibility"]["trust_bar"] is True
+    assert body["trust_stats"]["sanatoriums"] == ""
+    assert body["section_visibility"]["trust_bar"] is False
+    assert body["section_visibility"]["testimonials"] is False
 
 
 async def test_put_then_get_homepage_config_round_trips(
